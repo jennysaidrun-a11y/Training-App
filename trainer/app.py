@@ -106,6 +106,16 @@ app = FastAPI(title="Bakery Training", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
 
+@app.middleware("http")
+async def fresh_static_files(request: Request, call_next):
+    """Browsers check for a newer copy of styles and scripts on every load, so an
+    update never shows new pages with old styles."""
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # ---- Worker side ------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)

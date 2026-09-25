@@ -302,7 +302,7 @@ main.studio { max-width: 1480px; padding-bottom: 40px; }
 .thumb .mini { flex: 1; min-width: 0; min-height: 66px; border: 2px solid var(--line); border-bottom-width: 4px; border-radius: 12px; padding: 8px 10px;
                background: var(--bg); display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
 .thumb .kind { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 900; color: var(--muted); }
-.thumb .txt { font-weight: 800; color: var(--heading); line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.thumb .txt { font-weight: 800; color: var(--heading); line-height: 1.3; max-height: 2.6em; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .thumb.question .mini { background: var(--blue-soft); }
 .thumb.question .kind { color: var(--blue); }
 .thumb.cover .mini { background: var(--green-soft); }
@@ -417,7 +417,7 @@ button.x { flex: 0 0 auto; min-height: 34px; padding: 0 10px; color: var(--muted
   .studio-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .rail { position: sticky; top: 56px; z-index: 6; flex-direction: row; max-height: none; overflow-x: auto; overflow-y: hidden; background: var(--bg);
           padding: 8px 2px; margin: 0 -12px; padding-left: 12px; border-bottom: 2px solid var(--line); scroll-snap-type: x proximity; }
-  .thumb { flex: 0 0 132px; width: 132px; flex-direction: column; gap: 2px; scroll-snap-align: start; }
+  .thumb { flex: 0 0 150px; width: 150px; flex-direction: column; gap: 2px; scroll-snap-align: start; }
   .thumb .num { text-align: left; padding: 0 0 0 4px; flex: 0 0 auto; font-size: 0.75rem; }
   .thumb .mini { height: 70px; min-height: 0; }
   .rail-add { flex-direction: column; padding: 18px 12px 0 0; flex: 0 0 auto; }
@@ -448,3 +448,33 @@ button.x { flex: 0 0 auto; min-height: 34px; padding: 0 10px; color: var(--muted
 .slide-img { display: block; width: 100%; max-height: 360px; object-fit: contain; border-radius: var(--radius);
              background: var(--soft); border: 2px solid var(--line); margin: 6px 0 14px; }
 .picture-field .row { gap: 10px; }
+
+/* Preview of Claude's draft: a phone-sized pop-up, one slide at a time */
+.draft-actions { display: flex; gap: 8px; }
+.draft-actions > * { flex: 1; padding: 0 10px; }
+dialog.preview { width: min(440px, calc(100vw - 24px)); height: min(760px, calc(100vh - 40px)); padding: 0; border: 2px solid var(--line);
+                 border-radius: 22px; background: var(--bg); color: var(--text); display: flex; flex-direction: column; overflow: hidden; }
+dialog.preview:not([open]) { display: none; }
+dialog.preview::backdrop { background: rgba(0,0,0,.45); }
+.pv-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px 8px 18px; }
+.pv-head b { color: var(--heading); }
+.pv-count { color: var(--muted); font-size: 0.85rem; flex: 1; }
+.pv-meter { height: 10px; margin: 0 18px; }
+.pv-body { flex: 1; overflow-y: auto; padding: 6px 22px 18px; }
+.pv-body h1 { font-size: 1.4rem; }
+.pv-body .q { font-size: 1.2rem; }
+.pv-body .choice { min-height: 50px; font-size: 0.98rem; }
+.pv-cover { text-align: center; padding-top: 18%; }
+.pv-verdict { margin-top: 14px; border-radius: 14px; padding: 12px 14px; font-size: 0.95rem; }
+.pv-verdict.good { background: var(--green-soft); color: var(--green-ink); }
+.pv-verdict.bad { background: var(--red-soft); color: var(--red-ink); }
+.pv-foot { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-top: 2px solid var(--line); }
+@media (max-width: 560px) { dialog.preview { width: 100vw; height: 100dvh; max-width: none; max-height: none; border-radius: 0; border: 0; } }
+
+/* Slide list: every slide keeps its full height (the list scrolls instead of
+   squashing them), with the title on two clear lines. */
+.rail > * { flex-shrink: 0; }
+.thumb .mini { min-height: 70px; justify-content: flex-start; }
+.studio-grid { grid-template-columns: 240px minmax(0, 1fr) 380px; }
+@media (max-width: 1100px) { .studio-grid { grid-template-columns: 210px minmax(0, 1fr); } }
+@media (max-width: 720px) { .studio-grid { grid-template-columns: minmax(0, 1fr); } }

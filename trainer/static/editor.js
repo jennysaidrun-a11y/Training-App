@@ -506,11 +506,100 @@
         saveNote.textContent = "Draft in the editor. Read each slide, then save.";
         if (window.matchMedia("(max-width: 1100px)").matches) closeSheet();
       });
+      const look = el("button", { type: "button", class: "small ghost" }, "Preview");
+      look.addEventListener("click", () => previewDeck(lesson, use));
       return el("div", { class: "draft" },
         el("b", {}, lesson.title || "Draft lesson"),
         el("div", { class: "muted" }, `${reads} reading${reads === 1 ? "" : "s"}, ${qs} question${qs === 1 ? "" : "s"}`),
         lesson.citations.length ? el("div", { class: "draft-cites" }, ...lesson.citations.map((ref) => el("span", { class: "cite-chip" }, badge(ref), " ", ref))) : el("div", { class: "pill warn" }, "No rules cited yet"),
-        use);
+        el("div", { class: "draft-actions" }, look, use));
+    }
+
+    // Claude's draft in a pop-up, one slide at a time as a worker sees it.
+    // Answers can be tried; nothing here changes the editor until "Use this draft".
+    function previewDeck(lesson, useBtn) {
+      const reads = lesson.slides.filter((x) => x.type === "reading").length;
+      const pages = [{ kind: "cover" }, ...lesson.slides.map((sl) => ({ kind: sl.type, sl })), { kind: "rules" }];
+      let at = 0;
+      const body = el("div", { class: "pv-body" });
+      const count = el("span", { class: "pv-count" });
+      const bar = el("div", { class: "meter light pv-meter" }, el("span", {}));
+      const back = el("button", { type: "button", class: "ghost small" }, "‹ Back");
+      const next = el("button", { type: "button", class: "small" }, "Next ›");
+      const use = el("button", { type: "button", class: "small" }, useBtn.disabled ? "In the editor ✓" : "Use this draft");
+      use.disabled = useBtn.disabled;
+      const close = () => { dlg.close(); dlg.remove(); document.removeEventListener("keydown", keys); };
+      use.addEventListener("click", () => { useBtn.click(); if (useBtn.disabled) close(); });
+      const dlg = el("dialog", { class: "preview", "aria-label": "Preview of Claude's draft" },
+        el("div", { class: "pv-head" }, el("b", {}, "Preview"), count,
+          el("button", { type: "button", class: "ghost small x", "aria-label": "Close preview", onclick: close }, "✕")),
+        bar, body,
+        el("div", { class: "pv-foot" }, back, el("span", { class: "grow" }), use, next));
+      dlg.addEventListener("click", (e) => { if (e.target === dlg) close(); });   // click outside
+      dlg.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
+      back.addEventListener("click", () => go(at - 1));
+      next.addEventListener("click", () => go(at + 1));
+      const keys = (e) => {
+        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+        if (e.key === "ArrowRight") go(at + 1);
+        if (e.key === "ArrowLeft") go(at - 1);
+      };
+      document.addEventListener("keydown", keys);
+
+      function readingBox(text) {
+        const box = el("div", { class: "reading" });
+        for (const para of (text || "").trim().split(/\n\s*\n/)) {
+          const lines = para.split("\n").map((x) => x.trim()).filter(Boolean);
+          if (lines.length && lines.every((x) => /^\d+\.\s/.test(x))) box.append(el("ol", {}, ...lines.map((x) => el("li", {}, el("span", {}, x.replace(/^\d+\.\s*/, ""))))));
+          else if (lines.length) box.append(el("p", {}, lines.join(" ")));
+        }
+        return box;
+      }
+      function go(n) {
+        at = Math.max(0, Math.min(n, pages.length - 1));
+        const pg = pages[at];
+        count.textContent = `${at + 1} of ${pages.length}`;
+        bar.firstElementChild.style.width = `${(100 * (at + 1)) / pages.length}%`;
+        back.disabled = at === 0;
+        next.disabled = at === pages.length - 1;
+        body.scrollTop = 0;
+        if (pg.kind === "cover") {
+          body.replaceChildren(el("div", { class: "pv-cover" },
+            el("p", { class: "eyebrow" }, "Lesson"), el("h1", {}, lesson.title || "Untitled"),
+            el("p", { class: "muted" }, lesson.summary || ""),
+            el("p", { class: "muted" }, `${reads} part${reads === 1 ? "" : "s"}, ${lesson.slides.length - reads} question${lesson.slides.length - reads === 1 ? "" : "s"} · for ${lesson.roles.map((r) => r === "all" ? "everyone" : (ROLES.find((x) => x.id === r) || { name: r }).name).join(", ")}`)));
+        } else if (pg.kind === "reading") {
+          const part = lesson.slides.slice(0, lesson.slides.indexOf(pg.sl) + 1).filter((x) => x.type === "reading").length;
+          body.replaceChildren(el("p", { class: "eyebrow" }, `Part ${part} of ${reads}`), el("h1", {}, pg.sl.heading), readingBox(pg.sl.text));
+        } else if (pg.kind === "question") {
+          const sl = pg.sl;
+          const verdict = el("div", { class: "pv-verdict", hidden: true });
+          const buttons = sl.choices.map((c, ci) => {
+            const b = el("button", { type: "button", class: "choice" }, el("span", { class: "key" }, String(ci + 1)), el("span", {}, c));
+            b.addEventListener("click", () => {
+              buttons.forEach((x) => x.classList.remove("right", "wrong"));
+              const ok = ci === sl.answer;
+              b.classList.add(ok ? "right" : "wrong");
+              verdict.hidden = false;
+              verdict.className = "pv-verdict " + (ok ? "good" : "bad");
+              verdict.replaceChildren(el("b", {}, ok ? "Nice job!" : "Not quite"), sl.why ? el("span", {}, " " + sl.why) : "");
+            });
+            return b;
+          });
+          body.replaceChildren(el("p", { class: "eyebrow" }, "Check what you read"), el("p", { class: "q" }, sl.q),
+            el("div", { class: "choices" }, ...buttons), verdict,
+            el("p", { class: "help" }, "Try an answer: this is what workers see."));
+        } else {
+          body.replaceChildren(el("p", { class: "eyebrow" }, "Rules & sources"), el("h2", {}, "Based on"),
+            lesson.citations.length ? el("div", { class: "cites" }, ...lesson.citations.map((ref) => el("div", { class: "cite" }, badge(ref), el("span", {}, ref, checks[ref]?.name ? ` · ${checks[ref].name}` : ""))))
+              : el("p", { class: "pill warn" }, "No rules cited yet"),
+            lesson.sources.length ? el("div", {}, el("h2", { style: "margin-top:20px" }, "Sources"),
+              el("ul", {}, ...lesson.sources.map((x) => el("li", {}, el("a", { href: x.url, target: "_blank", rel: "noopener" }, x.title || x.url))))) : null);
+        }
+      }
+      document.body.append(dlg);
+      dlg.showModal();
+      go(0);
     }
     async function ask(text) {
       text = (text || "").trim();
