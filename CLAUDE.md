@@ -19,6 +19,6 @@ Cal/OSHA (8 CCR, Title 8) apply.
   Verify a new citation exists at the source (eCFR / dir.ca.gov) before adding it.
 - Videos: only add ones the user picks or that are clearly public domain / openly
   licensed; don't guess.
-- The user never commits, pushes or rebuilds by hand: `update.sh` (Codespace
-  postAttach) auto-saves `content/` and pulls new code every minute. Keep it working.
+- The user never commits, pushes or rebuilds by hand: `update.sh` (started detached
+  from the Codespace's postStartCommand) auto-saves `content/` and pulls new code every minute. Keep it working.
 - Run `python -m pytest` before committing.

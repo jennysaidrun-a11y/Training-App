@@ -5,6 +5,9 @@
 #   2. picks up any new version of the app from GitHub and restarts it.
 # Employee records (data/) never leave this Codespace.
 cd "$(dirname "$0")"
+# Only one updater at a time (the Codespace starts it on every start).
+exec 9>/tmp/training-update.lock
+flock -n 9 || { echo "Updater already running."; exit 0; }
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 PORT=${PORT:-8000}
 
