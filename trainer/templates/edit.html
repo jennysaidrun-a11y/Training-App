@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% from "icons.html" import icon %}
 {% block title %}Edit lesson · Bakery Training{% endblock %}
 {% block main_class %}narrow{% endblock %}
 {% block body %}
 <p><a href="/manage#lessons">← Manager</a></p>
 <h1>{{ "New lesson" if is_new else lesson.title }}</h1>
 {% if errors %}<div class="note bad"><strong>Nothing was saved yet. Please fix:</strong><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
-<form method="post" action="/manage/lesson/{{ 'new' if is_new else lesson.id }}" class="form">
+<form method="post" action="/manage/lesson/{{ 'new' if is_new else lesson.id }}" class="form" enctype="multipart/form-data" id="lesson-form">
   <label class="field"><span class="lbl">Title</span><input name="title" value="{{ form.title }}" required></label>
   <label class="field"><span class="lbl">One-line summary</span><input name="summary" value="{{ form.summary }}"></label>
   <div class="field" style="margin-bottom:18px">
@@ -15,10 +16,22 @@
       {% for r in roles %}<label class="chip"><input type="checkbox" name="roles" value="{{ r.id }}" {% if r.id in form.roles %}checked{% endif %}><span>{{ r.name }}</span></label>{% endfor %}
     </div>
   </div>
-  <label class="field"><span class="lbl">Video link</span>
-    <span class="help">Optional. A YouTube link or a link to an .mp4 file.</span>
-    <input name="video" value="{{ form.video }}" placeholder="https://www.youtube.com/watch?v=...">
-  </label>
+  <div class="field video-field">
+    <span class="lbl">Video</span>
+    <span class="help">Optional. Upload a video from this computer or phone, or paste a YouTube link. MP4 plays everywhere.
+      Tip for iPhones: Settings › Camera › Formats › Most Compatible, so the video plays on every screen.</span>
+    {% if form.video %}
+      {% if form.video.startswith("/media/") %}<video class="preview" src="{{ form.video }}" controls preload="metadata"></video>{% endif %}
+    {% endif %}
+    <label class="upload">
+      <input type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" id="video-file">
+      <span class="btn blue">{{ icon("upload") }} {{ "Replace video" if form.video else "Upload a video" }}</span>
+      <span class="file-name muted" id="file-name">{{ "No new file chosen" }}</span>
+    </label>
+    <label class="field" style="margin:12px 0 0"><span class="help">or a link (clear it to remove the video)</span>
+      <input name="video" value="{{ form.video }}" placeholder="https://www.youtube.com/watch?v=...">
+    </label>
+  </div>
   <label class="field"><span class="lbl">Lesson text</span>
     <span class="help">Start each part with a line like <code>## Washing hands</code>, then its text.</span>
     <textarea name="sections" rows="14">{{ form.sections }}</textarea>
@@ -38,6 +51,49 @@
     <textarea name="sources" rows="3">{{ form.sources }}</textarea>
   </label>
   {% if not is_new %}<label class="check"><input type="checkbox" name="retake"><span>This is a real change: everyone who already passed it takes it again</span></label>{% endif %}
-  <div class="sticky-save"><button class="wide">Save lesson</button></div>
+  <div class="sticky-save">
+    <div class="meter light" id="upload-meter" hidden><span style="width:0%"></span></div>
+    <p class="muted" id="upload-status" hidden></p>
+    <button class="wide" id="save-btn">Save lesson</button>
+  </div>
 </form>
+<script>
+// Shows upload progress for big videos instead of a frozen page.
+(function () {
+  const form = document.getElementById("lesson-form");
+  const file = document.getElementById("video-file");
+  const nameEl = document.getElementById("file-name");
+  const meter = document.getElementById("upload-meter");
+  const status = document.getElementById("upload-status");
+  const btn = document.getElementById("save-btn");
+  file.addEventListener("change", () => {
+    const f = file.files[0];
+    nameEl.textContent = f ? `${f.name} (${(f.size / 1048576).toFixed(1)} MB)` : "No new file chosen";
+  });
+  form.addEventListener("submit", (e) => {
+    if (!file.files.length) return;       // no video: a normal save
+    e.preventDefault();
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", form.action);
+    meter.hidden = status.hidden = false;
+    btn.disabled = true;
+    btn.textContent = "Uploading…";
+    xhr.upload.onprogress = (ev) => {
+      if (!ev.lengthComputable) return;
+      const pct = Math.round((100 * ev.loaded) / ev.total);
+      meter.firstElementChild.style.width = pct + "%";
+      status.textContent = pct < 100 ? `Uploading the video: ${pct}%` : "Saving…";
+    };
+    xhr.onload = () => {
+      if (xhr.responseURL && !xhr.responseURL.includes("/manage/lesson/")) { location.href = xhr.responseURL; return; }
+      document.open(); document.write(xhr.responseText); document.close();   // the form again, with what to fix
+    };
+    xhr.onerror = () => {
+      btn.disabled = false; btn.textContent = "Save lesson";
+      status.textContent = "The upload didn't go through. Check the connection and try again.";
+    };
+    xhr.send(new FormData(form));
+  });
+})();
+</script>
 {% endblock %}

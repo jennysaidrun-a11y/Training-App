@@ -22,7 +22,9 @@ the app, then restarts. Nothing to push, pull or rebuild.
     come back as to-dos when you make a real change to them, and once a year as a
     refresher.
   - **Lessons:** edit any lesson or add a new one in plain text: sections, questions,
-    a video link (YouTube or .mp4), the rules it's based on, and source links.
+    a video (upload one from a computer or phone, or paste a YouTube link), the rules
+    it's based on, and source links. Questions marked with a time (`@ 1:30`) pause the
+    video there.
 - **Rules page** (`/rules`): every cited rule, when it last changed, and recent or
   proposed federal rules for the same parts.
 
@@ -44,8 +46,8 @@ reached, the last known result is kept and the next check tries again.
 
 ## Privacy
 
-This repo is public. Names and training records live only in the Codespace
-(`data/training.db`) and are never saved to GitHub. Lessons and the rules status
+This repo is public. Names, training records and uploaded videos live only in the
+Codespace (`data/`) and are never saved to GitHub. Deleting the Codespace deletes them. Lessons and the rules status
 are saved to GitHub.
 
 ## Starter content

@@ -192,3 +192,48 @@ def test_broken_lesson_file_does_not_break_app(client, env):
 def test_status_file_is_valid_json():
     if rules.STATUS_PATH.exists():
         json.loads(rules.STATUS_PATH.read_text())
+
+
+def test_video_upload_plays_and_replaces(client, env):
+    base = {
+        "title": "Allergen cross-contact",
+        "sections": "## One\nText one.",
+        "questions": "@ 0:01\nQ: First?\n* yes\n- no",
+        "citations": "21 CFR 117.35",
+        "video": "",
+    }
+    clip = b"\x00\x00\x00\x18ftypmp42" + b"x" * 5000
+    r = client.post("/manage/lesson/allergens", data=base,
+                    files={"video_file": ("Floor clip.MP4", clip, "video/mp4")}, follow_redirects=False)
+    assert r.status_code == 303
+    video = content.load_lessons()["allergens"]["video"]
+    assert video.startswith("/media/allergens-") and video.endswith(".mp4")
+
+    full = client.get(video)
+    assert full.status_code == 200 and full.content == clip and full.headers["content-type"] == "video/mp4"
+    part = client.get(video, headers={"Range": "bytes=0-99"})
+    assert part.status_code == 206 and len(part.content) == 100  # seeking works
+    assert "<video" in client.get("/manage/lesson/allergens").text
+
+    # Replacing the video removes the old file.
+    r = client.post("/manage/lesson/allergens", data=dict(base, video=video),
+                    files={"video_file": ("second.webm", b"webm" * 100, "video/webm")}, follow_redirects=False)
+    assert r.status_code == 303
+    new = content.load_lessons()["allergens"]["video"]
+    assert new != video and new.endswith(".webm")
+    assert client.get(video).status_code == 404
+
+    # Clearing the link removes the video.
+    client.post("/manage/lesson/allergens", data=dict(base, video=""), follow_redirects=False)
+    assert content.load_lessons()["allergens"]["video"] == ""
+    assert client.get(new).status_code == 404
+
+
+def test_video_upload_rejects_non_videos(client):
+    base = {"title": "T", "sections": "## One\nText.", "questions": "", "citations": "", "video": ""}
+    page = client.post("/manage/lesson/allergens", data=base, files={"video_file": ("notes.pdf", b"%PDF", "application/pdf")}).text
+    assert "Nothing was saved" in page and "notes.pdf" in page
+    page = client.post("/manage/lesson/allergens", data=dict(base, video="javascript:alert(1)")).text
+    assert "should start with https://" in page
+    for bad in ["../training.db", "x.exe", "a.mp4.exe"]:
+        assert client.get(f"/media/{bad}").status_code == 404

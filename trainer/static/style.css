@@ -276,3 +276,12 @@ textarea { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; fon
 .rule .ref { font-weight: 900; }
 @media (max-width: 640px) { .rule { grid-template-columns: 1fr; } }
 .meter.light > span { min-width: 0; }
+
+/* ---- Video upload on the lesson form -------------------------------------- */
+.video-field { margin: 0 0 18px; }
+.video-field .preview { width: 100%; max-height: 320px; border-radius: var(--radius); background: #000; margin: 4px 0 12px; display: block; }
+.upload { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; cursor: pointer; }
+.upload input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.upload input:focus-visible + .btn { outline: 3px solid var(--blue); outline-offset: 2px; }
+.sticky-save .meter { margin-bottom: 8px; }
+.sticky-save p { margin: 0 0 8px; }

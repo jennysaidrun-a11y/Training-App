@@ -1,12 +1,14 @@
 """The training app: worker pages, the lesson player and the manager pages."""
 import datetime as dt
 import os
+import re
+import shutil
 import threading
 import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -14,6 +16,19 @@ from . import content, db, rules
 
 HERE = content.ROOT / "trainer"
 templates = Jinja2Templates(directory=HERE / "templates")
+
+# Uploaded videos live next to the database (never in git: the repo is public
+# and videos are big). Served with range requests so the player can seek.
+VIDEO_TYPES = {".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime"}
+MAX_VIDEO_BYTES = 2 * 1024**3
+MEDIA_NAME = re.compile(r"^[a-z0-9-]+\.(mp4|m4v|webm|mov)$")
+
+
+def media_dir():
+    path = db.db_path().parent / "media"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
 
 STATE_LABELS = {
     "due": "To do",
@@ -258,6 +273,9 @@ async def save_lesson(request: Request, lesson_id: str):
     roles = form.getlist("roles") or ["all"]
     data = {k: form.get(k, "") for k in ("title", "summary", "video", "sections", "questions", "citations", "sources")}
     data["roles"] = roles
+    upload = form.get("video_file")
+    if not getattr(upload, "filename", None):
+        upload = None
     is_new = lesson_id == "new"
     lessons = content.load_lessons()
     lesson = {"id": ""} if is_new else dict(_get_lesson(lesson_id))
@@ -286,6 +304,17 @@ async def save_lesson(request: Request, lesson_id: str):
             errors.append(f"Source '{line.strip()}' should be 'Title | https://link'.")
         else:
             sources.append({"title": title.strip() or url.strip(), "url": url.strip()})
+    video = data["video"].strip()
+    if video and not (video.startswith(("http://", "https://")) or video.startswith("/media/")):
+        errors.append("The video link should start with https://")
+    if upload:
+        ext = os.path.splitext(upload.filename)[1].lower()
+        if ext not in VIDEO_TYPES:
+            errors.append(f"'{upload.filename}' isn't a video the app can play. Use an .mp4, .mov, .m4v or .webm file.")
+        elif (upload.size or 0) > MAX_VIDEO_BYTES:
+            errors.append("That video is over 2 GB. Please use a shorter or smaller copy.")
+        elif errors:
+            errors.append("Your video wasn't saved yet: choose it again after fixing the rest.")
     if errors:
         return _edit_form(request, lesson, errors=errors, is_new=is_new, form=data)
 
@@ -296,10 +325,13 @@ async def save_lesson(request: Request, lesson_id: str):
         while new_id in lessons:
             new_id, n = f"{base}-{n}", n + 1
         lesson = {"id": new_id, "version": today}
+    old_video = lesson.get("video") or ""
+    if upload:
+        video = _save_upload(upload, lesson["id"])
     lesson.update({
         "title": data["title"].strip(),
         "summary": data["summary"].strip(),
-        "video": data["video"].strip(),
+        "video": video,
         "roles": roles,
         "sections": sections,
         "questions": questions,
@@ -310,7 +342,36 @@ async def save_lesson(request: Request, lesson_id: str):
     if form.get("retake"):
         lesson["version"] = today
     content.save_lesson(lesson)
+    if old_video and old_video != video:
+        _remove_unused_upload(old_video, content.load_lessons())
     return RedirectResponse(f"/manage?saved={lesson['id']}#lessons", status_code=303)
+
+
+@app.get("/media/{name}")
+def media(name: str):
+    if not MEDIA_NAME.match(name):
+        raise HTTPException(404, "No such video")
+    path = media_dir() / name
+    if not path.is_file():
+        raise HTTPException(404, "No such video")
+    return FileResponse(path, media_type=VIDEO_TYPES["." + name.rsplit(".", 1)[1]])
+
+
+def _save_upload(upload, lesson_id):
+    ext = os.path.splitext(upload.filename)[1].lower()
+    name = f"{content.slugify(lesson_id)}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
+    with open(media_dir() / name, "wb") as out:
+        shutil.copyfileobj(upload.file, out, 1024 * 1024)
+    return f"/media/{name}"
+
+
+def _remove_unused_upload(video, lessons):
+    """Deletes an old uploaded video once no lesson points to it."""
+    if not video.startswith("/media/") or any(l.get("video") == video for l in lessons.values()):
+        return
+    name = video.rsplit("/", 1)[1]
+    if MEDIA_NAME.match(name):
+        (media_dir() / name).unlink(missing_ok=True)
 
 
 @app.get("/health")

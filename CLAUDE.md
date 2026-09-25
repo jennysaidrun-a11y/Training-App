@@ -12,7 +12,8 @@ Cal/OSHA (8 CCR, Title 8) apply.
   everyone retake it; `reviewed_on` = last time it was checked against its rules.
   Citations must parse (`29 CFR 1910.147`, `8 CCR 3314`).
 - `content/rules_status.json`: written by the rules checker (app + nightly workflow).
-- `data/`: employee records. Gitignored; the repo is public. Never commit it.
+- `data/`: employee records (`training.db`) and uploaded videos (`media/`, served at
+  `/media/<name>` with range requests). Gitignored; the repo is public. Never commit it.
 
 ## Rules
 - Lesson facts come from the cited government rule; every lesson cites at least one.
