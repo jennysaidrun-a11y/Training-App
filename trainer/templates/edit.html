@@ -37,7 +37,7 @@
         <input id="link-url" type="url" placeholder="https://www.osha.gov/... or any training page">
         <button type="button" class="small" id="link-go">Draft</button>
       </div>
-      <p class="muted">Claude reads it, rewrites it as slides for your roles, and checks the rules it's based on.</p>
+      <p class="muted">Claude reads it, rewrites it as slides for your roles, and checks the rules it's based on. Have the file instead? Attach it with 📎 below, or drop it on this panel.</p>
     </div>
     <div class="assist-or"><span>or research a topic</span></div>
     <div class="chat" id="chat">
@@ -59,8 +59,13 @@
         </ol>
       </div>
     </template>
+    <div class="attached" id="attached" hidden></div>
     <form class="chat-bar" id="chat-form">
-      <textarea id="chat-input" rows="1" placeholder="Ask Claude to research or change the lesson…"></textarea>
+      <label class="attach-btn" title="Attach a training file (PowerPoint, Word, PDF)">
+        <input type="file" id="attach-file" accept=".pptx,.docx,.pdf,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+        <span aria-hidden="true">📎</span><span class="sr">Attach a file</span>
+      </label>
+      <textarea id="chat-input" rows="1" placeholder="Ask Claude, or attach a training file…"></textarea>
       <button type="submit" class="small" id="chat-send" aria-label="Send">Send</button>
     </form>
     {% else %}

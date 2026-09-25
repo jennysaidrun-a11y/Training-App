@@ -400,3 +400,66 @@ def test_research_through_claude_code(env, monkeypatch):
     signed_out = lambda cmd, input, **kw: _Done('{"is_error": true, "result": "Not logged in · Please run /login"}', 1)
     with pytest.raises(research.NotSignedIn):
         research.run_cli([{"role": "user", "text": "q"}], None, command="claude", runner=signed_out)
+
+
+# ---- Attaching a training file in the Claude panel ---------------------------
+
+def _zip(files):
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, text in files.items():
+            z.writestr(name, text)
+    return buf.getvalue()
+
+
+def _pptx():
+    slide = ('<p:sld xmlns:a="a" xmlns:p="p"><a:p><a:r><a:t>Mixer lockout</a:t></a:r></a:p>'
+             '<a:p><a:r><a:t>Step 1: </a:t></a:r><a:r><a:t>shut off &amp; lock</a:t></a:r></a:p></p:sld>')
+    return _zip({"ppt/slides/slide2.xml": slide.replace("Mixer lockout", "Second slide"),
+                 "ppt/slides/slide1.xml": slide,
+                 "ppt/notesSlides/notesSlide1.xml": '<a:p><a:t>Say this out loud</a:t></a:p>'})
+
+
+def _pdf(text):
+    stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
+    objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+            b"<< /Length %d >>stream\n" % len(stream) + stream + b"\nendstream",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out, offsets = b"%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % i + o + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1) + b"".join(b"%010d 00000 n \n" % o for o in offsets)
+    return out + b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+
+
+def test_attach_reads_training_files(client):
+    from trainer import extract
+    r = client.post("/api/manage/attach", files={"file": ("Old LOTO training.pptx", _pptx())}).json()
+    assert r["kind"] == "PowerPoint" and r["parts"] == 2
+    assert r["text"].index("Mixer lockout") < r["text"].index("Second slide")          # slide order
+    assert "Step 1: shut off & lock" in r["text"] and "[Speaker notes] Say this out loud" in r["text"]
+
+    doc = _zip({"word/document.xml": '<w:p><w:r><w:t>Wash hands</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">for 20 s</w:t></w:r></w:p>'})
+    assert client.post("/api/manage/attach", files={"file": ("sop.docx", doc)}).json()["text"] == "Wash hands\nfor 20 s"
+    assert "Allergen changeover" in extract.extract("sop.pdf", _pdf("Allergen changeover"))["text"]
+
+    for name, data, words in [("old.ppt", b"x", "Save As .pptx"), ("pic.png", b"x", "can't be read"),
+                              ("broken.pptx", b"not a zip", "couldn't be opened"),
+                              ("empty.pptx", _zip({"ppt/slides/slide1.xml": "<a:p></a:p>"}), "no text")]:
+        r = client.post("/api/manage/attach", files={"file": (name, data)})
+        assert r.status_code == 400 and words in r.json()["error"], name
+
+
+def test_attached_file_reaches_claude(client, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    seen = {}
+    monkeypatch.setattr(research, "run", lambda history, draft: seen.update(history=history) or {"reply": "ok", "lesson": None, "searched": []})
+    text = 'Make a lesson\n\n<attached_file name="LOTO.pptx" kind="PowerPoint">\n--- Slide 1 ---\nMixer lockout\n</attached_file>'
+    client.post("/api/manage/research", json={"history": [{"role": "user", "text": text}]})
+    assert "Mixer lockout" in seen["history"][-1]["text"]
+    assert "<attached_file>" in research.SYSTEM

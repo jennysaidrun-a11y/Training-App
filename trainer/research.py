@@ -37,6 +37,10 @@ before citing it, and cite exact sections in the form "29 CFR 1910.147" or "8 CC
 Never guess a section number; leave a citation out if you couldn't confirm it.
 - When the manager gives a link to an existing training, read it and use it as the starting \
 point, but write the lesson in your own words (don't copy it) and list the link as a source.
+- When the manager attaches a file (in <attached_file>), it's their existing training: keep its \
+order and the plant-specific details (machines, steps, names of areas), fix anything the rules \
+don't support, and rewrite it as slides in the app's format. Mention in your reply anything you \
+dropped or changed and why.
 - Keep it to what the rule actually says; don't add requirements that aren't there.
 
 When you have a lesson (or an updated one), call propose_lesson with the whole lesson, then reply \

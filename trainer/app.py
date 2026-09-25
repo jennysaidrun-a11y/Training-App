@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import content, db, editor, research, rules
+from . import content, db, editor, extract, research, rules
 
 HERE = content.ROOT / "trainer"
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -341,6 +341,23 @@ async def verify_citations(request: Request):
     body = await request.json()
     refs = [str(c) for c in body.get("citations") or []]
     return {"checks": await run_in_threadpool(_verify, refs)}
+
+
+@app.post("/api/manage/attach")
+async def attach_file(request: Request):
+    """Reads the text out of a training file attached in the Claude panel. The
+    file itself isn't kept; only its text goes to Claude with the next message."""
+    form = await request.form()
+    upload = form.get("file")
+    if not getattr(upload, "filename", None):
+        raise HTTPException(400, "Choose a file.")
+    if (upload.size or 0) > extract.MAX_FILE_BYTES:
+        return JSONResponse({"error": "That file is over 25 MB. Try a PDF export, or split it."}, status_code=400)
+    data = await upload.read()
+    try:
+        return await run_in_threadpool(extract.extract, upload.filename, data)
+    except extract.Unreadable as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
 
 
 @app.post("/api/manage/research")

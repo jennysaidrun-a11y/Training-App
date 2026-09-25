@@ -386,6 +386,52 @@
     const linkGo = document.getElementById("link-go");
     const history = [];
     let busy = false;
+    let attachment = null;       // {name, kind, text, parts, truncated} read from an attached file
+    const attached = document.getElementById("attached");
+    const attachInput = document.getElementById("attach-file");
+
+    function showAttachment(state, msg) {
+      attached.hidden = !state;
+      if (!state) return attached.replaceChildren();
+      if (state === "reading") return attached.replaceChildren(el("span", { class: "file-chip" }, el("span", { class: "dots" }, el("i"), el("i"), el("i")), ` Reading ${msg}…`));
+      if (state === "error") return attached.replaceChildren(el("span", { class: "file-chip bad" }, msg), el("button", { type: "button", class: "ghost small x", "aria-label": "Dismiss", onclick: () => showAttachment(null) }, "✕"));
+      const a = attachment;
+      const what = a.parts ? ` · ${a.parts} ${a.kind === "PowerPoint" ? "slide" : "page"}${a.parts === 1 ? "" : "s"}` : "";
+      attached.replaceChildren(el("span", { class: "file-chip" }, "📎 ", el("b", {}, a.name), what, a.truncated ? " (long: Claude sees the first part)" : ""),
+        el("button", { type: "button", class: "ghost small x", "aria-label": "Remove file", onclick: () => { attachment = null; showAttachment(null); } }, "✕"));
+    }
+    async function attach(file) {
+      if (!file || busy) return;
+      attachment = null;
+      showAttachment("reading", file.name);
+      const form = new FormData();
+      form.append("file", file);
+      try {
+        const res = await fetch("/api/manage/attach", { method: "POST", body: form });
+        const r = await res.json();
+        if (!res.ok) return showAttachment("error", r.error || r.detail || "That file couldn't be read.");
+        attachment = r;
+        showAttachment("ready");
+        input.placeholder = "Anything Claude should know? (or just press Send)";
+        input.focus();
+      } catch (e) {
+        showAttachment("error", "Couldn't reach the app. Check the connection and try again.");
+      }
+    }
+    attachInput.addEventListener("change", () => { attach(attachInput.files[0]); attachInput.value = ""; });
+    input.addEventListener("paste", (e) => {
+      const f = [...(e.clipboardData?.files || [])][0];
+      if (f) { e.preventDefault(); attach(f); }
+    });
+    const panel = document.getElementById("assist");
+    panel.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); panel.classList.add("dropping"); } });
+    panel.addEventListener("dragleave", (e) => { if (!panel.contains(e.relatedTarget)) panel.classList.remove("dropping"); });
+    panel.addEventListener("drop", (e) => {
+      if (!e.dataTransfer.files.length) return;
+      e.preventDefault();
+      panel.classList.remove("dropping");
+      attach(e.dataTransfer.files[0]);
+    });
 
     input.addEventListener("input", () => autosize(input));
     input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
@@ -431,12 +477,21 @@
     }
     async function ask(text) {
       text = (text || "").trim();
+      const file = attachment;
+      if (file && !text) text = "Turn this existing training into a lesson for our bakery.";
       if (!text || busy) return;
       busy = true;
       send.disabled = linkGo.disabled = true;
       document.getElementById("suggest")?.remove();
-      history.push({ role: "user", text });
-      bubble("user", text);
+      let sent = text;
+      if (file) {
+        sent += `\n\n<attached_file name="${file.name.replace(/"/g, "'")}" kind="${file.kind}">\n${file.text}\n</attached_file>`;
+        attachment = null;
+        showAttachment(null);
+        input.placeholder = "Ask Claude, or attach a training file…";
+      }
+      history.push({ role: "user", text: sent });
+      bubble("user", file ? el("span", { class: "file-chip in-msg" }, "📎 ", file.name) : null, text);
       input.value = ""; autosize(input);
       const wait = bubble("claude pending", el("span", { class: "dots" }, el("i"), el("i"), el("i")), " Researching and checking the rules. This can take a minute or two.");
       let r;
