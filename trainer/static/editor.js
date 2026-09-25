@@ -434,7 +434,8 @@
       if (state === "error") return attached.replaceChildren(el("span", { class: "file-chip bad" }, msg), el("button", { type: "button", class: "ghost small x", "aria-label": "Dismiss", onclick: () => showAttachment(null) }, "✕"));
       const a = attachment;
       const what = a.parts ? ` · ${a.parts} ${a.kind === "PowerPoint" ? "slide" : "page"}${a.parts === 1 ? "" : "s"}` : "";
-      attached.replaceChildren(el("span", { class: "file-chip" }, "📎 ", el("b", {}, a.name), what, a.truncated ? " (long: Claude sees the first part)" : ""),
+      const pics = a.pictures ? ` · ${a.pictures} picture${a.pictures === 1 ? "" : "s"}` : "";
+      attached.replaceChildren(el("span", { class: "file-chip" }, "📎 ", el("b", {}, a.name), what, pics, a.truncated ? " (long: Claude sees the first part)" : ""),
         el("button", { type: "button", class: "ghost small x", "aria-label": "Remove file", onclick: () => { attachment = null; showAttachment(null); } }, "✕"));
     }
     async function attach(file) {
@@ -492,6 +493,7 @@
       for (const c of resultChecks || []) checks[c.ref] = c;
       const reads = lesson.slides.filter((s) => s.type === "reading").length;
       const qs = lesson.slides.length - reads;
+      const pics = lesson.slides.filter((s) => s.image).length;
       const use = el("button", { type: "button", class: "small" }, "Use this draft");
       use.addEventListener("click", () => {
         if (hasContent() && !confirm("Replace the slides in the editor with Claude's draft? (The video stays.)")) return;
@@ -510,7 +512,7 @@
       look.addEventListener("click", () => previewDeck(lesson, use));
       return el("div", { class: "draft" },
         el("b", {}, lesson.title || "Draft lesson"),
-        el("div", { class: "muted" }, `${reads} reading${reads === 1 ? "" : "s"}, ${qs} question${qs === 1 ? "" : "s"}`),
+        el("div", { class: "muted" }, `${reads} reading${reads === 1 ? "" : "s"}, ${qs} question${qs === 1 ? "" : "s"}${pics ? `, ${pics} picture${pics === 1 ? "" : "s"}` : ""}`),
         lesson.citations.length ? el("div", { class: "draft-cites" }, ...lesson.citations.map((ref) => el("span", { class: "cite-chip" }, badge(ref), " ", ref))) : el("div", { class: "pill warn" }, "No rules cited yet"),
         el("div", { class: "draft-actions" }, look, use));
     }
@@ -570,7 +572,8 @@
             el("p", { class: "muted" }, `${reads} part${reads === 1 ? "" : "s"}, ${lesson.slides.length - reads} question${lesson.slides.length - reads === 1 ? "" : "s"} · for ${lesson.roles.map((r) => r === "all" ? "everyone" : (ROLES.find((x) => x.id === r) || { name: r }).name).join(", ")}`)));
         } else if (pg.kind === "reading") {
           const part = lesson.slides.slice(0, lesson.slides.indexOf(pg.sl) + 1).filter((x) => x.type === "reading").length;
-          body.replaceChildren(el("p", { class: "eyebrow" }, `Part ${part} of ${reads}`), el("h1", {}, pg.sl.heading), readingBox(pg.sl.text));
+          body.replaceChildren(el("p", { class: "eyebrow" }, `Part ${part} of ${reads}`), el("h1", {}, pg.sl.heading),
+            pg.sl.image ? el("img", { class: "slide-img", src: pg.sl.image, alt: "" }) : null, readingBox(pg.sl.text));
         } else if (pg.kind === "question") {
           const sl = pg.sl;
           const verdict = el("div", { class: "pv-verdict", hidden: true });

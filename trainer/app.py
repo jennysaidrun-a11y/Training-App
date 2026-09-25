@@ -2,6 +2,7 @@
 import datetime as dt
 import os
 import re
+import secrets
 import shutil
 import threading
 import time
@@ -389,7 +390,8 @@ async def verify_citations(request: Request):
 @app.post("/api/manage/attach")
 async def attach_file(request: Request):
     """Reads the text out of a training file attached in the Claude panel. The
-    file itself isn't kept; only its text goes to Claude with the next message."""
+    file itself isn't kept; its text goes to Claude with the next message, and its
+    pictures are saved as uploads Claude can put on slides (swept if unused)."""
     form = await request.form()
     upload = form.get("file")
     if not getattr(upload, "filename", None):
@@ -398,7 +400,7 @@ async def attach_file(request: Request):
         return JSONResponse({"error": "That file is over 25 MB. Try a PDF export, or split it."}, status_code=400)
     data = await upload.read()
     try:
-        return await run_in_threadpool(extract.extract, upload.filename, data)
+        return await run_in_threadpool(extract.extract, upload.filename, data, _save_picture)
     except extract.Unreadable as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
@@ -422,7 +424,70 @@ async def research_chat(request: Request):
         return JSONResponse({"error": f"Claude couldn't finish that ({e.__class__.__name__}). Try again in a minute."}, status_code=502)
     if result.get("lesson"):
         result["checks"] = await run_in_threadpool(_verify, result["lesson"]["citations"])
+        if await run_in_threadpool(_settle_pictures, result["lesson"]):
+            result["reply"] = (result.get("reply") or "") + "\n\n(A picture Claude picked couldn't be checked as free to use, so it's left off.)"
     return result
+
+
+COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+FREE_LICENSE = re.compile(r"^(public domain|pd\b|cc0|cc by(-sa)? \d)", re.I)
+PICTURE_MIME = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}
+WEB_HEADERS = {"User-Agent": "bakery-training-app (lesson pictures; https://github.com/jennysaidrun-a11y/Training-App)"}
+
+
+def _commons_picture(page, get=None):
+    """A Wikimedia Commons photo Claude picked: the app itself reads its license from
+    Commons, keeps it only if it's public domain, CC0, CC BY or CC BY-SA, and saves a
+    copy. Returns (/media/ link, source for the credits) or None."""
+    import html
+    from urllib.parse import unquote
+
+    import requests
+    get = get or requests.get
+    title = unquote(page.split("/wiki/", 1)[1]).replace("_", " ")
+    r = get(COMMONS_API, params={"action": "query", "titles": title, "prop": "imageinfo", "iiprop": "url|mime|extmetadata",
+                                 "iiurlwidth": 1000, "format": "json", "formatversion": 2}, headers=WEB_HEADERS, timeout=20)
+    info = (r.json()["query"]["pages"][0].get("imageinfo") or [None])[0]
+    meta = (info or {}).get("extmetadata", {})
+    license_name = meta.get("LicenseShortName", {}).get("value", "").strip()
+    if not info or info.get("mime") not in PICTURE_MIME or not FREE_LICENSE.match(license_name) or re.search(r"\b(nc|nd)\b", license_name, re.I):
+        return None
+    img = get(info.get("thumburl") or info["url"], headers=WEB_HEADERS, timeout=30)
+    if img.status_code != 200 or not 0 < len(img.content) <= MAX_IMAGE_BYTES:
+        return None
+    name = f"commons-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}{PICTURE_MIME[info['mime']]}"
+    (media_dir() / name).write_bytes(img.content)
+    artist = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", meta.get("Artist", {}).get("value", "")))).strip()
+    credit = f"Photo: {title.removeprefix('File:').rsplit('.', 1)[0]}" + (f", by {artist[:80]}" if artist else "") + f", {license_name}"
+    return f"/media/{name}", {"title": credit, "url": page}
+
+
+def _settle_pictures(lesson, get=None):
+    """Claude's picture links must be real: attached-file pictures that exist, or
+    Commons photos with a free license (saved here, credited in sources). Anything
+    else is taken off the slide. Returns how many were taken off."""
+    dropped = 0
+    for s in lesson.get("slides", []):
+        link = s.get("image")
+        if not link:
+            continue
+        if link.startswith("/media/"):
+            name = link.rsplit("/", 1)[1]
+            ok = bool(MEDIA_NAME.match(name)) and (media_dir() / name).is_file()
+        else:
+            try:
+                found = _commons_picture(link, get)
+            except Exception as e:  # Commons unreachable or an odd answer
+                print(f"Picture check failed for {link}: {e.__class__.__name__}")
+                found = None
+            ok = bool(found)
+            if found:
+                s["image"], source = found
+                lesson["sources"] = [x for x in lesson.get("sources", []) if x.get("url") != link] + [source]
+        if not ok:
+            s["image"] = ""
+            dropped += 1
+    return dropped
 
 
 @app.get("/media/{name}")
@@ -440,6 +505,12 @@ def _save_upload(upload, lesson_id):
     name = f"{content.slugify(lesson_id)}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
     with open(media_dir() / name, "wb") as out:
         shutil.copyfileobj(upload.file, out, 1024 * 1024)
+    return f"/media/{name}"
+
+
+def _save_picture(ext, data):
+    name = f"attached-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}{ext}"
+    (media_dir() / name).write_bytes(data)
     return f"/media/{name}"
 
 

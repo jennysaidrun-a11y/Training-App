@@ -11,6 +11,7 @@ Without either, the panel explains how to set one up.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -41,6 +42,14 @@ point, but write the lesson in your own words (don't copy it) and list the link 
 order and the plant-specific details (machines, steps, names of areas), fix anything the rules \
 don't support, and rewrite it as slides in the app's format. Mention in your reply anything you \
 dropped or changed and why.
+- Pictures: a reading slide can show one picture ("image"). The attached file's pictures appear \
+where they were as "[Picture: /media/...]" lines; put each useful one on the slide that covers the \
+same thing, using that exact link. Skip logos, decorations and pictures that repeat on every slide.
+- When a reading slide would be clearer with a photo (a machine, a guard, a label, a PPE item) and \
+the file gave none, you may pick one from Wikimedia Commons whose file page says public domain, CC0, \
+CC BY or CC BY-SA. Put its file page link (https://commons.wikimedia.org/wiki/File:...) in "image"; \
+the app checks the license itself, saves a copy and adds the photo credit to sources. Don't use \
+pictures from any other site, and never make up a link. Leave "image" '' when unsure.
 - Keep it to what the rule actually says; don't add requirements that aren't there.
 
 When you have a lesson (or an updated one), call propose_lesson with the whole lesson, then reply \
@@ -71,11 +80,13 @@ def lesson_tool(role_ids):
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["type", "heading", "text", "q", "choices", "answer", "why"],
+                        "required": ["type", "heading", "text", "image", "q", "choices", "answer", "why"],
                         "properties": {
                             "type": {"type": "string", "enum": ["reading", "question"]},
                             "heading": {"type": "string", "description": "Reading slides only; '' for questions."},
                             "text": {"type": "string", "description": "Reading slides only; '' for questions."},
+                            "image": {"type": "string", "description": "Reading slides only: a /media/ picture link from "
+                                      "the attached file, or a commons.wikimedia.org/wiki/File: page; '' for none."},
                             "q": {"type": "string", "description": "Question slides only; '' for readings."},
                             "choices": {"type": "array", "items": {"type": "string"}, "description": "Question slides only; [] for readings."},
                             "answer": {"type": "integer", "description": "Index of the right choice; 0 for readings."},
@@ -126,11 +137,17 @@ class NotSignedIn(RuntimeError):
     pass
 
 
+PICTURE_LINK = re.compile(r"^(/media/[a-z0-9-]+\.(jpg|jpeg|png|gif|webp)"
+                          r"|https://commons\.wikimedia\.org/wiki/File:[^\s\"'<>/?#]+)$")
+
+
 def _clean_slides(slides):
     out = []
     for s in slides:
         if s.get("type") == "reading":
-            out.append({"type": "reading", "heading": s.get("heading", "").strip(), "text": s.get("text", "").strip()})
+            image = str(s.get("image") or "").strip()
+            out.append({"type": "reading", "heading": s.get("heading", "").strip(), "text": s.get("text", "").strip(),
+                        "image": image if PICTURE_LINK.match(image) else ""})
         elif s.get("type") == "question":
             choices = [c for c in s.get("choices", []) if c.strip()]
             answer = s.get("answer", 0)

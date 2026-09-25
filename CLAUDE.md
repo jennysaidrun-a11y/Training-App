@@ -25,6 +25,8 @@ Cal/OSHA (8 CCR, Title 8) apply.
   Verify a new citation exists at the source (eCFR / dir.ca.gov) before adding it.
 - Videos: only add ones the user picks or that are clearly public domain / openly
   licensed; don't guess.
+- Pictures: from the user's own files, or Wikimedia Commons photos whose license the app itself
+  checks (public domain, CC0, CC BY, CC BY-SA; `app._settle_pictures`), saved to `data/media` and credited in sources.
 - The user never commits, pushes or rebuilds by hand: `update.sh` (started detached
   from the Codespace's postStartCommand) auto-saves `content/` and pulls new code every minute. Keep it working.
 - Run `python -m pytest` before committing.

@@ -33,7 +33,9 @@ the app, then restarts. Nothing to push, pull or rebuild.
     Not found. "Use this draft" puts it in the editor; nothing is saved until you
     press Save. It uses your own Claude account through Claude Code, which the
     Codespace installs by itself. You can also attach a PowerPoint, Word or PDF of an
-    existing training (📎 in the chat); its text goes to Claude, the file isn't kept; sign in once (the panel shows the steps: run
+    existing training (📎 in the chat); its text goes to Claude and its pictures can go
+    on the slides (the file itself isn't kept). Claude can also add free-to-use photos from
+    Wikimedia Commons; the app checks each license and credits it under Sources; sign in once (the panel shows the steps: run
     `claude` in a Codespace terminal). An `ANTHROPIC_API_KEY` secret works instead.
 - **Rules page** (`/rules`): every cited rule, when it last changed, and recent or
   proposed federal rules for the same parts.

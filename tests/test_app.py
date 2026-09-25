@@ -1,6 +1,7 @@
 import datetime as dt
 import json
 import os
+import re
 import shutil
 import time
 
@@ -498,3 +499,69 @@ def test_static_links_are_versioned(client):
     v = templates.env.globals["asset_v"]
     assert f'/static/style.css?v={v}' in client.get("/manage").text
     assert f'/static/editor.js?v={v}' in client.get("/manage/lesson/new").text
+
+
+def test_attached_pictures_go_to_claude_and_onto_slides(client, monkeypatch):
+    photo = b"\x89PNG\r\n\x1a\n" + b"p" * 5000
+    rels = ('<Relationships><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+            'Target="../media/image1.png"/><Relationship Id="rId3" Type="x/image" Target="../media/tiny.png"/></Relationships>')
+    slide = '<p:sld><a:p><a:r><a:t>Mixer guard</a:t></a:r></a:p><p:pic><a:blip r:embed="rId2"/></p:pic><a:blip r:embed="rId3"/></p:sld>'
+    deck = _zip({"ppt/slides/slide1.xml": slide, "ppt/slides/_rels/slide1.xml.rels": rels,
+                 "ppt/media/image1.png": photo, "ppt/media/tiny.png": b"\x89PNG" + b"t" * 50})
+    r = client.post("/api/manage/attach", files={"file": ("guards.pptx", deck)}).json()
+    assert r["pictures"] == 1                                           # the tiny icon is skipped
+    link = re.search(r"\[Picture: (/media/attached-[a-z0-9-]+\.png)\]", r["text"]).group(1)
+    assert r["text"].index("Mixer guard") < r["text"].index(link)
+    assert client.get(link).content == photo
+
+    doc = _zip({"word/document.xml": '<w:p><w:r><w:t>Wear gloves</w:t></w:r><w:drawing><a:blip r:embed="rId9"/></w:drawing></w:p>',
+                "word/_rels/document.xml.rels": '<Relationships><Relationship Id="rId9" Type="a/image" Target="media/glove.jpeg"/></Relationships>',
+                "word/media/glove.jpeg": b"\xff\xd8" + b"g" * 4000})
+    r = client.post("/api/manage/attach", files={"file": ("ppe.docx", doc)}).json()
+    assert r["pictures"] == 1 and re.fullmatch(r"Wear gloves\n\[Picture: /media/attached-[a-z0-9-]+\.jpeg\]", r["text"])
+
+    # Claude's draft keeps real picture links and loses made-up or broken ones.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    slides = [{"type": "reading", "heading": "Guards", "text": "Keep guards on.", "image": link},
+              {"type": "reading", "heading": "Other", "text": "x", "image": "https://evil.example/a.png"},
+              {"type": "reading", "heading": "Gone", "text": "x", "image": "/media/attached-nope.png"}]
+    lesson = research._finish({"title": "T", "summary": "S", "roles": ["all"], "slides": slides, "citations": [], "sources": []}, [])
+    assert [s["image"] for s in lesson["slides"]] == [link, "", "/media/attached-nope.png"]
+    monkeypatch.setattr(research, "run", lambda history, draft: {"reply": "Done.", "lesson": lesson, "searched": []})
+    out = client.post("/api/manage/research", json={"history": [{"role": "user", "text": "go"}]}).json()
+    assert [s["image"] for s in out["lesson"]["slides"]] == [link, "", ""] and "left off" in out["reply"]
+    assert "image" in research.lesson_tool([])["input_schema"]["properties"]["slides"]["items"]["required"]
+
+
+def test_commons_photo_license_is_checked_by_the_app(client):
+    from trainer import app as app_module
+    page = "https://commons.wikimedia.org/wiki/File:Forklift_tires.jpg"
+    assert research.PICTURE_LINK.match(page) and not research.PICTURE_LINK.match("https://upload.wikimedia.org.evil.com/x.jpg")
+    assert not research.PICTURE_LINK.match("https://example.com/wiki/File:x.jpg")
+
+    class R:
+        def __init__(self, data=None, content=b""):
+            self.status_code, self._data, self.content = 200, data, content
+
+        def json(self):
+            return self._data
+
+    def commons(license):
+        def get(url, params=None, **k):
+            if params:
+                assert params["titles"] == "File:Forklift tires.jpg"
+                meta = {"LicenseShortName": {"value": license}, "Artist": {"value": '<a href="x">S. John</a>'}}
+                return R({"query": {"pages": [{"imageinfo": [{"mime": "image/jpeg", "url": "https://upload.wikimedia.org/o.jpg",
+                                                               "thumburl": "https://upload.wikimedia.org/t.jpg", "extmetadata": meta}]}]}})
+            assert url == "https://upload.wikimedia.org/t.jpg"
+            return R(content=b"\xff\xd8jpeg")
+        return get
+
+    lesson = {"slides": [{"type": "reading", "image": page}], "sources": [{"title": "tires", "url": page}]}
+    assert app_module._settle_pictures(lesson, get=commons("CC BY-SA 3.0")) == 0
+    link = lesson["slides"][0]["image"]
+    assert re.fullmatch(r"/media/commons-[a-z0-9-]+\.jpg", link) and client.get(link).content == b"\xff\xd8jpeg"
+    assert lesson["sources"] == [{"title": "Photo: Forklift tires, by S. John, CC BY-SA 3.0", "url": page}]
+    for bad in ("CC BY-NC-SA 4.0", "All rights reserved", "CC BY-ND 4.0"):
+        lesson = {"slides": [{"type": "reading", "image": page}], "sources": []}
+        assert app_module._settle_pictures(lesson, get=commons(bad)) == 1 and lesson["slides"][0]["image"] == "", bad
