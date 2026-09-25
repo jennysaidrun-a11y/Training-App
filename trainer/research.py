@@ -99,8 +99,13 @@ def claude_command():
     found = shutil.which(os.environ.get("CLAUDE_COMMAND", "claude"))
     if found:
         return found
-    local = os.path.expanduser("~/.local/bin/claude")
-    return local if os.access(local, os.X_OK) else None
+    # Installed after the app started, so not on its PATH yet.
+    import glob
+    for path in [os.path.expanduser("~/.local/bin/claude"), os.path.expanduser("~/.claude/local/claude"),
+                 "/usr/local/bin/claude", *sorted(glob.glob("/home/*/.local/bin/claude"))]:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
 
 
 def mode():
