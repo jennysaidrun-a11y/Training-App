@@ -57,10 +57,16 @@ sync() {
 # your Claude account; see the panel for the one-time sign-in).
 export PATH="$HOME/.local/bin:$PATH"
 install_claude() {
-  command -v claude > /dev/null && return
-  echo "Installing Claude Code..."
-  if command -v npm > /dev/null; then npm install -g -s @anthropic-ai/claude-code
-  else curl -fsSL https://claude.ai/install.sh | bash; fi
+  if ! command -v claude > /dev/null; then
+    echo "Installing Claude Code..."
+    if command -v npm > /dev/null; then npm install -g -s @anthropic-ai/claude-code
+    else curl -fsSL https://claude.ai/install.sh | bash; fi
+  fi
+  # So typing `claude` works in every terminal, not only ones opened after install.
+  if [ -x "$HOME/.local/bin/claude" ] && [ ! -e /usr/local/bin/claude ]; then
+    sudo -n ln -sf "$HOME/.local/bin/claude" /usr/local/bin/claude 2>/dev/null || true
+  fi
+  command -v claude > /dev/null
 }
 
 pip install -q -r requirements.txt
@@ -70,6 +76,7 @@ start_app
 while true; do
   sleep 60
   sync
+  command -v claude > /dev/null || install_claude > /dev/null 2>&1
   # Restart the app if it stopped for any reason.
   pgrep -f "python -m trainer" > /dev/null || start_app
 done
