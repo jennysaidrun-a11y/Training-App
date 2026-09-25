@@ -152,9 +152,36 @@ def _with_draft(text, draft):
     return text
 
 
+FORMAT_RULES = """
+
+The lesson format the app accepts (it rejects anything else):
+- title: short. summary: one sentence. roles: ["all"] or role ids.
+- slides, in the order the worker sees them. A reading slide has a heading and text (blank line \
+between paragraphs; lines starting "1." "2." show as numbered steps). A question slide has q, 2-4 \
+choices, answer (index of the right choice) and why. At least one reading; every question comes \
+after the reading it checks.
+- citations: exact sections like "29 CFR 1910.147" or "8 CCR 3314". sources: title + https url.
+
+Finished lessons from this bakery, as slides. Match their tone, length and reading level:
+"""
+EXAMPLE_LESSONS = ("lockout-tagout", "allergens")
+
+
+def _examples():
+    from . import editor
+    lessons = content.load_lessons()
+    out = []
+    for lid in EXAMPLE_LESSONS:
+        if lid in lessons:
+            p = editor.editor_payload(lessons[lid])
+            out.append(json.dumps({k: p[k] for k in ("title", "summary", "roles", "slides", "citations", "sources")}, indent=1))
+    return "".join(f"<example_lesson>\n{e}\n</example_lesson>\n" for e in out)
+
+
 def _system():
     roles = content.load_roles()
-    return SYSTEM.format(roles=", ".join(f"{r['name']} ({r['id']})" for r in roles)), [r["id"] for r in roles]
+    system = SYSTEM.format(roles=", ".join(f"{r['name']} ({r['id']})" for r in roles)) + FORMAT_RULES + _examples()
+    return system, [r["id"] for r in roles]
 
 
 def _finish(proposed, role_ids):
