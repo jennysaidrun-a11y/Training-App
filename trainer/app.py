@@ -8,11 +8,12 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import content, db, rules
+from . import content, db, editor, research, rules
 
 HERE = content.ROOT / "trainer"
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -242,81 +243,35 @@ def mark_reviewed(lesson_id: str):
     return RedirectResponse("/manage#lessons", status_code=303)
 
 
-def _edit_form(request, lesson, errors=None, is_new=False, form=None):
-    form = form or {
-        "title": lesson.get("title", ""),
-        "summary": lesson.get("summary", ""),
-        "video": lesson.get("video", ""),
-        "roles": lesson.get("roles", ["all"]),
-        "sections": content.sections_to_text(lesson.get("sections", [])),
-        "questions": content.questions_to_text(lesson.get("questions", [])),
-        "citations": "\n".join(lesson.get("citations", [])),
-        "sources": "\n".join(f"{s['title']} | {s['url']}" for s in lesson.get("sources", [])),
-    }
-    return render(request, "edit.html", lesson=lesson, form=form, errors=errors or [], is_new=is_new,
-                  roles=content.load_roles())
+def _editor(request, lesson, is_new=False):
+    status = rules.load_status().get("rules", {})
+    return render(request, "edit.html", lesson=lesson, is_new=is_new, roles=content.load_roles(),
+                  data=editor.editor_payload(lesson), rule_status=status, research_ready=research.available())
 
 
 @app.get("/manage/lesson/new", response_class=HTMLResponse)
 def new_lesson(request: Request):
-    return _edit_form(request, {"id": "", "roles": ["all"]}, is_new=True)
+    return _editor(request, {"id": "", "roles": ["all"]}, is_new=True)
 
 
 @app.get("/manage/lesson/{lesson_id}", response_class=HTMLResponse)
 def edit_lesson(request: Request, lesson_id: str):
-    return _edit_form(request, _get_lesson(lesson_id))
+    return _editor(request, _get_lesson(lesson_id))
 
 
-@app.post("/manage/lesson/{lesson_id}")
+@app.post("/api/manage/lesson/{lesson_id}")
 async def save_lesson(request: Request, lesson_id: str):
-    form = await request.form()
-    roles = form.getlist("roles") or ["all"]
-    data = {k: form.get(k, "") for k in ("title", "summary", "video", "sections", "questions", "citations", "sources")}
-    data["roles"] = roles
-    upload = form.get("video_file")
-    if not getattr(upload, "filename", None):
-        upload = None
+    """Saves the slide editor's lesson (JSON). 'new' makes a new lesson.
+    Errors come back as {"errors": [{"slide": n | 0 | "rules" | None, "error": ...}]}."""
+    data = await request.json()
     is_new = lesson_id == "new"
     lessons = content.load_lessons()
     lesson = {"id": ""} if is_new else dict(_get_lesson(lesson_id))
 
-    errors = []
-    if not data["title"].strip():
-        errors.append("The lesson needs a title.")
-    sections = content.sections_from_text(data["sections"])
-    if not sections:
-        errors.append("Add at least one section (a line starting with ## and then its text).")
-    questions, q_errors = content.questions_from_text(data["questions"]) if data["questions"].strip() else ([], [])
-    errors += q_errors
-    for q in questions:
-        if q.get("after_section") is not None and not 0 <= q["after_section"] < len(sections):
-            errors.append(f"'{q.get('q', '')[:40]}' is set after section {q['after_section'] + 1}, but there are {len(sections)} sections.")
-    citations = [c.strip() for c in data["citations"].splitlines() if c.strip()]
-    for c in citations:
-        if not content.parse_citation(c):
-            errors.append(f"Citation '{c}' should look like '29 CFR 1910.147' or '8 CCR 3314'.")
-    sources = []
-    for line in data["sources"].splitlines():
-        if not line.strip():
-            continue
-        title, _, url = line.rpartition("|")
-        if not url.strip().startswith(("http://", "https://")):
-            errors.append(f"Source '{line.strip()}' should be 'Title | https://link'.")
-        else:
-            sources.append({"title": title.strip() or url.strip(), "url": url.strip()})
-    video = data["video"].strip()
-    if video and not (video.startswith(("http://", "https://")) or video.startswith("/media/")):
-        errors.append("The video link should start with https://")
-    if upload:
-        ext = os.path.splitext(upload.filename)[1].lower()
-        if ext not in VIDEO_TYPES:
-            errors.append(f"'{upload.filename}' isn't a video the app can play. Use an .mp4, .mov, .m4v or .webm file.")
-        elif (upload.size or 0) > MAX_VIDEO_BYTES:
-            errors.append("That video is over 2 GB. Please use a shorter or smaller copy.")
-        elif errors:
-            errors.append("Your video wasn't saved yet: choose it again after fixing the rest.")
+    sections, questions, errors = editor.from_slides(data.get("slides") or [])
+    errors = editor.check_meta(data) + errors
     if errors:
-        return _edit_form(request, lesson, errors=errors, is_new=is_new, form=data)
+        return JSONResponse({"errors": errors}, status_code=400)
 
     today = dt.date.today().isoformat()
     if is_new:
@@ -325,26 +280,86 @@ async def save_lesson(request: Request, lesson_id: str):
         while new_id in lessons:
             new_id, n = f"{base}-{n}", n + 1
         lesson = {"id": new_id, "version": today}
+    roles = [r for r in data.get("roles") or [] if r == "all" or r in content.role_names()] or ["all"]
     old_video = lesson.get("video") or ""
-    if upload:
-        video = _save_upload(upload, lesson["id"])
+    video = (data.get("video") or "").strip()
     lesson.update({
         "title": data["title"].strip(),
-        "summary": data["summary"].strip(),
+        "summary": (data.get("summary") or "").strip(),
         "video": video,
         "roles": roles,
         "sections": sections,
         "questions": questions,
-        "citations": [content.parse_citation(c)["ref"] for c in citations],
-        "sources": sources,
+        "citations": [content.parse_citation(c)["ref"] for c in data.get("citations") or []],
+        "sources": [{"title": (s.get("title") or "").strip() or s["url"].strip(), "url": s["url"].strip()}
+                    for s in data.get("sources") or []],
         "reviewed_on": content.now_stamp(),
     })
-    if form.get("retake"):
+    if data.get("retake"):
         lesson["version"] = today
     content.save_lesson(lesson)
+    saved = content.load_lessons()
     if old_video and old_video != video:
-        _remove_unused_upload(old_video, content.load_lessons())
-    return RedirectResponse(f"/manage?saved={lesson['id']}#lessons", status_code=303)
+        _remove_unused_upload(old_video, saved)
+    _sweep_media(saved)
+    return {"ok": True, "id": lesson["id"], "reviewed_on": lesson["reviewed_on"]}
+
+
+@app.post("/api/manage/video")
+async def upload_video(request: Request):
+    """Stores a video for the editor and returns its /media/ link. It becomes
+    part of a lesson when the lesson is saved."""
+    form = await request.form()
+    upload = form.get("video_file")
+    if not getattr(upload, "filename", None):
+        raise HTTPException(400, "Choose a video file.")
+    ext = os.path.splitext(upload.filename)[1].lower()
+    if ext not in VIDEO_TYPES:
+        return JSONResponse({"error": f"'{upload.filename}' isn't a video the app can play. Use an .mp4, .mov, .m4v or .webm file."}, status_code=400)
+    if (upload.size or 0) > MAX_VIDEO_BYTES:
+        return JSONResponse({"error": "That video is over 2 GB. Please use a shorter or smaller copy."}, status_code=400)
+    return {"video": _save_upload(upload, str(form.get("lesson") or "lesson"))}
+
+
+def _verify(citations):
+    """Looks each citation up at eCFR / DIR right now."""
+    out = []
+    for ref in citations[:12]:
+        c = content.parse_citation(ref)
+        if not c:
+            out.append({"ref": ref, "found": False, "error": "Not a citation the app can read."})
+            continue
+        entry = rules.check_rule(c, {})
+        out.append({"ref": c["ref"], "url": c["url"], "found": entry.get("found"),
+                    "name": entry.get("name", ""), "error": entry.get("last_error", "")})
+    return out
+
+
+@app.post("/api/manage/verify-citations")
+async def verify_citations(request: Request):
+    body = await request.json()
+    refs = [str(c) for c in body.get("citations") or []]
+    return {"checks": await run_in_threadpool(_verify, refs)}
+
+
+@app.post("/api/manage/research")
+async def research_chat(request: Request):
+    """One turn of the editor's Claude panel."""
+    if not research.available():
+        return JSONResponse({"error": "setup"}, status_code=503)
+    body = await request.json()
+    history = [{"role": t.get("role"), "text": str(t.get("text") or "")} for t in body.get("history") or []
+               if t.get("role") in ("user", "assistant")][-20:]
+    if not history or history[-1]["role"] != "user" or not history[-1]["text"].strip():
+        raise HTTPException(400, "Say what to research.")
+    try:
+        result = await run_in_threadpool(research.run, history, body.get("draft"))
+    except Exception as e:  # shown in the panel; the manager can try again
+        print(f"Research failed: {e.__class__.__name__}: {e}")
+        return JSONResponse({"error": f"Claude couldn't finish that ({e.__class__.__name__}). Try again in a minute."}, status_code=502)
+    if result.get("lesson"):
+        result["checks"] = await run_in_threadpool(_verify, result["lesson"]["citations"])
+    return result
 
 
 @app.get("/media/{name}")
@@ -372,6 +387,15 @@ def _remove_unused_upload(video, lessons):
     name = video.rsplit("/", 1)[1]
     if MEDIA_NAME.match(name):
         (media_dir() / name).unlink(missing_ok=True)
+
+
+def _sweep_media(lessons, older_than_hours=24):
+    """Deletes uploads nobody saved into a lesson (an editor closed without saving)."""
+    used = {l.get("video") for l in lessons.values()}
+    cutoff = time.time() - older_than_hours * 3600
+    for path in media_dir().iterdir():
+        if MEDIA_NAME.match(path.name) and f"/media/{path.name}" not in used and path.stat().st_mtime < cutoff:
+            path.unlink(missing_ok=True)
 
 
 @app.get("/health")

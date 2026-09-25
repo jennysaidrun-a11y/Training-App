@@ -2,6 +2,7 @@ import datetime as dt
 import json
 import os
 import shutil
+import time
 
 import pytest
 
@@ -9,7 +10,7 @@ os.environ["TRAINING_NO_RULES_LOOP"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from trainer import content, db, rules  # noqa: E402
+from trainer import content, db, editor, research, rules  # noqa: E402
 from trainer.app import app  # noqa: E402
 
 
@@ -149,33 +150,65 @@ def test_missing_rule_and_failed_check(env):
     assert s["changed_on"] == "2017-01-01" and s["found"] and "down" in s["last_error"]
 
 
-def test_manager_edits_a_lesson(client):
-    page = client.get("/manage/lesson/allergens").text
-    assert "Allergen cross-contact" in page
-    form = {
+def _deck(**over):
+    d = {
         "title": "Allergen cross-contact",
         "summary": "s",
         "video": "https://www.youtube.com/watch?v=abcdefghijk",
         "roles": ["mixing", "baking"],
-        "sections": "## One\nText one.\n\n## Two\nText two.",
-        "questions": "@ 0:30\nQ: First?\n* yes\n- no\nWhy: because\n\nafter section 2\nQ: Second?\n- a\n* b",
-        "citations": "21 cfr 117.35",
-        "sources": "FDA | https://www.fda.gov",
-        "retake": "on",
+        "slides": [
+            {"type": "question", "q": "First?", "choices": ["yes", "no"], "answer": 0, "why": "because", "at": 30},
+            {"type": "reading", "heading": "One", "text": "Text one."},
+            {"type": "reading", "heading": "Two", "text": "Text two."},
+            {"type": "question", "q": "Second?", "choices": ["a", "b"], "answer": 1, "why": "", "at": None},
+        ],
+        "citations": ["21 cfr 117.35"],
+        "sources": [{"title": "FDA", "url": "https://www.fda.gov"}],
+        "retake": True,
     }
-    r = client.post("/manage/lesson/allergens", data=form, follow_redirects=False)
-    assert r.status_code == 303
+    d.update(over)
+    return d
+
+
+def test_manager_edits_a_lesson(client):
+    page = client.get("/manage/lesson/allergens").text
+    assert "Allergen cross-contact" in page and "window.DECK" in page
+    r = client.post("/api/manage/lesson/allergens", json=_deck())
+    assert r.status_code == 200 and r.json()["id"] == "allergens"
     l = content.load_lessons()["allergens"]
     assert l["roles"] == ["mixing", "baking"] and l["questions"][0]["at"] == 30
+    assert "after_section" not in l["questions"][0]
     assert l["questions"][1]["after_section"] == 1 and l["citations"] == ["21 CFR 117.35"]
+    assert [s["heading"] for s in l["sections"]] == ["One", "Two"]
     assert l["version"] == dt.date.today().isoformat()
 
-    bad = dict(form, questions="Q: no answer\n- a\n- b", citations="some rule")
-    page = client.post("/manage/lesson/allergens", data=bad).text
-    assert "Nothing was saved" in page and "mark the right answer" in page and "some rule" in page
+    bad = _deck(slides=[{"type": "question", "q": "", "choices": ["a"], "answer": 3, "at": None}], citations=["some rule"], title="")
+    r = client.post("/api/manage/lesson/allergens", json=bad)
+    assert r.status_code == 400
+    errors = r.json()["errors"]
+    by_slide = {e["slide"] for e in errors}
+    assert {0, 1, "rules", None} <= by_slide
+    assert any("some rule" in e["error"] for e in errors)
+    assert content.load_lessons()["allergens"]["title"] == "Allergen cross-contact"  # nothing saved
 
-    r = client.post("/manage/lesson/new", data=dict(form, title="Brand new lesson"), follow_redirects=False)
-    assert r.status_code == 303 and "brand-new-lesson" in content.load_lessons()
+    r = client.post("/api/manage/lesson/new", json=_deck(title="Brand new lesson"))
+    assert r.json()["id"] == "brand-new-lesson" and "brand-new-lesson" in content.load_lessons()
+
+
+def test_slides_round_trip_every_lesson():
+    for lid, lesson in content.load_lessons().items():
+        slides = editor.to_slides(lesson)
+        sections, questions, errors = editor.from_slides(slides)
+        assert not errors, (lid, errors)
+        assert sections == [{"heading": s["heading"], "text": s["text"].strip() + "\n"} for s in lesson["sections"]], lid
+        assert [(q["q"], q["choices"], q["answer"], q.get("at")) for q in questions] == \
+               [(q["q"], q["choices"], q["answer"], q.get("at")) for q in lesson["questions"]], lid
+        last = len(sections) - 1
+        for want, got in zip(lesson["questions"], questions):
+            if want.get("after_section") is not None:
+                assert got["after_section"] == want["after_section"], (lid, want["q"])
+            elif want.get("at") is None:
+                assert got["after_section"] == last, (lid, want["q"])   # end questions follow the last reading
 
 
 def test_pages_render(client):
@@ -195,45 +228,137 @@ def test_status_file_is_valid_json():
 
 
 def test_video_upload_plays_and_replaces(client, env):
-    base = {
-        "title": "Allergen cross-contact",
-        "sections": "## One\nText one.",
-        "questions": "@ 0:01\nQ: First?\n* yes\n- no",
-        "citations": "21 CFR 117.35",
-        "video": "",
-    }
     clip = b"\x00\x00\x00\x18ftypmp42" + b"x" * 5000
-    r = client.post("/manage/lesson/allergens", data=base,
-                    files={"video_file": ("Floor clip.MP4", clip, "video/mp4")}, follow_redirects=False)
-    assert r.status_code == 303
-    video = content.load_lessons()["allergens"]["video"]
+    r = client.post("/api/manage/video", data={"lesson": "allergens"}, files={"video_file": ("Floor clip.MP4", clip, "video/mp4")})
+    assert r.status_code == 200
+    video = r.json()["video"]
     assert video.startswith("/media/allergens-") and video.endswith(".mp4")
+    assert client.post("/api/manage/lesson/allergens", json=_deck(video=video)).status_code == 200
+    assert content.load_lessons()["allergens"]["video"] == video
 
     full = client.get(video)
     assert full.status_code == 200 and full.content == clip and full.headers["content-type"] == "video/mp4"
     part = client.get(video, headers={"Range": "bytes=0-99"})
     assert part.status_code == 206 and len(part.content) == 100  # seeking works
-    assert "<video" in client.get("/manage/lesson/allergens").text
 
     # Replacing the video removes the old file.
-    r = client.post("/manage/lesson/allergens", data=dict(base, video=video),
-                    files={"video_file": ("second.webm", b"webm" * 100, "video/webm")}, follow_redirects=False)
-    assert r.status_code == 303
-    new = content.load_lessons()["allergens"]["video"]
+    time.sleep(1.1)
+    new = client.post("/api/manage/video", data={"lesson": "allergens"}, files={"video_file": ("second.webm", b"webm" * 100, "video/webm")}).json()["video"]
+    client.post("/api/manage/lesson/allergens", json=_deck(video=new))
     assert new != video and new.endswith(".webm")
     assert client.get(video).status_code == 404
 
-    # Clearing the link removes the video.
-    client.post("/manage/lesson/allergens", data=dict(base, video=""), follow_redirects=False)
+    # Clearing the video removes it.
+    client.post("/api/manage/lesson/allergens", json=_deck(video=""))
     assert content.load_lessons()["allergens"]["video"] == ""
     assert client.get(new).status_code == 404
 
 
+def test_unsaved_uploads_are_swept(client, env):
+    from trainer import app as app_module
+    stale = app_module.media_dir() / "abandoned-20200101000000.mp4"
+    stale.write_bytes(b"x")
+    os.utime(stale, (0, 0))
+    fresh = app_module.media_dir() / "in-progress-20990101000000.mp4"
+    fresh.write_bytes(b"x")
+    client.post("/api/manage/lesson/allergens", json=_deck(video=""))
+    assert not stale.exists() and fresh.exists()
+
+
 def test_video_upload_rejects_non_videos(client):
-    base = {"title": "T", "sections": "## One\nText.", "questions": "", "citations": "", "video": ""}
-    page = client.post("/manage/lesson/allergens", data=base, files={"video_file": ("notes.pdf", b"%PDF", "application/pdf")}).text
-    assert "Nothing was saved" in page and "notes.pdf" in page
-    page = client.post("/manage/lesson/allergens", data=dict(base, video="javascript:alert(1)")).text
-    assert "should start with https://" in page
+    r = client.post("/api/manage/video", files={"video_file": ("notes.pdf", b"%PDF", "application/pdf")})
+    assert r.status_code == 400 and "notes.pdf" in r.json()["error"]
+    r = client.post("/api/manage/lesson/allergens", json=_deck(video="javascript:alert(1)"))
+    assert r.status_code == 400 and "should start with https://" in r.text
     for bad in ["../training.db", "x.exe", "a.mp4.exe"]:
         assert client.get(f"/media/{bad}").status_code == 404
+
+
+# ---- Claude panel (the API is stubbed; no key or network needed) --------------
+
+class _Block:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+class _Stream:
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def get_final_message(self):
+        return self.msg
+
+
+class _FakeClient:
+    """Replays canned responses and remembers what was sent."""
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+        self.beta = self
+        self.messages = self
+
+    def stream(self, **kw):
+        self.calls.append(kw)
+        return _Stream(self.responses.pop(0))
+
+
+DRAFT = {
+    "title": "Forklift checks", "summary": "Check the truck before each shift.", "roles": ["packaging", "chefs"],
+    "slides": [
+        {"type": "reading", "heading": "Before you drive", "text": "Check the forks, horn and brakes.", "q": "", "choices": [], "answer": 0, "why": ""},
+        {"type": "question", "heading": "", "text": "", "q": "When?", "choices": ["Each shift", "Weekly", " "], "answer": 0, "why": "The rule says so."},
+    ],
+    "citations": ["29 CFR 1910.178", "OSHA forklift rule"],
+    "sources": [{"title": "OSHA", "url": "https://www.osha.gov/powered-industrial-trucks"}, {"title": "bad", "url": "javascript:x"}],
+}
+
+
+def test_research_turns_claude_draft_into_slides(env):
+    fake = _FakeClient([
+        _Block(stop_reason="pause_turn", content=[_Block(type="server_tool_use", id="s1"),
+                                                   _Block(type="web_fetch_tool_result", content=_Block(url="https://www.osha.gov/x"))]),
+        _Block(stop_reason="tool_use", content=[_Block(type="tool_use", id="t1", name="propose_lesson", input=DRAFT)]),
+        _Block(stop_reason="end_turn", content=[_Block(type="text", text="Drafted a forklift lesson. Add your plant's checklist.")]),
+    ])
+    out = research.run([{"role": "user", "text": "Forklift pre-shift checks"}],
+                       {"title": "Old", "slides": [{"type": "reading", "heading": "h", "text": "t"}]}, client=fake)
+    assert out["reply"].startswith("Drafted a forklift lesson")
+    assert out["searched"] == ["https://www.osha.gov/x"]
+    l = out["lesson"]
+    assert l["roles"] == ["packaging"]                         # unknown role dropped
+    assert l["citations"] == ["29 CFR 1910.178"]               # unparseable citation dropped
+    assert [s["url"] for s in l["sources"]] == ["https://www.osha.gov/powered-industrial-trucks"]
+    assert l["slides"][1]["choices"] == ["Each shift", "Weekly"]
+    assert not editor.from_slides(l["slides"])[2]              # the draft is a valid deck
+    first = fake.calls[0]
+    assert "<current_draft>" in first["messages"][0]["content"] and first["model"] == research.MODEL
+    assert {t["name"] for t in first["tools"]} == {"web_search", "web_fetch", "propose_lesson"}
+    assert len(fake.calls) == 3 and fake.calls[2]["messages"][-1]["content"][0]["type"] == "tool_result"
+
+
+def test_research_api(client, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    assert client.post("/api/manage/research", json={"history": [{"role": "user", "text": "hi"}]}).status_code == 503
+    assert "ANTHROPIC_API_KEY" in client.get("/manage/lesson/new").text   # setup steps shown
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    seen = {}
+
+    def fake_run(history, draft):
+        seen["history"] = history
+        return {"reply": "ok", "lesson": {"citations": ["29 CFR 1910.178"], "slides": []}, "searched": []}
+
+    monkeypatch.setattr(research, "run", fake_run)
+    monkeypatch.setattr(rules, "check_rule", lambda c, old, get=None: {"found": True, "name": "Powered industrial trucks."})
+    r = client.post("/api/manage/research", json={"history": [{"role": "user", "text": "forklifts"}], "draft": None}).json()
+    assert r["checks"] == [{"ref": "29 CFR 1910.178", "url": "https://www.ecfr.gov/current/title-29/section-1910.178",
+                            "found": True, "name": "Powered industrial trucks.", "error": ""}]
+    assert seen["history"] == [{"role": "user", "text": "forklifts"}]
+    assert "Research with Claude" in client.get("/manage/lesson/new").text

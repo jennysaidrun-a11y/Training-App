@@ -1,99 +1,78 @@
 {% extends "base.html" %}
 {% from "icons.html" import icon %}
-{% block title %}Edit lesson · Bakery Training{% endblock %}
-{% block main_class %}narrow{% endblock %}
+{% block title %}{{ "New lesson" if is_new else "Edit: " ~ lesson.title }} · Bakery Training{% endblock %}
+{% block body_class %}editing{% endblock %}
+{% block main_class %}studio{% endblock %}
 {% block body %}
-<p><a href="/manage#lessons">← Manager</a></p>
-<h1>{{ "New lesson" if is_new else lesson.title }}</h1>
-{% if errors %}<div class="note bad"><strong>Nothing was saved yet. Please fix:</strong><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
-<form method="post" action="/manage/lesson/{{ 'new' if is_new else lesson.id }}" class="form" enctype="multipart/form-data" id="lesson-form">
-  <label class="field"><span class="lbl">Title</span><input name="title" value="{{ form.title }}" required></label>
-  <label class="field"><span class="lbl">One-line summary</span><input name="summary" value="{{ form.summary }}"></label>
-  <div class="field" style="margin-bottom:18px">
-    <span class="lbl">Who takes it</span>
-    <div class="chips">
-      <label class="chip"><input type="checkbox" name="roles" value="all" {% if 'all' in form.roles %}checked{% endif %}><span>Everyone</span></label>
-      {% for r in roles %}<label class="chip"><input type="checkbox" name="roles" value="{{ r.id }}" {% if r.id in form.roles %}checked{% endif %}><span>{{ r.name }}</span></label>{% endfor %}
+<div class="studio-bar">
+  <a href="/manage#lessons" class="back">← Manager</a>
+  <h1 id="deck-title">{{ "New lesson" if is_new else lesson.title }}</h1>
+  <span class="grow"></span>
+  {% if not is_new %}<a class="btn ghost small" href="/lesson/{{ lesson.id }}" target="_blank" rel="noopener">{{ icon("play") }} Preview</a>{% endif %}
+  <button type="button" class="small blue ask-toggle" id="ask-open">{{ icon("star") }} Ask Claude</button>
+</div>
+
+<div class="studio-grid">
+  <nav class="rail" id="rail" aria-label="Slides"></nav>
+
+  <section class="canvas-wrap">
+    <div class="errors note bad" id="errors" hidden></div>
+    <div class="canvas" id="canvas"></div>
+    <div class="save-bar">
+      {% if not is_new %}<label class="check"><input type="checkbox" id="retake"><span>Real change: everyone who passed takes it again</span></label>{% endif %}
+      <span class="muted" id="save-note"></span>
+      <button type="button" id="save-btn">Save lesson</button>
     </div>
-  </div>
-  <div class="field video-field">
-    <span class="lbl">Video</span>
-    <span class="help">Optional. Upload a video from this computer or phone, or paste a YouTube link. MP4 plays everywhere.
-      Tip for iPhones: Settings › Camera › Formats › Most Compatible, so the video plays on every screen.</span>
-    {% if form.video %}
-      {% if form.video.startswith("/media/") %}<video class="preview" src="{{ form.video }}" controls preload="metadata"></video>{% endif %}
+  </section>
+
+  <aside class="assist" id="assist" aria-label="Research with Claude">
+    <div class="assist-head">
+      <h2>{{ icon("star") }} Research with Claude</h2>
+      <button type="button" class="ghost small close-sheet" id="ask-close" aria-label="Close">{{ icon("x") }}</button>
+    </div>
+    {% if research_ready %}
+    <div class="assist-link">
+      <span class="lbl">Start from an existing training</span>
+      <div class="row">
+        <input id="link-url" type="url" placeholder="https://www.osha.gov/... or any training page">
+        <button type="button" class="small" id="link-go">Draft</button>
+      </div>
+      <p class="muted">Claude reads it, rewrites it as slides for your roles, and checks the rules it's based on.</p>
+    </div>
+    <div class="assist-or"><span>or research a topic</span></div>
+    <div class="chat" id="chat">
+      <div class="suggest" id="suggest">
+        <button type="button" class="chip-btn">Forklift pre-shift checks for our warehouse</button>
+        <button type="button" class="chip-btn">Allergen changeover on the packaging line</button>
+        <button type="button" class="chip-btn">Heat illness near the ovens (Cal/OSHA)</button>
+        <button type="button" class="chip-btn">Add two harder questions to this lesson</button>
+      </div>
+    </div>
+    <form class="chat-bar" id="chat-form">
+      <textarea id="chat-input" rows="1" placeholder="Ask Claude to research or change the lesson…"></textarea>
+      <button type="submit" class="small" id="chat-send" aria-label="Send">Send</button>
+    </form>
+    {% else %}
+    <div class="setup">
+      <p><b>Claude needs an API key before it can research.</b> It's a one-time setup:</p>
+      <ol>
+        <li>Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> (API keys, Create key).</li>
+        <li>On GitHub: your profile picture › Settings › Codespaces › Secrets › New secret. Name it <code>ANTHROPIC_API_KEY</code>, paste the key, and give it access to the Training-App repository.</li>
+        <li>Restart the Codespace (or stop it and open it again). The panel turns on by itself.</li>
+      </ol>
+      <p class="muted">The key stays a secret in GitHub; it never goes in the code.</p>
+    </div>
     {% endif %}
-    <label class="upload">
-      <input type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" id="video-file">
-      <span class="btn blue">{{ icon("upload") }} {{ "Replace video" if form.video else "Upload a video" }}</span>
-      <span class="file-name muted" id="file-name">{{ "No new file chosen" }}</span>
-    </label>
-    <label class="field" style="margin:12px 0 0"><span class="help">or a link (clear it to remove the video)</span>
-      <input name="video" value="{{ form.video }}" placeholder="https://www.youtube.com/watch?v=...">
-    </label>
-  </div>
-  <label class="field"><span class="lbl">Lesson text</span>
-    <span class="help">Start each part with a line like <code>## Washing hands</code>, then its text.</span>
-    <textarea name="sections" rows="14">{{ form.sections }}</textarea>
-  </label>
-  <label class="field"><span class="lbl">Questions</span>
-    <span class="help">Leave a blank line between questions. <code>Q:</code> the question, <code>*</code> the right answer,
-    <code>-</code> a wrong answer, <code>Why:</code> the reason. Optional: <code>@ 1:30</code> pauses the video there to ask it;
-    <code>after section 2</code> asks it after that part. Questions with neither come at the end.</span>
-    <textarea name="questions" rows="16">{{ form.questions }}</textarea>
-  </label>
-  <label class="field"><span class="lbl">Rules it's based on</span>
-    <span class="help">One per line, like <code>29 CFR 1910.147</code> or <code>8 CCR 3314</code>. The app checks these every day and tells you when one changes.</span>
-    <textarea name="citations" rows="4">{{ form.citations }}</textarea>
-  </label>
-  <label class="field"><span class="lbl">Source links</span>
-    <span class="help">One per line: <code>Title | https://link</code></span>
-    <textarea name="sources" rows="3">{{ form.sources }}</textarea>
-  </label>
-  {% if not is_new %}<label class="check"><input type="checkbox" name="retake"><span>This is a real change: everyone who already passed it takes it again</span></label>{% endif %}
-  <div class="sticky-save">
-    <div class="meter light" id="upload-meter" hidden><span style="width:0%"></span></div>
-    <p class="muted" id="upload-status" hidden></p>
-    <button class="wide" id="save-btn">Save lesson</button>
-  </div>
-</form>
+  </aside>
+</div>
+<div class="sheet-shade" id="shade" hidden></div>
+
 <script>
-// Shows upload progress for big videos instead of a frozen page.
-(function () {
-  const form = document.getElementById("lesson-form");
-  const file = document.getElementById("video-file");
-  const nameEl = document.getElementById("file-name");
-  const meter = document.getElementById("upload-meter");
-  const status = document.getElementById("upload-status");
-  const btn = document.getElementById("save-btn");
-  file.addEventListener("change", () => {
-    const f = file.files[0];
-    nameEl.textContent = f ? `${f.name} (${(f.size / 1048576).toFixed(1)} MB)` : "No new file chosen";
-  });
-  form.addEventListener("submit", (e) => {
-    if (!file.files.length) return;       // no video: a normal save
-    e.preventDefault();
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", form.action);
-    meter.hidden = status.hidden = false;
-    btn.disabled = true;
-    btn.textContent = "Uploading…";
-    xhr.upload.onprogress = (ev) => {
-      if (!ev.lengthComputable) return;
-      const pct = Math.round((100 * ev.loaded) / ev.total);
-      meter.firstElementChild.style.width = pct + "%";
-      status.textContent = pct < 100 ? `Uploading the video: ${pct}%` : "Saving…";
-    };
-    xhr.onload = () => {
-      if (xhr.responseURL && !xhr.responseURL.includes("/manage/lesson/")) { location.href = xhr.responseURL; return; }
-      document.open(); document.write(xhr.responseText); document.close();   // the form again, with what to fix
-    };
-    xhr.onerror = () => {
-      btn.disabled = false; btn.textContent = "Save lesson";
-      status.textContent = "The upload didn't go through. Check the connection and try again.";
-    };
-    xhr.send(new FormData(form));
-  });
-})();
+  window.DECK = {{ data | tojson }};
+  window.DECK_NEW = {{ "true" if is_new else "false" }};
+  window.ROLES = {{ roles | tojson }};
+  window.RULE_STATUS = {{ rule_status | tojson }};
+  window.RESEARCH_READY = {{ "true" if research_ready else "false" }};
 </script>
+<script src="/static/editor.js"></script>
 {% endblock %}

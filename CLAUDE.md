@@ -8,6 +8,10 @@ Cal/OSHA (8 CCR, Title 8) apply.
 - `trainer/`: FastAPI app (`app.py`), lesson files (`content.py`), SQLite records
   (`db.py`), rules checker (`rules.py`), Jinja templates, `static/player.js` (the
   lesson player: video cue questions, section checkpoints, end quiz).
+- Lesson editor: slides (`editor.py` converts sections + questions to/from slides,
+  `static/editor.js`, JSON save at `/api/manage/lesson/<id>`). Its Claude panel is
+  `research.py` (web search/fetch + a strict `propose_lesson` tool; citations are then
+  checked live with `rules.check_rule`). Needs `ANTHROPIC_API_KEY`; tests stub it.
 - `content/lessons/*.yaml`: one lesson per file. `version` = last change that makes
   everyone retake it; `reviewed_on` = last time it was checked against its rules.
   Citations must parse (`29 CFR 1910.147`, `8 CCR 3314`).

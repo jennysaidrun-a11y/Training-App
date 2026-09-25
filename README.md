@@ -21,10 +21,17 @@ the app, then restarts. Nothing to push, pull or rebuild.
   - **People:** add people by role and see who still has lessons to do. Lessons
     come back as to-dos when you make a real change to them, and once a year as a
     refresher.
-  - **Lessons:** edit any lesson or add a new one in plain text: sections, questions,
-    a video (upload one from a computer or phone, or paste a YouTube link), the rules
-    it's based on, and source links. Questions marked with a time (`@ 1:30`) pause the
-    video there.
+  - **Lessons:** each lesson is edited as a deck of slides, in the order workers
+    see them: a cover (title, who takes it, video), reading slides, question slides
+    after the reading they check, and a last slide with the rules it's based on and
+    source links. Add, reorder (drag, or Earlier/Later) and delete slides. A question
+    can also pause the video at a time (like `1:30`).
+  - **Research with Claude** (the panel beside the slides): paste a link to an
+    existing training, or ask about a topic. Claude reads the official rules, drafts
+    the slides, and every rule it cites is looked up on eCFR / DIR and marked Found or
+    Not found. "Use this draft" puts it in the editor; nothing is saved until you
+    press Save. Needs an `ANTHROPIC_API_KEY` Codespaces secret (GitHub › Settings ›
+    Codespaces › Secrets, give it access to this repo, restart the Codespace).
 - **Rules page** (`/rules`): every cited rule, when it last changed, and recent or
   proposed federal rules for the same parts.
 
