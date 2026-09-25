@@ -18,6 +18,20 @@ from . import content, db, editor, extract, research, rules
 HERE = content.ROOT / "trainer"
 templates = Jinja2Templates(directory=HERE / "templates")
 
+
+def _asset_version():
+    """Changes whenever a static file changes, so browsers fetch the new copy
+    instead of an old cached one (?v=... on every /static link)."""
+    import hashlib
+    h = hashlib.sha1()
+    for path in sorted((HERE / "static").rglob("*")):
+        if path.is_file():
+            h.update(path.read_bytes())
+    return h.hexdigest()[:10]
+
+
+templates.env.globals["asset_v"] = _asset_version()
+
 # Uploaded videos live next to the database (never in git: the repo is public
 # and videos are big). Served with range requests so the player can seek.
 VIDEO_TYPES = {".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime"}

@@ -45,5 +45,5 @@
 <template id="icon-check">{{ icon("check") }}</template>
 <template id="icon-x">{{ icon("x") }}</template>
 <script>window.LESSON = {{ data | tojson }}; window.WORKER = {{ (person.id if person else none) | tojson }}; window.BACK = {{ back | tojson }};</script>
-<script src="/static/player.js"></script>
+<script src="/static/player.js?v={{ asset_v }}"></script>
 {% endblock %}

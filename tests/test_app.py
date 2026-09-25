@@ -491,3 +491,10 @@ def test_pictures_on_reading_slides(client, env):
     assert bad.status_code == 400 and "JPEG" in bad.json()["error"]
     deck["slides"][1]["image"] = "javascript:alert(1)"
     assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 400
+
+
+def test_static_links_are_versioned(client):
+    from trainer.app import templates
+    v = templates.env.globals["asset_v"]
+    assert f'/static/style.css?v={v}' in client.get("/manage").text
+    assert f'/static/editor.js?v={v}' in client.get("/manage/lesson/new").text

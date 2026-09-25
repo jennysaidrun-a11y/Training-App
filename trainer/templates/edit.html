@@ -84,5 +84,5 @@
   window.RULE_STATUS = {{ rule_status | tojson }};
   window.RESEARCH_READY = {{ "true" if research_ready else "false" }};
 </script>
-<script src="/static/editor.js"></script>
+<script src="/static/editor.js?v={{ asset_v }}"></script>
 {% endblock %}
