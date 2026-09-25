@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Rules · Bakery Training{% endblock %}
+{% block body %}
+<h1>Rules the lessons cite</h1>
+<p class="muted">Checked against eCFR (federal), the Federal Register and the California DIR Title 8 pages.
+Last check: {{ status.checked_at[:16].replace("T", " at ") ~ " UTC" if status.checked_at else "not yet" }}.</p>
+<table class="grid">
+  <thead><tr><th>Rule</th><th>Last change</th><th>Used in</th></tr></thead>
+  <tbody>
+  {% for ref, s in status.rules | dictsort %}
+  <tr>
+    <td><a href="{{ s.url }}" target="_blank" rel="noopener">{{ ref }}</a><br><span class="muted">{{ s.name }}</span>
+      {% if s.found == false %}<br><span class="badge updated">Not found at source</span>{% endif %}
+      {% if s.last_error %}<br><span class="muted">Last try failed: {{ s.last_error }}</span>{% endif %}</td>
+    <td>{{ s.changed_on or ("no change seen since " ~ (s.last_checked or "")) }}</td>
+    <td>{% for l in used_by.get(ref, []) %}<a href="/lesson/{{ l.id }}">{{ l.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<h2>Recent and proposed federal rules</h2>
+<p class="muted">From the Federal Register, for each part of the CFR the lessons cite. Heads-up only: not every rule here affects the bakery.</p>
+{% for part, fr in status.federal_register | dictsort %}
+<h3>{{ part }}</h3>
+<ul>
+  {% for d in fr.documents or [] %}
+  <li><a href="{{ d.html_url }}" target="_blank" rel="noopener">{{ d.title }}</a> <span class="muted">{{ d.type }}, {{ d.publication_date }}{% if d.effective_on %}, effective {{ d.effective_on }}{% endif %}</span></li>
+  {% else %}<li class="muted">Nothing yet.</li>{% endfor %}
+</ul>
+{% endfor %}
+{% endblock %}

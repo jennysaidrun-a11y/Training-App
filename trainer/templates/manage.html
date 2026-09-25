@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Manager · Bakery Training{% endblock %}
+{% block body %}
+<h1>Manager</h1>
+{% if request.query_params.get('saved') %}<p class="note">Saved. Everyone sees the new version now.</p>{% endif %}
+{% if request.query_params.get('checking') %}<p class="note">Checking the rules now. Refresh in a minute to see the results.</p>{% endif %}
+{% for name, err in broken %}<p class="note bad">The lesson file {{ name }} can't be read ({{ err }}). It's hidden until it's fixed.</p>{% endfor %}
+
+{% set needs = [] %}{% for lid, f in flagged.items() if f %}{% set _ = needs.append(lid) %}{% endfor %}
+<section id="rules">
+  <h2>Needs your review {% if needs %}<span class="badge updated">{{ needs|length }}</span>{% else %}<span class="badge done">All current</span>{% endif %}</h2>
+  <p class="muted">Rules last checked {{ status.checked_at[:16].replace("T", " at ") ~ " UTC" if status.checked_at else "not yet" }}. The app checks every day by itself.</p>
+  <form method="post" action="/manage/check"><button>Check the rules now</button></form>
+  {% for lid in needs %}{% set l = lessons[lid] %}
+  <div class="card flag">
+    <strong>{{ l.title }}</strong>
+    <ul>{% for f in flagged[lid] %}<li>{% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.ref }}</a>{% else %}{{ f.ref }}{% endif %}: {{ f.why }}</li>{% endfor %}</ul>
+    <div class="row">
+      <a class="button" href="/manage/lesson/{{ lid }}">Update the lesson</a>
+      <form method="post" action="/manage/lesson/{{ lid }}/reviewed"><button class="quiet">Still correct, mark reviewed</button></form>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+<section id="people">
+  <h2>People</h2>
+  <table class="grid">
+    <thead><tr><th>Name</th><th>Role</th><th>Progress</th><th>Still to do</th><th></th></tr></thead>
+    <tbody>
+    {% for p in progress %}
+    <tr>
+      <td><a href="/me/{{ p.person.id }}">{{ p.person.name }}</a></td>
+      <td>{{ role_names.get(p.person.role, p.person.role) }}</td>
+      <td>{{ p.done }} of {{ p.total }} done</td>
+      <td>{% for r in p.todo %}<span class="badge {{ r.state }}">{{ r.lesson.title }}{% if r.state != 'due' %} ({{ r.label }}){% endif %}</span> {% endfor %}</td>
+      <td><form method="post" action="/manage/workers/{{ p.person.id }}/active" onsubmit="return confirm('Remove {{ p.person.name }}? Their records are kept and you can bring them back.')"><input type="hidden" name="active" value="0"><button class="quiet">Remove</button></form></td>
+    </tr>
+    {% else %}<tr><td colspan="5" class="muted">No one yet. Add people below.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="/manage/workers" class="row">
+    <input name="name" placeholder="Name" required>
+    <select name="role">{% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}</select>
+    <button>Add person</button>
+  </form>
+  {% if inactive %}
+  <details><summary>Removed people ({{ inactive|length }})</summary>
+    {% for w in inactive %}<form method="post" action="/manage/workers/{{ w.id }}/active" class="row"><span>{{ w.name }}</span><input type="hidden" name="active" value="1"><button class="quiet">Bring back</button></form>{% endfor %}
+  </details>
+  {% endif %}
+</section>
+
+<section id="lessons">
+  <h2>Lessons</h2>
+  <a class="button" href="/manage/lesson/new">New lesson</a>
+  <table class="grid">
+    <thead><tr><th>Lesson</th><th>For</th><th>Video</th><th>Checked against rules</th></tr></thead>
+    <tbody>
+    {% for l in lessons.values() | sort(attribute='title') %}
+    <tr>
+      <td><a href="/manage/lesson/{{ l.id }}">{{ l.title }}</a> · <a href="/lesson/{{ l.id }}" class="muted">preview</a></td>
+      <td>{% if 'all' in l.roles %}Everyone{% else %}{% for r in l.roles %}{{ role_names.get(r, r) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</td>
+      <td>{{ "Video" if l.video else "No video" }}</td>
+      <td>Reviewed {{ l.reviewed_on[:10] }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

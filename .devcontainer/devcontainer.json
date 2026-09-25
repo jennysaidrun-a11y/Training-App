@@ -1,0 +1,21 @@
+{
+  "name": "Bakery Training",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+  "postCreateCommand": "pip install -q -r requirements.txt",
+  "postAttachCommand": {
+    "app": "bash update.sh"
+  },
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "Training app",
+      "onAutoForward": "openBrowserOnce",
+      "visibility": "private"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "settings": { "workbench.startupEditor": "none" }
+    }
+  }
+}

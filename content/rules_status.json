@@ -1,0 +1,267 @@
+{
+  "checked_at": "2026-09-25T18:33:07+00:00",
+  "federal_register": {
+    "21 CFR 117": {
+      "documents": [
+        {
+          "effective_on": null,
+          "html_url": "https://www.federalregister.gov/documents/2026/08/12/2026-16420/guide-to-minimize-biological-hazards-in-ready-to-eat-fresh-cut-produce-guidance-for-industry",
+          "publication_date": "2026-08-12",
+          "title": "Guide To Minimize Biological Hazards in Ready-to-Eat Fresh-Cut Produce; Guidance for Industry; Availability",
+          "type": "Rule"
+        },
+        {
+          "effective_on": null,
+          "html_url": "https://www.federalregister.gov/documents/2025/05/29/2025-09653/establishing-sanitation-programs-for-low-moisture-ready-to-eat-human-foods-and-taking-corrective",
+          "publication_date": "2025-05-29",
+          "title": "Establishing Sanitation Programs for Low-Moisture Ready-to-Eat Human Foods and Taking Corrective Actions Following a Pathogen Contamination Event: Draft Guidance for Industry; Reopening of Comment Period",
+          "type": "Proposed Rule"
+        },
+        {
+          "effective_on": null,
+          "html_url": "https://www.federalregister.gov/documents/2025/01/07/2024-31528/establishing-sanitation-programs-for-low-moisture-ready-to-eat-human-foods-and-taking-corrective",
+          "publication_date": "2025-01-07",
+          "title": "Establishing Sanitation Programs for Low-Moisture Ready-To-Eat Human Foods and Taking Corrective Actions Following a Pathogen Contamination Event; Draft Guidance for Industry; Availability",
+          "type": "Proposed Rule"
+        },
+        {
+          "effective_on": null,
+          "html_url": "https://www.federalregister.gov/documents/2024/05/31/2024-11987/hazard-analysis-and-risk-based-preventive-controls-for-human-food-draft-guidance-for-industry",
+          "publication_date": "2024-05-31",
+          "title": "Hazard Analysis and Risk-Based Preventive Controls for Human Food; Draft Guidance for Industry; Appendix 1; Extension of Comment Period",
+          "type": "Proposed Rule"
+        },
+        {
+          "effective_on": null,
+          "html_url": "https://www.federalregister.gov/documents/2024/02/02/2024-01911/hazard-analysis-and-risk-based-preventive-controls-for-human-food-draft-guidance-for-industry",
+          "publication_date": "2024-02-02",
+          "title": "Hazard Analysis and Risk-Based Preventive Controls for Human Food; Draft Guidance for Industry; Availability",
+          "type": "Proposed Rule"
+        }
+      ],
+      "last_checked": "2026-09-25"
+    },
+    "29 CFR 1910": {
+      "documents": [
+        {
+          "effective_on": null,
+          "html_url": "https://www.federalregister.gov/documents/2026/07/28/2026-15227/benzene",
+          "publication_date": "2026-07-28",
+          "title": "Benzene",
+          "type": "Proposed Rule"
+        },
+        {
+          "effective_on": null,
+          "html_url": "https://www.federalregister.gov/documents/2026/07/22/2026-14854/methylene-chloride",
+          "publication_date": "2026-07-22",
+          "title": "Methylene Chloride",
+          "type": "Proposed Rule"
+        },
+        {
+          "effective_on": null,
+          "html_url": "https://www.federalregister.gov/documents/2026/07/22/2026-14853/vinyl-chloride",
+          "publication_date": "2026-07-22",
+          "title": "Vinyl Chloride",
+          "type": "Proposed Rule"
+        },
+        {
+          "effective_on": null,
+          "html_url": "https://www.federalregister.gov/documents/2026/07/22/2026-14852/methylenedianiline",
+          "publication_date": "2026-07-22",
+          "title": "Methylenedianiline",
+          "type": "Proposed Rule"
+        },
+        {
+          "effective_on": null,
+          "html_url": "https://www.federalregister.gov/documents/2026/07/22/2026-14851/lead",
+          "publication_date": "2026-07-22",
+          "title": "Lead",
+          "type": "Proposed Rule"
+        }
+      ],
+      "last_checked": "2026-09-25"
+    }
+  },
+  "rules": {
+    "21 CFR 117.10": {
+      "changed_on": "2016-12-19",
+      "found": true,
+      "kind": "cfr",
+      "last_checked": "2026-09-25",
+      "name": "\u00a7 117.10 Personnel.",
+      "ref": "21 CFR 117.10",
+      "url": "https://www.ecfr.gov/current/title-21/section-117.10"
+    },
+    "21 CFR 117.35": {
+      "changed_on": "2016-12-19",
+      "found": true,
+      "kind": "cfr",
+      "last_checked": "2026-09-25",
+      "name": "\u00a7 117.35 Sanitary operations.",
+      "ref": "21 CFR 117.35",
+      "url": "https://www.ecfr.gov/current/title-21/section-117.35"
+    },
+    "21 CFR 117.4": {
+      "changed_on": "2016-12-19",
+      "found": true,
+      "kind": "cfr",
+      "last_checked": "2026-09-25",
+      "name": "\u00a7 117.4 Qualifications of individuals who manufacture, process, pack, or hold food.",
+      "ref": "21 CFR 117.4",
+      "url": "https://www.ecfr.gov/current/title-21/section-117.4"
+    },
+    "21 CFR 117.80": {
+      "changed_on": "2016-12-19",
+      "found": true,
+      "kind": "cfr",
+      "last_checked": "2026-09-25",
+      "name": "\u00a7 117.80 Processes and controls.",
+      "ref": "21 CFR 117.80",
+      "url": "https://www.ecfr.gov/current/title-21/section-117.80"
+    },
+    "29 CFR 1910.1200": {
+      "changed_on": "2026-02-13",
+      "found": true,
+      "kind": "cfr",
+      "last_checked": "2026-09-25",
+      "name": "\u00a7 1910.1200 Hazard communication.",
+      "ref": "29 CFR 1910.1200",
+      "url": "https://www.ecfr.gov/current/title-29/section-1910.1200"
+    },
+    "29 CFR 1910.132": {
+      "changed_on": "2017-01-18",
+      "found": true,
+      "kind": "cfr",
+      "last_checked": "2026-09-25",
+      "name": "\u00a7 1910.132 General requirements.",
+      "ref": "29 CFR 1910.132",
+      "url": "https://www.ecfr.gov/current/title-29/section-1910.132"
+    },
+    "29 CFR 1910.146": {
+      "changed_on": "2023-01-13",
+      "found": true,
+      "kind": "cfr",
+      "last_checked": "2026-09-25",
+      "name": "\u00a7 1910.146 Permit-required confined spaces.",
+      "ref": "29 CFR 1910.146",
+      "url": "https://www.ecfr.gov/current/title-29/section-1910.146"
+    },
+    "29 CFR 1910.147": {
+      "changed_on": "2017-01-01",
+      "found": true,
+      "kind": "cfr",
+      "last_checked": "2026-09-25",
+      "name": "\u00a7 1910.147 The control of hazardous energy (lockout/tagout).",
+      "ref": "29 CFR 1910.147",
+      "url": "https://www.ecfr.gov/current/title-29/section-1910.147"
+    },
+    "29 CFR 1910.178": {
+      "changed_on": "2017-01-18",
+      "found": true,
+      "kind": "cfr",
+      "last_checked": "2026-09-25",
+      "name": "\u00a7 1910.178 Powered industrial trucks.",
+      "ref": "29 CFR 1910.178",
+      "url": "https://www.ecfr.gov/current/title-29/section-1910.178"
+    },
+    "29 CFR 1910.212": {
+      "changed_on": "2017-01-01",
+      "found": true,
+      "kind": "cfr",
+      "last_checked": "2026-09-25",
+      "name": "\u00a7 1910.212 General requirements for all machines.",
+      "ref": "29 CFR 1910.212",
+      "url": "https://www.ecfr.gov/current/title-29/section-1910.212"
+    },
+    "29 CFR 1910.263": {
+      "changed_on": "2017-01-01",
+      "found": true,
+      "kind": "cfr",
+      "last_checked": "2026-09-25",
+      "name": "\u00a7 1910.263 Bakery equipment.",
+      "ref": "29 CFR 1910.263",
+      "url": "https://www.ecfr.gov/current/title-29/section-1910.263"
+    },
+    "8 CCR 3203": {
+      "fingerprint": "d302aadfa2a75ec1",
+      "found": true,
+      "kind": "ccr",
+      "last_checked": "2026-09-25",
+      "name": "Section 3203. Injury and Illness Prevention Program.",
+      "ref": "8 CCR 3203",
+      "url": "https://www.dir.ca.gov/title8/3203.html"
+    },
+    "8 CCR 3314": {
+      "fingerprint": "5372ee5c91df9055",
+      "found": true,
+      "kind": "ccr",
+      "last_checked": "2026-09-25",
+      "name": "Section 3314. The Control of Hazardous Energy for the Cleaning, Repairing, Servicing, Setting-Up, and Adjusting Operations of Prime Movers, Machinery and Equipment, Including Lockout/Tagout.",
+      "ref": "8 CCR 3314",
+      "url": "https://www.dir.ca.gov/title8/3314.html"
+    },
+    "8 CCR 3380": {
+      "fingerprint": "deb4c9b984c84980",
+      "found": true,
+      "kind": "ccr",
+      "last_checked": "2026-09-25",
+      "name": "Section 3380. Personal Protective Devices.",
+      "ref": "8 CCR 3380",
+      "url": "https://www.dir.ca.gov/title8/3380.html"
+    },
+    "8 CCR 3396": {
+      "fingerprint": "7b640a05035ae22e",
+      "found": true,
+      "kind": "ccr",
+      "last_checked": "2026-09-25",
+      "name": "Section 3396. Heat Illness Prevention in Indoor Places of Employment.",
+      "ref": "8 CCR 3396",
+      "url": "https://www.dir.ca.gov/title8/3396.html"
+    },
+    "8 CCR 3650": {
+      "fingerprint": "7f115f429834e674",
+      "found": true,
+      "kind": "ccr",
+      "last_checked": "2026-09-25",
+      "name": "Section 3650. Industrial Trucks. General.",
+      "ref": "8 CCR 3650",
+      "url": "https://www.dir.ca.gov/title8/3650.html"
+    },
+    "8 CCR 3668": {
+      "fingerprint": "f06d19d2d4d9c2bf",
+      "found": true,
+      "kind": "ccr",
+      "last_checked": "2026-09-25",
+      "name": "Section 3668. Powered Industrial Truck Operator Training.",
+      "ref": "8 CCR 3668",
+      "url": "https://www.dir.ca.gov/title8/3668.html"
+    },
+    "8 CCR 4184": {
+      "fingerprint": "51f4abdc3f112fd4",
+      "found": true,
+      "kind": "ccr",
+      "last_checked": "2026-09-25",
+      "name": "Section 4184. Guarding Required.",
+      "ref": "8 CCR 4184",
+      "url": "https://www.dir.ca.gov/title8/4184.html"
+    },
+    "8 CCR 5157": {
+      "fingerprint": "08b8dcd99e32204d",
+      "found": true,
+      "kind": "ccr",
+      "last_checked": "2026-09-25",
+      "name": "Section 5157. Permit-Required Confined Spaces.",
+      "ref": "8 CCR 5157",
+      "url": "https://www.dir.ca.gov/title8/5157.html"
+    },
+    "8 CCR 5194": {
+      "fingerprint": "53d12e22510593f5",
+      "found": true,
+      "kind": "ccr",
+      "last_checked": "2026-09-25",
+      "name": "Section 5194. Hazard Communication.",
+      "ref": "8 CCR 5194",
+      "url": "https://www.dir.ca.gov/title8/5194.html"
+    }
+  }
+}

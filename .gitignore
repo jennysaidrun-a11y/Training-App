@@ -1,0 +1,6 @@
+# Employee names and training records stay out of git (this repo is public).
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+app.log

@@ -1,0 +1,45 @@
+id: forklifts
+title: Forklifts and pallet jacks
+roles: [packaging]
+version: 2026-09-25   # bump when the content changes enough that everyone must retake it
+reviewed_on: 2026-09-25   # last time a manager checked it against the cited rules
+summary: Who may drive, the pre-shift check and the rules on the floor.
+video: ""
+sections:
+  - heading: Only trained, evaluated drivers
+    text: |
+      Only people who have been trained and evaluated may operate a powered
+      industrial truck (forklift, powered pallet jack). Each driver's
+      performance is evaluated at least once every three years, and sooner
+      after an accident, a near miss, unsafe driving, or a change in truck or
+      workplace.
+  - heading: Check it before you drive it
+    text: |
+      Examine the truck before using it each shift: brakes, horn, steering,
+      forks, chains, tires, lights, and leaks. A truck that isn't safe is taken
+      out of service and reported.
+  - heading: On the floor
+    text: |
+      Look in the direction of travel, slow down and sound the horn at blind
+      corners, keep loads low and stable, and never carry riders.
+questions:
+  - after_section: 0
+    q: How often must a driver's performance be evaluated?
+    choices:
+      - Only when hired
+      - At least every three years, and after incidents or changes
+    answer: 1
+    why: 29 CFR 1910.178(l) requires an evaluation at least every three years.
+  - q: The horn doesn't work on your pre-shift check. What do you do?
+    choices:
+      - Drive carefully without it
+      - Take the truck out of service and report it
+    answer: 1
+    why: Trucks with defects affecting safety are taken out of service.
+citations:
+  - 29 CFR 1910.178
+  - 8 CCR 3650
+  - 8 CCR 3668
+sources:
+  - title: OSHA Powered Industrial Trucks
+    url: https://www.osha.gov/powered-industrial-trucks

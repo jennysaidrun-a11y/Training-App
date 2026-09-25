@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ lesson.title }} · Bakery Training{% endblock %}
+{% block body %}
+<p class="muted">{% if person %}<a href="/me/{{ person.id }}">← {{ person.name }}</a>{% else %}Preview (results aren't saved){% endif %}</p>
+<h1>{{ lesson.title }}</h1>
+<div id="player" class="player"></div>
+<details class="cites">
+  <summary>Rules this lesson is based on</summary>
+  <ul>
+  {% for c in lesson.citations_parsed %}
+    {% set s = rule_status.get(c.ref, {}) %}
+    <li>{% if c.url %}<a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.ref }}</a>{% else %}{{ c.ref }}{% endif %}{% if s.name %}: {{ s.name }}{% endif %}</li>
+  {% endfor %}
+  </ul>
+  {% if lesson.sources %}
+  <p>More from the source:</p>
+  <ul>{% for s in lesson.sources %}<li><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a></li>{% endfor %}</ul>
+  {% endif %}
+  <p class="muted">Last checked against these rules on {{ lesson.reviewed_on[:10] }}.</p>
+</details>
+<script>window.LESSON = {{ data | tojson }}; window.WORKER = {{ (person.id if person else none) | tojson }};</script>
+<script src="/static/player.js"></script>
+{% endblock %}

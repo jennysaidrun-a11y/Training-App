@@ -1,0 +1,45 @@
+id: hazard-communication
+title: Chemical safety (Hazard Communication)
+roles: [all]
+version: 2026-09-25   # bump when the content changes enough that everyone must retake it
+reviewed_on: 2026-09-25   # last time a manager checked it against the cited rules
+summary: Reading chemical labels and safety data sheets for cleaners, sanitizers and other chemicals.
+video: ""
+sections:
+  - heading: Your right to know
+    text: |
+      Every hazardous chemical at work has a label and a Safety Data Sheet
+      (SDS). You can read the SDS for any chemical you work with during your
+      shift. Ask your supervisor where the SDS binder or station is.
+  - heading: Reading the label
+    text: |
+      Labels show the product name, a signal word ("Danger" is more severe
+      than "Warning"), pictograms in red diamonds, hazard statements,
+      precautions and the supplier. If a label is missing or unreadable, don't
+      use the chemical: tell your supervisor.
+  - heading: The Safety Data Sheet
+    text: |
+      An SDS has 16 sections in the same order every time. Section 2 lists the
+      hazards, section 4 first aid, section 7 safe handling and storage, and
+      section 8 the protective equipment to wear.
+questions:
+  - after_section: 1
+    q: Which signal word means the more severe hazard?
+    choices:
+      - Warning
+      - Danger
+    answer: 1
+    why: '"Danger" is used for the more severe hazards.'
+  - q: Where on the SDS do you find which gloves or goggles to wear?
+    choices:
+      - Section 2
+      - Section 8
+      - Section 16
+    answer: 1
+    why: Section 8 covers exposure controls and personal protection.
+citations:
+  - 29 CFR 1910.1200
+  - 8 CCR 5194
+sources:
+  - title: OSHA Hazard Communication
+    url: https://www.osha.gov/hazcom

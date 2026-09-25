@@ -1,0 +1,11 @@
+# Production roles. Lessons list the role ids they apply to ("all" = everyone).
+- id: baking
+  name: Baking
+- id: mixing
+  name: Mixing
+- id: packaging
+  name: Packaging / Warehouse
+- id: sanitation
+  name: Sanitation
+- id: sanitation-supervisor
+  name: Sanitation Supervisor

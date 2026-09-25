@@ -1,0 +1,44 @@
+id: allergens
+title: Allergen cross-contact
+roles: [baking, mixing, packaging, sanitation, sanitation-supervisor]
+version: 2026-09-25   # bump when the content changes enough that everyone must retake it
+reviewed_on: 2026-09-25   # last time a manager checked it against the cited rules
+summary: Keeping allergens (wheat, milk, egg, soy, tree nuts, peanuts, sesame and others) where they belong.
+video: ""
+sections:
+  - heading: What cross-contact is
+    text: |
+      Allergen cross-contact is when an allergen gets into a food that isn't
+      supposed to have it. A tiny amount can cause a serious reaction, so the
+      FDA rules require plants to protect against it during manufacturing and
+      when cleaning.
+  - heading: At your station
+    text: |
+      Follow the production schedule and changeover steps. Keep allergen
+      ingredients in their labeled, assigned storage. Use the scoops, bins
+      and tools assigned to each ingredient, and never swap them between lines.
+  - heading: Cleaning between runs
+    text: |
+      Food-contact surfaces must be cleaned as often as needed to protect
+      against allergen cross-contact. After an allergen run, the line is
+      cleaned and checked before the next product starts.
+questions:
+  - after_section: 1
+    q: A bin of sesame seeds has no label. What do you do?
+    choices:
+      - Use it if it looks like sesame
+      - Set it aside and tell your lead
+    answer: 1
+    why: Unlabeled allergens are a cross-contact risk; don't guess.
+  - q: When does the line get cleaned for allergens?
+    choices:
+      - Only at the end of the week
+      - After an allergen run and before the next product, as the changeover requires
+    answer: 1
+    why: Surfaces are cleaned as often as needed to protect against allergen cross-contact.
+citations:
+  - 21 CFR 117.35
+  - 21 CFR 117.80
+sources:
+  - title: FDA food allergies overview
+    url: https://www.fda.gov/food/nutrition-food-labeling-and-critical-foods/food-allergies

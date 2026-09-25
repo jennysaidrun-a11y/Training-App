@@ -1,0 +1,44 @@
+id: safety-basics
+title: Safety basics and reporting hazards
+roles: [all]
+version: 2026-09-25   # bump when the content changes enough that everyone must retake it
+reviewed_on: 2026-09-25   # last time a manager checked it against the cited rules
+summary: How our injury and illness prevention program works and how to report a hazard.
+video: ""
+sections:
+  - heading: Why we have a safety program
+    text: |
+      California requires every employer to run a written Injury and Illness
+      Prevention Program (IIPP). It says who is responsible for safety, how
+      hazards are found and fixed, and how everyone is trained.
+  - heading: Your part
+    text: |
+      Report any hazard, injury or near miss to your lead or supervisor right
+      away. You can report without fear of being punished for it: the program
+      has to include a way for workers to tell the employer about hazards
+      without fear of reprisal.
+  - heading: What happens next
+    text: |
+      Hazards are checked and fixed based on how serious they are. If a hazard
+      can't be fixed right away and people are in danger, they are moved out of
+      the area until it is fixed.
+questions:
+  - after_section: 1
+    q: You notice a guard missing on a conveyor. What do you do?
+    choices:
+      - Report it to your lead or supervisor right away
+      - Keep working and mention it at the end of the week
+      - Fix it yourself with tape
+    answer: 0
+    why: Hazards are reported right away so they can be fixed before someone is hurt.
+  - q: Can you be punished for reporting a hazard?
+    choices:
+      - "Yes, if it slows production"
+      - "No. The program must let you report hazards without fear of reprisal"
+    answer: 1
+    why: California's IIPP rule requires a way to report hazards without fear of reprisal.
+citations:
+  - 8 CCR 3203
+sources:
+  - title: "Cal/OSHA guide: Developing your Injury and Illness Prevention Program"
+    url: https://www.dir.ca.gov/dosh/dosh_publications/iipp.pdf

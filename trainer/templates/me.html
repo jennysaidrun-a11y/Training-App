@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ person.name }} · Bakery Training{% endblock %}
+{% block body %}
+<h1>{{ person.name }}</h1>
+<p class="muted">{{ role_names.get(person.role, person.role) }}</p>
+<ul class="lessons">
+  {% for r in rows %}
+  <li class="card state-{{ r.state }}">
+    <div>
+      <a href="/lesson/{{ r.lesson.id }}?worker={{ person.id }}"><strong>{{ r.lesson.title }}</strong></a>
+      <p class="muted">{{ r.lesson.summary }}</p>
+    </div>
+    <span class="badge {{ r.state }}">{{ r.label }}{% if r.state == 'done' %} · {{ r.last.completed_at[:10] }}{% endif %}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Who's training?</h1>
+{% if workers %}
+<ul class="people">
+  {% for w in workers %}
+  <li><a class="card" href="/me/{{ w.id }}"><strong>{{ w.name }}</strong><span>{{ role_names.get(w.role, w.role) }}</span></a></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No one has been added yet. A manager adds people on the <a href="/manage#people">Manager page</a>.</p>
+{% endif %}
+{% endblock %}

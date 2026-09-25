@@ -1,0 +1,55 @@
+id: lockout-tagout
+title: Lockout/tagout (controlling hazardous energy)
+roles: [all]
+version: 2026-09-25   # bump when the content changes enough that everyone must retake it
+reviewed_on: 2026-09-25   # last time a manager checked it against the cited rules
+summary: How to make a machine safe before cleaning, clearing a jam or servicing it.
+video: ""
+sections:
+  - heading: Why lockout matters
+    text: |
+      Mixers, sheeters, conveyors and ovens can start up or release stored
+      energy while someone is inside or reaching in. Lockout/tagout stops that:
+      every energy source is shut off and locked so the machine can't start.
+  - heading: The steps
+    text: |
+      1. Tell the people who work on the machine that it is being locked out.
+      2. Shut the machine down the normal way.
+      3. Isolate every energy source (electric, air, hydraulic, gravity, heat).
+      4. Put your own lock and tag on each isolation point.
+      5. Release stored energy (bleed air, block parts that can fall).
+      6. Verify: try to start it, then return controls to off.
+  - heading: Removing locks
+    text: |
+      Only the person who put a lock on removes it. Before removing it, check
+      that tools are cleared, guards are back, and everyone is clear.
+      Covered workers are trained, and the training is repeated when jobs,
+      machines or procedures change.
+questions:
+  - after_section: 1
+    q: What is the last step before you start work on the machine?
+    choices:
+      - Put on your tag
+      - Verify it is isolated by trying to start it, then return the controls to off
+      - Tell your lead
+    answer: 1
+    why: Verifying isolation catches a missed energy source before you reach in.
+  - after_section: 2
+    q: Your coworker went home and left their lock on the mixer. Can you cut it off?
+    choices:
+      - "Yes, if the mixer is needed"
+      - "No. Only the person who applied it removes it, unless a supervisor follows the written removal procedure"
+    answer: 1
+    why: The standard allows removal by someone else only under the employer's specific procedure.
+  - q: Does unplugging the mixer take care of air or gravity energy?
+    choices:
+      - "Yes"
+      - "No, every energy source has to be isolated"
+    answer: 1
+    why: Every source (electric, air, hydraulic, gravity, heat) has to be controlled.
+citations:
+  - 29 CFR 1910.147
+  - 8 CCR 3314
+sources:
+  - title: OSHA Control of Hazardous Energy overview
+    url: https://www.osha.gov/control-hazardous-energy
