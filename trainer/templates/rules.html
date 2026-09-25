@@ -1,31 +1,34 @@
 {% extends "base.html" %}
 {% block title %}Rules · Bakery Training{% endblock %}
 {% block body %}
-<h1>Rules the lessons cite</h1>
-<p class="muted">Checked against eCFR (federal), the Federal Register and the California DIR Title 8 pages.
+<div class="page-head"><h1>Rules the lessons cite</h1></div>
+<p class="muted">Checked every day against eCFR (federal rules), the Federal Register and California's Title 8 pages.
 Last check: {{ status.checked_at[:16].replace("T", " at ") ~ " UTC" if status.checked_at else "not yet" }}.</p>
-<table class="grid">
-  <thead><tr><th>Rule</th><th>Last change</th><th>Used in</th></tr></thead>
-  <tbody>
+<div class="list">
   {% for ref, s in status.rules | dictsort %}
-  <tr>
-    <td><a href="{{ s.url }}" target="_blank" rel="noopener">{{ ref }}</a><br><span class="muted">{{ s.name }}</span>
-      {% if s.found == false %}<br><span class="badge updated">Not found at source</span>{% endif %}
-      {% if s.last_error %}<br><span class="muted">Last try failed: {{ s.last_error }}</span>{% endif %}</td>
-    <td>{{ s.changed_on or ("no change seen since " ~ (s.last_checked or "")) }}</td>
-    <td>{% for l in used_by.get(ref, []) %}<a href="/lesson/{{ l.id }}">{{ l.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</td>
-  </tr>
+  <div class="item rule">
+    <div>
+      <a class="ref" href="{{ s.url }}" target="_blank" rel="noopener">{{ ref }}</a>
+      <div class="meta">{{ s.name }}</div>
+      {% if s.found == false %}<span class="pill bad">Not found at source</span>{% endif %}
+      {% if s.last_error %}<div class="meta">Last try failed: {{ s.last_error }}</div>{% endif %}
+    </div>
+    <div class="meta">{% if s.changed_on %}Last changed {{ s.changed_on[:10] }}{% else %}No change seen since {{ s.last_checked or "" }}{% endif %}</div>
+    <div class="used">{% for l in used_by.get(ref, []) %}<span class="pill">{{ l.title }}</span> {% endfor %}</div>
+  </div>
   {% endfor %}
-  </tbody>
-</table>
-<h2>Recent and proposed federal rules</h2>
-<p class="muted">From the Federal Register, for each part of the CFR the lessons cite. Heads-up only: not every rule here affects the bakery.</p>
-{% for part, fr in status.federal_register | dictsort %}
-<h3>{{ part }}</h3>
-<ul>
-  {% for d in fr.documents or [] %}
-  <li><a href="{{ d.html_url }}" target="_blank" rel="noopener">{{ d.title }}</a> <span class="muted">{{ d.type }}, {{ d.publication_date }}{% if d.effective_on %}, effective {{ d.effective_on }}{% endif %}</span></li>
-  {% else %}<li class="muted">Nothing yet.</li>{% endfor %}
-</ul>
-{% endfor %}
+</div>
+<section class="section">
+  <h2>Recent and proposed federal rules</h2>
+  <p class="muted">From the Federal Register, for each part of the CFR the lessons cite. Heads-up only: not every one affects the bakery.</p>
+  {% for part, fr in status.federal_register | dictsort %}
+  <h3>{{ part }}</h3>
+  <div class="list">
+    {% for d in fr.documents or [] %}
+    <div class="item"><div class="grow"><a class="title" href="{{ d.html_url }}" target="_blank" rel="noopener">{{ d.title }}</a>
+      <div class="meta"><span class="pill {{ 'warn' if d.type == 'Proposed Rule' else 'due' }}">{{ d.type }}</span> {{ d.publication_date }}{% if d.effective_on %} · effective {{ d.effective_on }}{% endif %}</div></div></div>
+    {% else %}<div class="item muted">Nothing yet.</div>{% endfor %}
+  </div>
+  {% endfor %}
+</section>
 {% endblock %}

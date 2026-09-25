@@ -1,17 +1,31 @@
 {% extends "base.html" %}
+{% from "icons.html" import icon %}
 {% block title %}{{ person.name }} · Bakery Training{% endblock %}
+{% block main_class %}narrow{% endblock %}
 {% block body %}
-<h1>{{ person.name }}</h1>
-<p class="muted">{{ role_names.get(person.role, person.role) }}</p>
-<ul class="lessons">
+{% set done = rows | selectattr("state", "equalto", "done") | list | length %}
+{% set total = rows | length %}
+<div class="me-head">
+  <span class="avatar c{{ person.id % 6 }}">{{ person.name[:1] }}</span>
+  <div><h1>{{ person.name }}</h1><span class="pill">{{ role_names.get(person.role, person.role) }}</span></div>
+</div>
+<div class="unit">
+  <h2>{% if done == total and total %}All caught up!{% else %}{{ total - done }} lesson{{ "" if total - done == 1 else "s" }} to go{% endif %}</h2>
+  <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="{{ total }}" aria-valuenow="{{ done }}"><span style="width: {{ (100 * done / total) if total else 100 }}%"></span></div>
+  <p style="margin:8px 0 0">{{ done }} of {{ total }} done</p>
+</div>
+{% set ns = namespace(first=true) %}
+<ol class="path">
   {% for r in rows %}
-  <li class="card state-{{ r.state }}">
-    <div>
-      <a href="/lesson/{{ r.lesson.id }}?worker={{ person.id }}"><strong>{{ r.lesson.title }}</strong></a>
-      <p class="muted">{{ r.lesson.summary }}</p>
-    </div>
-    <span class="badge {{ r.state }}">{{ r.label }}{% if r.state == 'done' %} · {{ r.last.completed_at[:10] }}{% endif %}</span>
+  {% set is_next = ns.first and r.state != "done" %}{% if is_next %}{% set ns.first = false %}{% endif %}
+  <li class="stop{{ ' next' if is_next else '' }}">
+    {% if is_next %}<span class="bubble">Start</span>{% endif %}
+    <a class="node {{ r.state }}" href="/lesson/{{ r.lesson.id }}?worker={{ person.id }}" aria-label="{{ r.lesson.title }}: {{ r.label }}">
+      {% if r.state == "done" %}{{ icon("star") }}{% elif r.state in ("updated", "refresh") %}{{ icon("redo") }}{% else %}{{ icon("play") }}{% endif %}
+    </a>
+    <span class="label">{{ r.lesson.title }}</span>
+    <span class="sub">{% if r.state == "done" %}Done {{ r.last.completed_at[:10] }}{% else %}{{ r.label }}{% endif %}</span>
   </li>
   {% endfor %}
-</ul>
+</ol>
 {% endblock %}

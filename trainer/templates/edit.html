@@ -1,38 +1,43 @@
 {% extends "base.html" %}
 {% block title %}Edit lesson · Bakery Training{% endblock %}
+{% block main_class %}narrow{% endblock %}
 {% block body %}
 <p><a href="/manage#lessons">← Manager</a></p>
-<h1>{{ "New lesson" if is_new else "Edit: " ~ lesson.title }}</h1>
+<h1>{{ "New lesson" if is_new else lesson.title }}</h1>
 {% if errors %}<div class="note bad"><strong>Nothing was saved yet. Please fix:</strong><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
-<form method="post" action="/manage/lesson/{{ 'new' if is_new else lesson.id }}" class="edit">
-  <label>Title <input name="title" value="{{ form.title }}" required></label>
-  <label>One-line summary <input name="summary" value="{{ form.summary }}"></label>
-  <fieldset><legend>Who takes it</legend>
-    <label class="inline"><input type="checkbox" name="roles" value="all" {% if 'all' in form.roles %}checked{% endif %}> Everyone</label>
-    {% for r in roles %}<label class="inline"><input type="checkbox" name="roles" value="{{ r.id }}" {% if r.id in form.roles %}checked{% endif %}> {{ r.name }}</label>{% endfor %}
-  </fieldset>
-  <label>Video link (optional: a YouTube link or a link to an .mp4 file)
+<form method="post" action="/manage/lesson/{{ 'new' if is_new else lesson.id }}" class="form">
+  <label class="field"><span class="lbl">Title</span><input name="title" value="{{ form.title }}" required></label>
+  <label class="field"><span class="lbl">One-line summary</span><input name="summary" value="{{ form.summary }}"></label>
+  <div class="field" style="margin-bottom:18px">
+    <span class="lbl">Who takes it</span>
+    <div class="chips">
+      <label class="chip"><input type="checkbox" name="roles" value="all" {% if 'all' in form.roles %}checked{% endif %}><span>Everyone</span></label>
+      {% for r in roles %}<label class="chip"><input type="checkbox" name="roles" value="{{ r.id }}" {% if r.id in form.roles %}checked{% endif %}><span>{{ r.name }}</span></label>{% endfor %}
+    </div>
+  </div>
+  <label class="field"><span class="lbl">Video link</span>
+    <span class="help">Optional. A YouTube link or a link to an .mp4 file.</span>
     <input name="video" value="{{ form.video }}" placeholder="https://www.youtube.com/watch?v=...">
   </label>
-  <label>Lesson text
-    <span class="help">Start each section with a line like <code>## Washing hands</code>, then its text.</span>
+  <label class="field"><span class="lbl">Lesson text</span>
+    <span class="help">Start each part with a line like <code>## Washing hands</code>, then its text.</span>
     <textarea name="sections" rows="14">{{ form.sections }}</textarea>
   </label>
-  <label>Questions
-    <span class="help">One question per block, blank line between questions. <code>Q:</code> the question,
-    <code>*</code> the right answer, <code>-</code> wrong answers, <code>Why:</code> the explanation.
-    Optional: <code>@ 1:30</code> pauses the video there to ask it; <code>after section 2</code> asks it after that section.
-    Questions with neither come at the end.</span>
+  <label class="field"><span class="lbl">Questions</span>
+    <span class="help">Leave a blank line between questions. <code>Q:</code> the question, <code>*</code> the right answer,
+    <code>-</code> a wrong answer, <code>Why:</code> the reason. Optional: <code>@ 1:30</code> pauses the video there to ask it;
+    <code>after section 2</code> asks it after that part. Questions with neither come at the end.</span>
     <textarea name="questions" rows="16">{{ form.questions }}</textarea>
   </label>
-  <label>Rules it's based on (one per line)
-    <span class="help">Like <code>29 CFR 1910.147</code> or <code>8 CCR 3314</code>. The app checks these every day and tells you when one changes.</span>
+  <label class="field"><span class="lbl">Rules it's based on</span>
+    <span class="help">One per line, like <code>29 CFR 1910.147</code> or <code>8 CCR 3314</code>. The app checks these every day and tells you when one changes.</span>
     <textarea name="citations" rows="4">{{ form.citations }}</textarea>
   </label>
-  <label>Source links (one per line: <code>Title | https://link</code>)
+  <label class="field"><span class="lbl">Source links</span>
+    <span class="help">One per line: <code>Title | https://link</code></span>
     <textarea name="sources" rows="3">{{ form.sources }}</textarea>
   </label>
-  {% if not is_new %}<label class="inline"><input type="checkbox" name="retake"> This is a real change: everyone who already passed it has to take it again</label>{% endif %}
-  <button>Save lesson</button>
+  {% if not is_new %}<label class="check"><input type="checkbox" name="retake"><span>This is a real change: everyone who already passed it takes it again</span></label>{% endif %}
+  <div class="sticky-save"><button class="wide">Save lesson</button></div>
 </form>
 {% endblock %}

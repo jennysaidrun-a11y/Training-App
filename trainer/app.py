@@ -87,7 +87,8 @@ def _my_lessons(con, person, lessons):
     for lesson in content.lessons_for_role(lessons, person["role"]):
         state, last = db.lesson_state(con, person["id"], lesson)
         rows.append({"lesson": lesson, "state": state, "label": STATE_LABELS[state], "last": last})
-    order = {"updated": 0, "due": 1, "refresh": 2, "done": 3}
+    # Path order: finished lessons first, then what needs retaking, then new ones.
+    order = {"done": 0, "updated": 1, "refresh": 2, "due": 3}
     rows.sort(key=lambda r: (order[r["state"]], r["lesson"]["title"]))
     return rows
 

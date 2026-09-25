@@ -1,23 +1,49 @@
 {% extends "base.html" %}
+{% from "icons.html" import icon %}
 {% block title %}{{ lesson.title }} · Bakery Training{% endblock %}
+{% block body_class %}focus{% endblock %}
 {% block body %}
-<p class="muted">{% if person %}<a href="/me/{{ person.id }}">← {{ person.name }}</a>{% else %}Preview (results aren't saved){% endif %}</p>
-<h1>{{ lesson.title }}</h1>
-<div id="player" class="player"></div>
-<details class="cites">
-  <summary>Rules this lesson is based on</summary>
-  <ul>
-  {% for c in lesson.citations_parsed %}
-    {% set s = rule_status.get(c.ref, {}) %}
-    <li>{% if c.url %}<a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.ref }}</a>{% else %}{{ c.ref }}{% endif %}{% if s.name %}: {{ s.name }}{% endif %}</li>
-  {% endfor %}
-  </ul>
-  {% if lesson.sources %}
-  <p>More from the source:</p>
-  <ul>{% for s in lesson.sources %}<li><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a></li>{% endfor %}</ul>
-  {% endif %}
-  <p class="muted">Last checked against these rules on {{ lesson.reviewed_on[:10] }}.</p>
-</details>
-<script>window.LESSON = {{ data | tojson }}; window.WORKER = {{ (person.id if person else none) | tojson }};</script>
+{% set back = "/me/" ~ person.id if person else "/manage#lessons" %}
+<div class="lesson-bar">
+  <a class="close" href="{{ back }}" id="close" aria-label="Leave the lesson">{{ icon("x") }}</a>
+  <div class="meter light" role="progressbar" aria-label="Lesson progress"><span id="progress" style="width:0%"></span></div>
+</div>
+<div id="stage" class="stage">
+  <div class="intro">
+    <svg class="badge-art" viewBox="0 0 140 140" aria-hidden="true">
+      <circle cx="70" cy="70" r="64" fill="var(--green-soft)"/>
+      <circle cx="70" cy="66" r="44" fill="var(--green)"/><circle cx="70" cy="62" r="44" fill="#78e02a"/>
+      <path d="M52 64c0-11 8-19 18-19s18 8 18 19v6a3 3 0 0 1-3 3H55a3 3 0 0 1-3-3z" fill="#fff"/>
+      <path d="M62 56c1.6 2.3 1.6 5.5 0 8M70 53c1.6 3 1.6 6.5 0 10.5M78 56c1.6 2.3 1.6 5.5 0 8" stroke="var(--green-edge)" stroke-width="3" fill="none" stroke-linecap="round"/>
+    </svg>
+    <p class="eyebrow">{% if person %}{{ person.name }}{% else %}Preview · results aren't saved{% endif %}</p>
+    <h1>{{ lesson.title }}</h1>
+    <p class="muted">{{ lesson.summary }}</p>
+    <div class="facts">
+      <div class="fact"><b>{{ lesson.sections | length }}</b><span>Short reads</span></div>
+      <div class="fact"><b>{{ lesson.questions | length }}</b><span>Questions</span></div>
+      {% if lesson.video %}<div class="fact"><b>1</b><span>Video</span></div>{% endif %}
+    </div>
+  </div>
+  <details class="sources">
+    <summary>Rules this lesson is based on</summary>
+    <ul>
+    {% for c in lesson.citations_parsed %}{% set s = rule_status.get(c.ref, {}) %}
+      <li>{% if c.url %}<a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.ref }}</a>{% else %}{{ c.ref }}{% endif %}{% if s.name %}: {{ s.name }}{% endif %}</li>
+    {% endfor %}
+    {% for s in lesson.sources %}<li><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a></li>{% endfor %}
+    </ul>
+    <p class="muted">Last checked against these rules on {{ lesson.reviewed_on[:10] }}.</p>
+  </details>
+</div>
+<div class="footer" id="footer">
+  <div class="footer-inner">
+    <div class="verdict" id="verdict"></div>
+    <div class="actions" id="actions"><button type="button" id="main-btn">Start lesson</button></div>
+  </div>
+</div>
+<template id="icon-check">{{ icon("check") }}</template>
+<template id="icon-x">{{ icon("x") }}</template>
+<script>window.LESSON = {{ data | tojson }}; window.WORKER = {{ (person.id if person else none) | tojson }}; window.BACK = {{ back | tojson }};</script>
 <script src="/static/player.js"></script>
 {% endblock %}
