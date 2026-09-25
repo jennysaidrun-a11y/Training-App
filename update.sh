@@ -6,8 +6,23 @@
 # Employee records (data/) never leave this Codespace.
 cd "$(dirname "$0")"
 # Only one updater at a time (the Codespace starts it on every start).
+# A running updater touches BEAT every minute; one that has gone quiet for 5
+# minutes is stuck, so it is stopped and this one takes over.
+BEAT=/tmp/training-update.beat
 exec 9>/tmp/training-update.lock
-flock -n 9 || { echo "Updater already running."; exit 0; }
+if ! flock -n 9; then
+  if [ -f "$BEAT" ] && [ $(( $(date +%s) - $(stat -c %Y "$BEAT") )) -lt 300 ]; then
+    echo "Updater already running."; exit 0
+  fi
+  echo "The running updater looks stuck; replacing it."
+  holders=$(fuser /tmp/training-update.lock 2>/dev/null || pgrep -f "bash update.sh")
+  for pid in $holders; do
+    [ "$pid" != "$$" ] && kill "$pid" 2>/dev/null
+  done
+  sleep 2
+  flock -w 10 9 || { echo "Couldn't take over from the stuck updater."; exit 1; }
+fi
+touch "$BEAT"
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 PORT=${PORT:-8000}
 
@@ -32,7 +47,7 @@ save_work() {
 
 sync() {
   save_work
-  git fetch -q origin "$BRANCH" || return
+  timeout 120 git fetch -q origin "$BRANCH" || return
   if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$BRANCH")" ]; then
     local before_req before_script
     before_req=$(req_hash); before_script=$(script_hash)
@@ -51,7 +66,7 @@ sync() {
   fi
   # Send saved edits to GitHub.
   if [ -n "$(git log --oneline "origin/$BRANCH..HEAD" 2>/dev/null)" ]; then
-    git push -q origin "HEAD:$BRANCH" || echo "Couldn't save to GitHub yet; will try again in a minute."
+    timeout 120 git push -q origin "HEAD:$BRANCH" || echo "Couldn't save to GitHub yet; will try again in a minute."
   fi
 }
 
@@ -77,6 +92,7 @@ sync
 start_app
 while true; do
   sleep 60
+  touch "$BEAT"
   sync
   command -v claude > /dev/null || install_claude > /dev/null 2>&1
   # Restart the app if it stopped for any reason.
