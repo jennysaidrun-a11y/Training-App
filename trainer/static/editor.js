@@ -75,7 +75,7 @@
   function drawRail() {
     const items = [thumb(0, "cover", D.title || "Untitled lesson", "Cover")];
     D.slides.forEach((s, i) => {
-      if (s.type === "reading") items.push(thumb(i + 1, "reading", s.heading, `Part ${partNumber(i)}`));
+      if (s.type === "reading") items.push(thumb(i + 1, "reading", s.heading, `Part ${partNumber(i)}${s.image ? " · picture" : ""}`));
       else items.push(thumb(i + 1, "question", s.q, s.at != null && s.at !== "" ? `Question · video ${fmtTime(s.at)}` : "Question"));
     });
     items.push(thumb(rulesIndex(), "rules", `${D.citations.length} rule${D.citations.length === 1 ? "" : "s"}`, "Rules & sources"));
@@ -89,7 +89,7 @@
   }
 
   function add(type) {
-    const slide = type === "reading" ? { type, heading: "", text: "" }
+    const slide = type === "reading" ? { type, heading: "", text: "", image: "" }
       : { type, q: "", choices: ["", ""], answer: 0, why: "", at: null };
     // New slides go right after the one being edited (or at the end from the cover/rules).
     const at = current >= 1 && current <= D.slides.length ? current : D.slides.length;
@@ -209,8 +209,45 @@
     return el("div", { class: "slide reading-slide" },
       el("p", { class: "eyebrow" }, `Part ${partNumber(index - 1)} of ${reads}`),
       bind(el("input", { class: "as-h1", value: s.heading, placeholder: "Heading, e.g. Washing hands", "aria-label": "Heading" }), s, "heading", refreshRailSoon),
+      pictureField(s),
       bind(area({ class: "as-body", value: s.text, rows: 6, placeholder: "2-5 short sentences.\n\nFor steps, one per line:\n1. Stop the machine\n2. Lock it out", "aria-label": "Text" }), s, "text"),
       el("p", { class: "help" }, "Leave a blank line between paragraphs. Lines starting 1. 2. 3. show as numbered steps."));
+  }
+
+  // A picture on a reading slide: shown above the text, the way the worker sees it.
+  function pictureField(s) {
+    const box = el("div", { class: "field picture-field" });
+    const draw = (msg) => {
+      const file = el("input", { type: "file", accept: "image/jpeg,image/png,image/webp,image/gif" });
+      file.addEventListener("change", () => file.files[0] && upload(file.files[0]));
+      box.replaceChildren(...[
+        s.image ? el("img", { class: "slide-img", src: s.image, alt: "" }) : null,
+        el("div", { class: "row" },
+          el("label", { class: "upload" }, file, el("span", { class: "btn ghost small" }, s.image ? "Change picture" : "+ Add a picture")),
+          s.image ? el("button", { type: "button", class: "ghost small danger", onclick: () => { s.image = ""; touch(); draw(); drawRail(); } }, "Remove picture") : null),
+        msg ? el("p", { class: "muted" }, msg) : null].filter(Boolean));
+      box.addEventListener("dragover", (e) => e.preventDefault());
+      box.ondrop = (e) => { e.preventDefault(); if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); };
+    };
+    async function upload(f) {
+      draw(`Uploading ${f.name}…`);
+      const form = new FormData();
+      form.append("image_file", f);
+      form.append("lesson", D.id || D.title || "lesson");
+      try {
+        const res = await fetch("/api/manage/image", { method: "POST", body: form });
+        const r = await res.json();
+        if (!res.ok) return draw(r.error || r.detail || "That picture couldn't be added.");
+        s.image = r.image;
+        touch();
+        draw();
+        drawRail();
+      } catch (e) {
+        draw("The upload didn't go through. Check the connection and try again.");
+      }
+    }
+    draw();
+    return box;
   }
 
   function questionSlide(index) {

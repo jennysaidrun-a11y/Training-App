@@ -24,14 +24,16 @@ the app, then restarts. Nothing to push, pull or rebuild.
   - **Lessons:** each lesson is edited as a deck of slides, in the order workers
     see them: a cover (title, who takes it, video), reading slides, question slides
     after the reading they check, and a last slide with the rules it's based on and
-    source links. Add, reorder (drag, or Earlier/Later) and delete slides. A question
+    source links. Add, reorder (drag, or Earlier/Later) and delete slides. Reading slides can
+    have a picture (upload a photo; it shows above the text). A question
     can also pause the video at a time (like `1:30`).
   - **Research with Claude** (the panel beside the slides): paste a link to an
     existing training, or ask about a topic. Claude reads the official rules, drafts
     the slides, and every rule it cites is looked up on eCFR / DIR and marked Found or
     Not found. "Use this draft" puts it in the editor; nothing is saved until you
     press Save. It uses your own Claude account through Claude Code, which the
-    Codespace installs by itself; sign in once (the panel shows the steps: run
+    Codespace installs by itself. You can also attach a PowerPoint, Word or PDF of an
+    existing training (📎 in the chat); its text goes to Claude, the file isn't kept; sign in once (the panel shows the steps: run
     `claude` in a Codespace terminal). An `ANTHROPIC_API_KEY` secret works instead.
 - **Rules page** (`/rules`): every cited rule, when it last changed, and recent or
   proposed federal rules for the same parts.

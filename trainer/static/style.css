@@ -443,3 +443,8 @@ button.x { flex: 0 0 auto; min-height: 34px; padding: 0 10px; color: var(--muted
 .file-chip.bad { background: var(--red-soft); color: var(--red-ink); white-space: normal; }
 .file-chip.in-msg { display: block; background: rgba(255,255,255,.22); color: #fff; margin-bottom: 6px; }
 .assist.dropping { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft) inset; }
+
+/* Pictures on reading slides (player and editor) */
+.slide-img { display: block; width: 100%; max-height: 360px; object-fit: contain; border-radius: var(--radius);
+             background: var(--soft); border: 2px solid var(--line); margin: 6px 0 14px; }
+.picture-field .row { gap: 10px; }

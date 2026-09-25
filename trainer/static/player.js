@@ -78,7 +78,8 @@
 
   function showSection(si, next) {
     const s = L.sections[si];
-    stage.replaceChildren(el("p", { class: "eyebrow" }, `Part ${si + 1} of ${L.sections.length}`), el("h1", {}, s.heading), reading(s.text));
+    stage.replaceChildren(el("p", { class: "eyebrow" }, `Part ${si + 1} of ${L.sections.length}`), el("h1", {}, s.heading),
+      s.image ? el("img", { class: "slide-img", src: s.image, alt: "" }) : null, reading(s.text));
     setFooter({ buttons: [button("Continue", next)] });
     onKey = (e) => { if (e.key === "Enter") next(); };
   }

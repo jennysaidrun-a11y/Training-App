@@ -463,3 +463,31 @@ def test_attached_file_reaches_claude(client, monkeypatch):
     client.post("/api/manage/research", json={"history": [{"role": "user", "text": text}]})
     assert "Mixer lockout" in seen["history"][-1]["text"]
     assert "<attached_file>" in research.SYSTEM
+
+
+def test_pictures_on_reading_slides(client, env):
+    png = b"\x89PNG\r\n\x1a\n" + b"x" * 200
+    r = client.post("/api/manage/image", data={"lesson": "allergens"}, files={"image_file": ("Mixer guard.PNG", png, "image/png")})
+    image = r.json()["image"]
+    assert image.startswith("/media/allergens-") and image.endswith(".png")
+    got = client.get(image)
+    assert got.status_code == 200 and got.headers["content-type"] == "image/png"
+
+    deck = _deck()
+    deck["slides"][1]["image"] = image
+    assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 200
+    lesson = content.load_lessons()["allergens"]
+    assert lesson["sections"][0]["image"] == image and "image" not in lesson["sections"][1]
+    assert editor.to_slides(lesson)[1]["image"] == image
+    assert image in client.get("/lesson/allergens").text              # the player gets it
+
+    # Kept by the upload sweep while a lesson uses it, even when old.
+    from trainer import app as app_module
+    os.utime(app_module.media_dir() / image.rsplit("/", 1)[1], (0, 0))
+    client.post("/api/manage/lesson/allergens", json=deck)
+    assert client.get(image).status_code == 200
+
+    bad = client.post("/api/manage/image", files={"image_file": ("IMG_1.HEIC", b"x", "image/heic")})
+    assert bad.status_code == 400 and "JPEG" in bad.json()["error"]
+    deck["slides"][1]["image"] = "javascript:alert(1)"
+    assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 400

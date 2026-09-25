@@ -22,7 +22,10 @@ templates = Jinja2Templates(directory=HERE / "templates")
 # and videos are big). Served with range requests so the player can seek.
 VIDEO_TYPES = {".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime"}
 MAX_VIDEO_BYTES = 2 * 1024**3
-MEDIA_NAME = re.compile(r"^[a-z0-9-]+\.(mp4|m4v|webm|mov)$")
+IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
+MAX_IMAGE_BYTES = 15 * 1024**2
+MEDIA_TYPES = {**VIDEO_TYPES, **IMAGE_TYPES}
+MEDIA_NAME = re.compile(r"^[a-z0-9-]+\.(mp4|m4v|webm|mov|jpg|jpeg|png|webp|gif)$")
 
 
 def media_dir():
@@ -322,6 +325,22 @@ async def upload_video(request: Request):
     return {"video": _save_upload(upload, str(form.get("lesson") or "lesson"))}
 
 
+@app.post("/api/manage/image")
+async def upload_image(request: Request):
+    """Stores a picture for a reading slide and returns its /media/ link."""
+    form = await request.form()
+    upload = form.get("image_file")
+    if not getattr(upload, "filename", None):
+        raise HTTPException(400, "Choose a picture.")
+    ext = os.path.splitext(upload.filename)[1].lower()
+    if ext not in IMAGE_TYPES:
+        hint = " iPhone photos (.heic): share them as JPEG first, or take a screenshot." if ext == ".heic" else ""
+        return JSONResponse({"error": f"'{upload.filename}' isn't a picture the app can show. Use a .jpg, .png, .webp or .gif.{hint}"}, status_code=400)
+    if (upload.size or 0) > MAX_IMAGE_BYTES:
+        return JSONResponse({"error": "That picture is over 15 MB. Please use a smaller copy."}, status_code=400)
+    return {"image": _save_upload(upload, str(form.get("lesson") or "lesson"))}
+
+
 def _verify(citations):
     """Looks each citation up at eCFR / DIR right now."""
     out = []
@@ -389,7 +408,7 @@ def media(name: str):
     path = media_dir() / name
     if not path.is_file():
         raise HTTPException(404, "No such video")
-    return FileResponse(path, media_type=VIDEO_TYPES["." + name.rsplit(".", 1)[1]])
+    return FileResponse(path, media_type=MEDIA_TYPES["." + name.rsplit(".", 1)[1]])
 
 
 def _save_upload(upload, lesson_id):
@@ -412,6 +431,7 @@ def _remove_unused_upload(video, lessons):
 def _sweep_media(lessons, older_than_hours=24):
     """Deletes uploads nobody saved into a lesson (an editor closed without saving)."""
     used = {l.get("video") for l in lessons.values()}
+    used |= {s.get("image") for l in lessons.values() for s in l.get("sections", [])}
     cutoff = time.time() - older_than_hours * 3600
     for path in media_dir().iterdir():
         if MEDIA_NAME.match(path.name) and f"/media/{path.name}" not in used and path.stat().st_mtime < cutoff:
