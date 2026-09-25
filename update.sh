@@ -17,7 +17,9 @@ script_hash() { sha1sum update.sh | cut -c1-40; }
 start_app() {
   pkill -f "python -m trainer" 2>/dev/null
   sleep 1
-  nohup python -m trainer > app.log 2>&1 &
+  # 9>&- : the app must not inherit the updater's lock, or a restarted updater
+  # would think another one is still running and quit.
+  nohup python -m trainer > app.log 2>&1 9>&- &
   echo "Training app running on port $PORT ($(git log --oneline -1))"
 }
 
