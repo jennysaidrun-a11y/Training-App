@@ -342,11 +342,14 @@ def test_research_turns_claude_draft_into_slides(env):
     assert len(fake.calls) == 3 and fake.calls[2]["messages"][-1]["content"][0]["type"] == "tool_result"
 
 
-def test_research_api(client, monkeypatch):
+def test_research_api(client, env, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("CLAUDE_COMMAND", "no-such-claude")
+    monkeypatch.setenv("HOME", str(env))
+    assert research.mode() is None
     assert client.post("/api/manage/research", json={"history": [{"role": "user", "text": "hi"}]}).status_code == 503
-    assert "ANTHROPIC_API_KEY" in client.get("/manage/lesson/new").text   # setup steps shown
+    assert "isn't installed" in client.get("/manage/lesson/new").text   # setup steps shown
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
     seen = {}
@@ -362,3 +365,38 @@ def test_research_api(client, monkeypatch):
                             "found": True, "name": "Powered industrial trucks.", "error": ""}]
     assert seen["history"] == [{"role": "user", "text": "forklifts"}]
     assert "Research with Claude" in client.get("/manage/lesson/new").text
+
+
+class _Done:
+    def __init__(self, stdout, returncode=0, stderr=""):
+        self.stdout, self.returncode, self.stderr = stdout, returncode, stderr
+
+
+def test_research_through_claude_code(env, monkeypatch):
+    """Without an API key the panel uses Claude Code, signed in with the user's Claude account."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    seen = {}
+
+    def runner(cmd, input, **kw):
+        seen.update(cmd=cmd, input=input, cwd=kw["cwd"])
+        return _Done(json.dumps({"is_error": False, "result": "...",
+                                 "structured_output": {"reply": "Drafted it.", "has_lesson": True, "lesson": DRAFT}}))
+
+    out = research.run_cli([{"role": "user", "text": "Forklifts"}, {"role": "assistant", "text": "Done."},
+                            {"role": "user", "text": "Add a question"}], {"title": "Old", "slides": []},
+                           command="claude", runner=runner)
+    assert out["reply"] == "Drafted it." and out["lesson"]["citations"] == ["29 CFR 1910.178"]
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("--tools") + 1] == "WebSearch,WebFetch" and "--json-schema" in cmd
+    assert "<conversation_so_far>" in seen["input"] and seen["input"].rstrip().endswith("</current_draft>")
+    assert seen["cwd"] != str(content.ROOT)
+
+    # A question with no lesson.
+    ok = lambda cmd, input, **kw: _Done(json.dumps({"structured_output": {"reply": "Yes.", "has_lesson": False, "lesson": DRAFT}}))
+    assert research.run_cli([{"role": "user", "text": "q"}], None, command="claude", runner=ok)["lesson"] is None
+
+    # Not signed in: the panel shows the sign-in steps.
+    signed_out = lambda cmd, input, **kw: _Done('{"is_error": true, "result": "Not logged in · Please run /login"}', 1)
+    with pytest.raises(research.NotSignedIn):
+        research.run_cli([{"role": "user", "text": "q"}], None, command="claude", runner=signed_out)

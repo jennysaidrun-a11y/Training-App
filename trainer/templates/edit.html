@@ -48,19 +48,24 @@
         <button type="button" class="chip-btn">Add two harder questions to this lesson</button>
       </div>
     </div>
+    <template id="signin-help">
+      <div>
+        <p><b>Sign Claude in once</b> with your Claude account:</p>
+        <ol>
+          <li>In the Codespace, open a terminal: Terminal menu › New Terminal.</li>
+          <li>Type <code>claude</code> and press Enter. Pick your Claude account and open the sign-in link.</li>
+          <li>If the browser ends on a page that won't load (its address starts with <code>http://localhost</code>), copy that whole address. Open a second terminal and type <code>curl "</code>, paste the address, type <code>"</code> and press Enter.</li>
+          <li>Back in the first terminal, type <code>/exit</code>. Then ask here again.</li>
+        </ol>
+      </div>
+    </template>
     <form class="chat-bar" id="chat-form">
       <textarea id="chat-input" rows="1" placeholder="Ask Claude to research or change the lesson…"></textarea>
       <button type="submit" class="small" id="chat-send" aria-label="Send">Send</button>
     </form>
     {% else %}
     <div class="setup">
-      <p><b>Claude needs an API key before it can research.</b> It's a one-time setup:</p>
-      <ol>
-        <li>Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> (API keys, Create key).</li>
-        <li>On GitHub: your profile picture › Settings › Codespaces › Secrets › New secret. Name it <code>ANTHROPIC_API_KEY</code>, paste the key, and give it access to the Training-App repository.</li>
-        <li>Restart the Codespace (or stop it and open it again). The panel turns on by itself.</li>
-      </ol>
-      <p class="muted">The key stays a secret in GitHub; it never goes in the code.</p>
+      <p><b>Claude Code isn't installed in this Codespace yet.</b> It installs itself the next time the Codespace starts: stop it and open it again from github.com/codespaces. Then sign in once (steps below).</p>
     </div>
     {% endif %}
   </aside>

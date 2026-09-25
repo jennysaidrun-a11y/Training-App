@@ -53,7 +53,18 @@ sync() {
   fi
 }
 
+# Claude Code, for the lesson editor's "Research with Claude" panel (signs in with
+# your Claude account; see the panel for the one-time sign-in).
+export PATH="$HOME/.local/bin:$PATH"
+install_claude() {
+  command -v claude > /dev/null && return
+  echo "Installing Claude Code..."
+  if command -v npm > /dev/null; then npm install -g -s @anthropic-ai/claude-code
+  else curl -fsSL https://claude.ai/install.sh | bash; fi
+}
+
 pip install -q -r requirements.txt
+install_claude || echo "Couldn't install Claude Code; will try again on the next start."
 sync
 start_app
 while true; do

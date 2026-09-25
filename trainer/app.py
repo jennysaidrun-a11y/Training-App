@@ -246,7 +246,8 @@ def mark_reviewed(lesson_id: str):
 def _editor(request, lesson, is_new=False):
     status = rules.load_status().get("rules", {})
     return render(request, "edit.html", lesson=lesson, is_new=is_new, roles=content.load_roles(),
-                  data=editor.editor_payload(lesson), rule_status=status, research_ready=research.available())
+                  data=editor.editor_payload(lesson), rule_status=status, research_ready=research.available(),
+                  research_mode=research.mode())
 
 
 @app.get("/manage/lesson/new", response_class=HTMLResponse)
@@ -354,6 +355,8 @@ async def research_chat(request: Request):
         raise HTTPException(400, "Say what to research.")
     try:
         result = await run_in_threadpool(research.run, history, body.get("draft"))
+    except research.NotSignedIn:
+        return JSONResponse({"error": "signin"}, status_code=503)
     except Exception as e:  # shown in the panel; the manager can try again
         print(f"Research failed: {e.__class__.__name__}: {e}")
         return JSONResponse({"error": f"Claude couldn't finish that ({e.__class__.__name__}). Try again in a minute."}, status_code=502)

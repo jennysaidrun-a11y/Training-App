@@ -3,11 +3,17 @@ research one by chat. Claude searches the web and reads pages itself (server
 tools), then hands back a lesson as slides through the `propose_lesson` tool.
 Every rule it cites is checked against eCFR / DIR before the manager sees it.
 
-Needs ANTHROPIC_API_KEY (a Codespaces secret). Without it the panel explains
-how to add one.
+Two ways to reach Claude:
+- "api": the Claude API, when ANTHROPIC_API_KEY is set.
+- "cli": otherwise, Claude Code (`claude -p`) signed in with the user's own Claude
+  account. update.sh installs it; the user signs in once in a terminal.
+Without either, the panel explains how to set one up.
 """
 import json
 import os
+import shutil
+import subprocess
+import tempfile
 
 from . import content
 
@@ -85,8 +91,30 @@ def lesson_tool(role_ids):
     }
 
 
+CLI_MODEL = os.environ.get("CLAUDE_MODEL", "opus")
+CLI_TIMEOUT = 600
+
+
+def claude_command():
+    found = shutil.which(os.environ.get("CLAUDE_COMMAND", "claude"))
+    if found:
+        return found
+    local = os.path.expanduser("~/.local/bin/claude")
+    return local if os.access(local, os.X_OK) else None
+
+
+def mode():
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+        return "api"
+    return "cli" if claude_command() else None
+
+
 def available():
-    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+    return mode() is not None
+
+
+class NotSignedIn(RuntimeError):
+    pass
 
 
 def _clean_slides(slides):
@@ -106,22 +134,99 @@ def run(history, draft, client=None):
     """history: [{"role": "user"|"assistant", "text": ...}], newest last (a user turn).
     draft: the editor's current lesson (editor_payload shape) or None.
     Returns {"reply": str, "lesson": dict | None, "searched": [urls]}."""
+    if client is None and mode() == "cli":
+        return run_cli(history, draft)
+    return run_api(history, draft, client)
+
+
+def _with_draft(text, draft):
+    if draft and (draft.get("slides") or draft.get("title")):
+        text += "\n\n<current_draft>\n" + json.dumps(
+            {k: draft.get(k) for k in ("title", "summary", "roles", "slides", "citations", "sources")}, indent=1
+        ) + "\n</current_draft>"
+    return text
+
+
+def _system():
+    roles = content.load_roles()
+    return SYSTEM.format(roles=", ".join(f"{r['name']} ({r['id']})" for r in roles)), [r["id"] for r in roles]
+
+
+def _finish(proposed, role_ids):
+    if not proposed:
+        return None
+    return {
+        "title": proposed.get("title", "").strip(),
+        "summary": proposed.get("summary", "").strip(),
+        "roles": [r for r in proposed.get("roles", []) if r == "all" or r in role_ids] or ["all"],
+        "slides": _clean_slides(proposed.get("slides", [])),
+        "citations": [content.parse_citation(c)["ref"] for c in proposed.get("citations", []) if content.parse_citation(c)],
+        "sources": [s for s in proposed.get("sources", []) if str(s.get("url", "")).startswith(("http://", "https://"))],
+    }
+
+
+CLI_NOTE = """
+
+You are running without the propose_lesson tool. Instead, your final answer is JSON matching the \
+given schema: "reply" is your 1-3 sentence message to the manager; set "has_lesson" true and fill \
+"lesson" with the whole lesson when you drafted or changed one; otherwise has_lesson is false and \
+lesson can be empty. Use WebSearch and WebFetch to look up the rules."""
+
+
+def run_cli(history, draft, command=None, runner=subprocess.run):
+    """The same research through Claude Code, signed in with the user's Claude account."""
+    system, role_ids = _system()
+    lesson_schema = lesson_tool(role_ids)["input_schema"]
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["reply", "has_lesson", "lesson"],
+        "properties": {"reply": {"type": "string"}, "has_lesson": {"type": "boolean"}, "lesson": lesson_schema},
+    }
+    earlier = "".join(f"<{t['role']}>\n{t['text']}\n</{t['role']}>\n" for t in history[:-1])
+    prompt = (f"<conversation_so_far>\n{earlier}</conversation_so_far>\n\n" if earlier else "") + \
+        _with_draft(history[-1]["text"], draft)
+    cmd = [command or claude_command(), "-p", "--output-format", "json", "--json-schema", json.dumps(schema),
+           "--system-prompt", system + CLI_NOTE, "--tools", "WebSearch,WebFetch",
+           "--allowedTools", "WebSearch", "WebFetch", "--model", CLI_MODEL, "--no-session-persistence"]
+    with tempfile.TemporaryDirectory() as empty:   # no project files for it to read
+        try:
+            r = runner(cmd, input=prompt, capture_output=True, text=True, timeout=CLI_TIMEOUT, cwd=empty)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Claude took too long. Try a narrower topic.")
+    try:
+        out = json.loads(r.stdout)
+    except ValueError:
+        out = {}
+    if r.returncode != 0 or out.get("is_error") or not out:
+        tail = (r.stdout + r.stderr)[-400:].lower()
+        if any(w in tail for w in ("login", "log in", "/login", "api key", "authenticat", "oauth", "not signed")):
+            raise NotSignedIn("Claude Code isn't signed in yet.")
+        raise RuntimeError(f"Claude Code stopped: {(r.stdout + r.stderr)[-300:].strip()}")
+    result = out.get("structured_output")
+    if not isinstance(result, dict):
+        try:
+            result = json.loads(out.get("result") or "")
+        except ValueError:
+            result = {"reply": out.get("result", ""), "has_lesson": False}
+    lesson = _finish(result.get("lesson"), role_ids) if result.get("has_lesson") else None
+    reply = (result.get("reply") or "").strip() or ("The draft is ready." if lesson else "")
+    return {"reply": reply, "lesson": lesson, "searched": []}
+
+
+def run_api(history, draft, client=None):
+    """history: [{"role": "user"|"assistant", "text": ...}], newest last (a user turn).
+    draft: the editor's current lesson (editor_payload shape) or None.
+    Returns {"reply": str, "lesson": dict | None, "searched": [urls]}."""
     import anthropic
 
     client = client or anthropic.Anthropic(timeout=300.0)
-    roles = content.load_roles()
-    role_ids = [r["id"] for r in roles]
-    system = SYSTEM.format(roles=", ".join(f"{r['name']} ({r['id']})" for r in roles))
+    system, role_ids = _system()
 
     messages = []
     for turn in history[:-1]:
         messages.append({"role": turn["role"], "content": turn["text"] or "…"})
-    last = history[-1]["text"]
-    if draft and (draft.get("slides") or draft.get("title")):
-        last += "\n\n<current_draft>\n" + json.dumps(
-            {k: draft.get(k) for k in ("title", "summary", "roles", "slides", "citations", "sources")}, indent=1
-        ) + "\n</current_draft>"
-    messages.append({"role": "user", "content": last})
+    messages.append({"role": "user", "content": _with_draft(history[-1]["text"], draft)})
 
     tools = [
         {"type": "web_search_20260209", "name": "web_search", "max_uses": 6},
@@ -167,15 +272,6 @@ def run(history, draft, client=None):
             continue
         break
 
-    lesson = None
-    if proposed:
-        lesson = {
-            "title": proposed.get("title", "").strip(),
-            "summary": proposed.get("summary", "").strip(),
-            "roles": [r for r in proposed.get("roles", []) if r == "all" or r in role_ids] or ["all"],
-            "slides": _clean_slides(proposed.get("slides", [])),
-            "citations": [content.parse_citation(c)["ref"] for c in proposed.get("citations", []) if content.parse_citation(c)],
-            "sources": [s for s in proposed.get("sources", []) if str(s.get("url", "")).startswith(("http://", "https://"))],
-        }
+    lesson = _finish(proposed, role_ids)
     reply = "\n\n".join(t.strip() for t in texts if t.strip()) or ("The draft is ready." if lesson else "")
     return {"reply": reply, "lesson": lesson, "searched": searched}

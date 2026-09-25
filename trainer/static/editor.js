@@ -443,7 +443,8 @@
       try {
         const res = await fetch("/api/manage/research", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ history, draft: payload() }) });
         r = await res.json();
-        if (!res.ok) r = { reply: r.error === "setup" ? "Claude isn't set up yet (no API key)." : r.error || r.detail || "Something went wrong. Try again.", failed: true };
+        if (r.error === "signin") r = { signin: true, failed: true };
+        else if (!res.ok) r = { reply: r.error === "setup" ? "Claude isn't set up in this Codespace yet." : r.error || r.detail || "Something went wrong. Try again.", failed: true };
       } catch (e) {
         r = { reply: "Couldn't reach the app. Check the connection and try again.", failed: true };
       }
@@ -451,13 +452,14 @@
       if (!r.failed) history.push({ role: "assistant", text: r.reply || "" });
       else history.pop();
       const kids = [];
+      if (r.signin) kids.push(document.getElementById("signin-help").content.firstElementChild.cloneNode(true));
       for (const para of (r.reply || "").split(/\n\s*\n/)) if (para.trim()) kids.push(el("p", {}, para.trim()));
       if (r.lesson) kids.push(draftCard(r.lesson, r.checks));
       if (r.searched && r.searched.length) {
         kids.push(el("details", { class: "read-list" }, el("summary", {}, `Pages Claude read (${r.searched.length})`),
           el("ul", {}, ...r.searched.slice(0, 12).map((u) => el("li", {}, el("a", { href: u, target: "_blank", rel: "noopener" }, u.replace(/^https?:\/\//, "")))))));
       }
-      bubble("claude" + (r.failed ? " failed" : ""), ...kids);
+      bubble("claude" + (r.failed && !r.signin ? " failed" : ""), ...kids);
       busy = false;
       send.disabled = linkGo.disabled = false;
     }

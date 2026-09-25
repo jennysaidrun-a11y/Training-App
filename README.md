@@ -30,8 +30,9 @@ the app, then restarts. Nothing to push, pull or rebuild.
     existing training, or ask about a topic. Claude reads the official rules, drafts
     the slides, and every rule it cites is looked up on eCFR / DIR and marked Found or
     Not found. "Use this draft" puts it in the editor; nothing is saved until you
-    press Save. Needs an `ANTHROPIC_API_KEY` Codespaces secret (GitHub › Settings ›
-    Codespaces › Secrets, give it access to this repo, restart the Codespace).
+    press Save. It uses your own Claude account through Claude Code, which the
+    Codespace installs by itself; sign in once (the panel shows the steps: run
+    `claude` in a Codespace terminal). An `ANTHROPIC_API_KEY` secret works instead.
 - **Rules page** (`/rules`): every cited rule, when it last changed, and recent or
   proposed federal rules for the same parts.
 
