@@ -146,13 +146,12 @@ def home(request: Request):
 
 
 def _my_lessons(con, person, lessons):
+    """A person's lessons in folder order, each tagged with its folder."""
     rows = []
-    for lesson in content.lessons_for_role(lessons, person["role"]):
-        state, last = db.lesson_state(con, person["id"], lesson)
-        rows.append({"lesson": lesson, "state": state, "label": STATE_LABELS[state], "last": last})
-    # Path order: finished lessons first, then what needs retaking, then new ones.
-    order = {"done": 0, "updated": 1, "refresh": 2, "due": 3}
-    rows.sort(key=lambda r: (order[r["state"]], r["lesson"]["title"]))
+    for topic, members in content.group_by_topic(content.lessons_for_role(lessons, person["role"])):
+        for lesson in members:
+            state, last = db.lesson_state(con, person["id"], lesson)
+            rows.append({"lesson": lesson, "state": state, "label": STATE_LABELS[state], "last": last, "topic": topic})
     return rows
 
 
@@ -380,7 +379,8 @@ def manage(request: Request):
         inactive = [w for w in db.workers(con, active_only=False) if not w["active"]]
         managers = db.managers(con)
     return render(request, "manage.html", lessons=lessons, flagged=flagged, progress=progress, inactive=inactive,
-                  roles=content.load_roles(), status=status, broken=content.broken_lesson_files(), managers=managers)
+                  roles=content.load_roles(), status=status, broken=content.broken_lesson_files(), managers=managers,
+                  groups=content.group_by_topic(list(lessons.values())))
 
 
 @app.post("/manage/workers")
@@ -465,7 +465,8 @@ def dashboard(request: Request, role: str = "", lesson: str = ""):
     roles = content.load_roles()
     role = role if role in content.role_names() else ""
     focus = lessons.get(lesson)
-    columns = sorted((l for l in lessons.values() if not role or _required(l, role)), key=lambda l: l["title"])
+    columns = [l for _, members in content.group_by_topic([l for l in lessons.values() if not role or _required(l, role)])
+               for l in members]
     with db.connect() as con:
         people = [w for w in db.workers(con) if not role or w["role"] == role]
         latest = {}
@@ -514,6 +515,55 @@ async def save_requirements(request: Request):
             lesson["roles"] = roles
             content.save_lesson(lesson)
     return RedirectResponse("/manage/requirements?saved=1", status_code=303)
+
+
+@app.get("/manage/topics", response_class=HTMLResponse)
+def topics_page(request: Request):
+    lessons = list(content.load_lessons().values())
+    topics = content.load_topics()
+    return render(request, "topics.html", groups=content.group_by_topic(lessons, topics), topics=topics, lang="en")
+
+
+@app.post("/manage/topics")
+async def edit_topics(request: Request):
+    """Folder changes: add, rename, delete, move up/down, and put a lesson in a folder
+    or move it up/down inside one."""
+    form = await request.form()
+    action, tid, lid = form.get("action"), str(form.get("topic") or ""), str(form.get("lesson") or "")
+    topics = content.load_topics()
+    idx = next((i for i, t in enumerate(topics) if t["id"] == tid), None)
+    if action == "add":
+        name = str(form.get("name") or "").strip()[:80]
+        if name:
+            base, new_id, n = content.slugify(name) or "topic", None, 2
+            new_id = base
+            while any(t["id"] == new_id for t in topics):
+                new_id, n = f"{base}-{n}", n + 1
+            topics.append({"id": new_id, "name": name, "lessons": []})
+    elif action == "rename" and idx is not None:
+        name = str(form.get("name") or "").strip()[:80]
+        if name:
+            topics[idx]["name"] = name
+    elif action == "delete" and idx is not None:
+        topics.pop(idx)                 # its lessons fall back to "Other lessons"
+    elif action in ("up", "down") and idx is not None:
+        j = idx - 1 if action == "up" else idx + 1
+        if 0 <= j < len(topics):
+            topics[idx], topics[j] = topics[j], topics[idx]
+    elif action == "put" and lid in content.load_lessons():
+        for t in topics:
+            if lid in t["lessons"]:
+                t["lessons"].remove(lid)
+        if idx is not None:
+            topics[idx]["lessons"].append(lid)
+    elif action in ("lesson-up", "lesson-down") and idx is not None and lid in topics[idx]["lessons"]:
+        ls = topics[idx]["lessons"]
+        i = ls.index(lid)
+        j = i - 1 if action == "lesson-up" else i + 1
+        if 0 <= j < len(ls):
+            ls[i], ls[j] = ls[j], ls[i]
+    content.save_topics(topics)
+    return RedirectResponse("/manage/topics" + (f"#t-{tid}" if tid else ""), status_code=303)
 
 
 @app.get("/manage/translations", response_class=HTMLResponse)

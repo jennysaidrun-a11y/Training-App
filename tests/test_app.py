@@ -249,7 +249,8 @@ def test_slides_round_trip_every_lesson():
 
 
 def test_pages_render(client):
-    for path in ["/", "/manage", "/manage/dashboard", "/manage/requirements", "/rules", "/lesson/indoor-heat",
+    for path in ["/", "/manage", "/manage/dashboard", "/manage/requirements", "/manage/topics", "/manage/translations",
+                 "/rules", "/lesson/indoor-heat",
                  "/manage/lesson/new", "/health"]:
         assert client.get(path).status_code == 200, path
 
@@ -707,3 +708,28 @@ def test_translation_shape_is_checked(monkeypatch):
     monkeypatch.setattr(research, "claude_command", lambda: "claude")
     with pytest.raises(RuntimeError, match="missing pieces"):
         research.translate(lesson, "vi", runner=lambda *a, **k: _Done(short))
+
+
+def test_topic_folders(client):
+    client.post("/manage/topics", data={"action": "add", "name": "Ovens"})
+    topics = content.load_topics()
+    assert topics[-1] == {"id": "ovens", "name": "Ovens", "lessons": []}
+    client.post("/manage/topics", data={"action": "put", "lesson": "indoor-heat", "topic": "ovens"})
+    topics = {t["id"]: t for t in content.load_topics()}
+    assert topics["ovens"]["lessons"] == ["indoor-heat"] and "indoor-heat" not in topics["health"]["lessons"]
+    client.post("/manage/topics", data={"action": "rename", "topic": "ovens", "name": "Ovens and heat"})
+    client.post("/manage/topics", data={"action": "up", "topic": "ovens"})
+    names = [t["name"] for t in content.load_topics()]
+    assert names.index("Ovens and heat") < names.index("Health")
+    client.post("/manage/topics", data={"action": "lesson-down", "topic": "machines", "lesson": "lockout-tagout"})
+    assert content.load_topics()[1]["lessons"][:2] == ["bakery-equipment", "lockout-tagout"]
+    client.post("/manage/topics", data={"action": "delete", "topic": "ovens"})
+    groups = content.group_by_topic(list(content.load_lessons().values()))
+    assert groups[-1][0]["id"] == "other" and [l["id"] for l in groups[-1][1]] == ["indoor-heat"]
+    page = client.get("/manage/topics").text
+    assert "Other lessons" in page and "Heat illness" in page
+    # Workers see their lessons under folder headings.
+    with db.connect() as con:
+        wid = db.add_worker(con, "Tess", "baking")
+    page = client.get(f"/me/{wid}").text
+    assert 'class="topic-head"' in page and "Machines and equipment" in page

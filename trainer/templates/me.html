@@ -18,6 +18,7 @@
 {% set ns = namespace(first=true) %}
 <ol class="path">
   {% for r in rows %}
+  {% if loop.first or r.topic.id != rows[loop.index0 - 1].topic.id %}<li class="topic-head">{{ t("other_lessons") if r.topic.id == "other" else r.topic.name }}</li>{% endif %}
   {% set is_next = ns.first and r.state != "done" %}{% if is_next %}{% set ns.first = false %}{% endif %}
   <li class="stop{{ ' next' if is_next else '' }}">
     {% if is_next %}<span class="bubble">{{ t("start") }}</span>{% endif %}

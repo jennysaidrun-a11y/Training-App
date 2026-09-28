@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Topics · Training · United Bakery{% endblock %}
+{% block body %}
+{% include "_manager_nav.html" %}
+<div class="page-head"><h1>Topics</h1></div>
+<p class="muted">Folders that group the lessons. Workers see their lessons in this order, under these headings.</p>
+<form method="post" class="row add-folder">
+  <input type="hidden" name="action" value="add">
+  <input name="name" placeholder="New folder name, e.g. Ovens" required maxlength="80" aria-label="New folder name">
+  <button class="small">+ Add folder</button>
+</form>
+<div class="folders">
+{% for topic, members in groups %}
+  <section class="folder card" id="t-{{ topic.id }}">
+    <div class="folder-bar">
+      <span class="folder-ico" aria-hidden="true">📁</span>
+      {% if topic.id == "other" %}
+        <h2>{{ topic.name }}</h2><span class="muted">Lessons in no folder</span>
+      {% else %}
+        <form method="post" class="rename">
+          <input type="hidden" name="action" value="rename"><input type="hidden" name="topic" value="{{ topic.id }}">
+          <input name="name" value="{{ topic.name }}" maxlength="80" aria-label="Folder name" class="as-title">
+          <button class="ghost small">Rename</button>
+        </form>
+        <span class="grow"></span>
+        <form method="post"><input type="hidden" name="topic" value="{{ topic.id }}"><button name="action" value="up" class="ghost small" aria-label="Move folder up" {{ 'disabled' if loop.first }}>↑</button></form>
+        <form method="post"><input type="hidden" name="topic" value="{{ topic.id }}"><button name="action" value="down" class="ghost small" aria-label="Move folder down" {{ 'disabled' if loop.index == topics | length }}>↓</button></form>
+        <form method="post" onsubmit="return confirm('Delete the folder {{ topic.name }}? Its lessons move to Other lessons; nothing is deleted.')"><input type="hidden" name="topic" value="{{ topic.id }}"><button name="action" value="delete" class="ghost small danger">Delete</button></form>
+      {% endif %}
+    </div>
+    {% if members %}
+    <ul class="folder-lessons">
+      {% for l in members %}
+      <li>
+        <a href="/manage/lesson/{{ l.id }}" class="grow">{{ l.title }}</a>
+        {% if topic.id != "other" %}
+        <form method="post"><input type="hidden" name="topic" value="{{ topic.id }}"><input type="hidden" name="lesson" value="{{ l.id }}"><button name="action" value="lesson-up" class="ghost small" aria-label="Move up" {{ 'disabled' if loop.first }}>↑</button></form>
+        <form method="post"><input type="hidden" name="topic" value="{{ topic.id }}"><input type="hidden" name="lesson" value="{{ l.id }}"><button name="action" value="lesson-down" class="ghost small" aria-label="Move down" {{ 'disabled' if loop.last }}>↓</button></form>
+        {% endif %}
+        <form method="post" class="move">
+          <input type="hidden" name="action" value="put"><input type="hidden" name="lesson" value="{{ l.id }}">
+          <select name="topic" onchange="this.form.submit()" aria-label="Move {{ l.title }} to folder">
+            {% for t in topics %}<option value="{{ t.id }}" {{ 'selected' if t.id == topic.id }}>{{ t.name }}</option>{% endfor %}
+            <option value="" {{ 'selected' if topic.id == 'other' }}>Other lessons</option>
+          </select>
+          <noscript><button class="small">Move</button></noscript>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="muted">Empty. Move lessons here with the folder menu next to each lesson.</p>{% endif %}
+  </section>
+{% endfor %}
+</div>
+{% endblock %}

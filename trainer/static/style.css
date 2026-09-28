@@ -618,3 +618,22 @@ body.cert-page { background: var(--soft); padding: 16px; }
 .seg { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.72rem; font-weight: 700; overflow: hidden; white-space: nowrap; }
 .seg0 { background: var(--red); } .seg1 { background: var(--grey-edge); } .seg2 { background: var(--ok); }
 .seg-key { color: #fff; }
+
+/* ---- Topic folders ------------------------------------------------------------- */
+.add-folder { margin: 8px 0 16px; }
+.folders { display: grid; gap: 14px; }
+.folder { padding: 14px 16px; }
+.folder-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.folder-bar h2 { margin: 0; }
+.folder-ico { font-size: 1.3rem; }
+.folder-bar .rename { display: flex; gap: 6px; align-items: center; flex: 1 1 260px; }
+.folder-bar .as-title { font: 600 1.1rem var(--font-head); color: var(--heading); border: 1px solid transparent; background: transparent; padding: 4px 8px; min-width: 0; flex: 1; }
+.folder-bar .as-title:hover, .folder-bar .as-title:focus { border-color: var(--line); background: var(--bg); }
+.folder-lessons { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid var(--line); }
+.folder-lessons li { display: flex; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.folder-lessons li:last-child { border-bottom: 0; }
+.folder-lessons .move select { min-height: 36px; padding: 4px 8px; font-size: 0.85rem; max-width: 220px; }
+.folder-head { margin: 18px 0 8px; font-size: 1rem; color: var(--muted); font-family: var(--font); text-transform: uppercase; letter-spacing: 0.06em; }
+.path .topic-head { list-style: none; width: 100%; text-align: center; font: 600 1.05rem var(--font-head); color: var(--heading);
+                    margin: 18px 0 6px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.path .topic-head:first-child { border-top: 0; margin-top: 0; padding-top: 0; }

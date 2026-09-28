@@ -98,18 +98,22 @@
 
 <section class="section" id="lessons">
   <div class="section-head"><h2>Lessons</h2></div>
+  <p class="muted">Grouped by folder. Change folders on the <a href="/manage/topics">Topics</a> page.</p>
+  {% for topic, members in groups %}{% if members %}
+  <h3 class="folder-head">{{ topic.name }}</h3>
   <div class="list">
-    {% for l in lessons.values() | sort(attribute='title') %}
+    {% for l in members %}
     <div class="item">
       <span class="lesson-ico{{ ' warn' if flagged[l.id] else '' }}">{{ icon("alert" if flagged[l.id] else "book") }}</span>
       <div class="grow">
         <a class="title" href="/manage/lesson/{{ l.id }}">{{ l.title }}</a>
-        <div class="meta">{% if 'all' in l.roles %}Everyone{% else %}{% for r in l.roles %}{{ role_names.get(r, r) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+        <div class="meta">{% if 'all' in l.roles %}Everyone{% elif not l.roles %}Not required for anyone{% else %}{% for r in l.roles %}{{ role_names.get(r, r) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
           · {{ l.questions | length }} questions · {{ "video" if l.video else "no video" }} · checked {{ l.reviewed_on[:10] }}</div>
       </div>
       <a class="btn ghost small" href="/lesson/{{ l.id }}">Preview</a>
     </div>
     {% endfor %}
   </div>
+  {% endif %}{% endfor %}
 </section>
 {% endblock %}

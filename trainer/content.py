@@ -48,6 +48,41 @@ def load_roles():
     return yaml.safe_load((CONTENT / "roles.yaml").read_text()) or []
 
 
+OTHER_TOPIC = {"id": "other", "name": "Other lessons"}
+
+
+def load_topics():
+    path = CONTENT / "topics.yaml"
+    try:
+        topics = yaml.safe_load(path.read_text()) or [] if path.exists() else []
+    except yaml.YAMLError:
+        topics = []   # a broken file never takes the app down; everything shows under Other
+    return [{"id": str(t.get("id") or slugify(t.get("name", "topic"))), "name": str(t.get("name") or "Untitled"),
+             "lessons": [str(x) for x in t.get("lessons") or []]} for t in topics if isinstance(t, dict)]
+
+
+def save_topics(topics):
+    data = [{"id": t["id"], "name": t["name"], "lessons": list(t["lessons"])} for t in topics]
+    header = "# Lesson folders, in the order workers and managers see them. Managers edit this on\n" \
+             "# Manager > Topics. A lesson in no folder shows under \"Other lessons\".\n"
+    (CONTENT / "topics.yaml").write_text(header + yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100))
+
+
+def group_by_topic(lessons, topics=None):
+    """[(topic, [lessons in folder order])], empty folders included, then Other."""
+    topics = load_topics() if topics is None else topics
+    by_id = {l["id"]: l for l in lessons}
+    seen, out = set(), []
+    for t in topics:
+        members = [by_id[i] for i in t["lessons"] if i in by_id and i not in seen]
+        seen.update(l["id"] for l in members)
+        out.append((t, members))
+    rest = sorted((l for l in lessons if l["id"] not in seen), key=lambda l: l["title"])
+    if rest:
+        out.append((OTHER_TOPIC, rest))
+    return out
+
+
 def load_survey():
     with open(CONTENT / "survey.yaml") as f:
         return yaml.safe_load(f)

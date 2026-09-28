@@ -56,6 +56,7 @@ S = {
                       "ar": "تم التحديث: أعد الدرس"},
     "state_refresh": {"en": "Yearly refresher", "es": "Repaso anual", "zh": "年度复习", "vi": "Ôn tập hằng năm", "ar": "مراجعة سنوية"},
     "done_on": {"en": "Done {date}", "es": "Completada {date}", "zh": "{date}完成", "vi": "Xong ngày {date}", "ar": "أُنجز {date}"},
+    "other_lessons": {"en": "Other lessons", "es": "Otras lecciones", "zh": "其他课程", "vi": "Bài học khác", "ar": "دروس أخرى"},
     "certificate": {"en": "Certificate", "es": "Certificado", "zh": "证书", "vi": "Chứng nhận", "ar": "الشهادة"},
     "in_english": {"en": "", "es": "Esta lección aún no está traducida: se muestra en inglés.",
                    "zh": "本课尚未翻译，以英文显示。", "vi": "Bài học này chưa được dịch: đang hiển thị bằng tiếng Anh.",
