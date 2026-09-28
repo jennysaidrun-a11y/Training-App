@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS survey_tickets (
   lesson_id TEXT NOT NULL
 );
 """
-ADDED_COLUMNS = [("workers", "pin_hash", "TEXT")]
+ADDED_COLUMNS = [("workers", "pin_hash", "TEXT"), ("workers", "lang", "TEXT"),
+                 ("survey_answers", "comments", "TEXT NOT NULL DEFAULT ''"), ("survey_answers", "form", "TEXT NOT NULL DEFAULT ''")]
 
 
 def db_path():
@@ -87,6 +88,11 @@ def add_worker(con, name, role, pin_hash=None):
 
 def set_worker_pin(con, wid, pin_hash):
     con.execute("UPDATE workers SET pin_hash = ? WHERE id = ?", (pin_hash, wid))
+    con.commit()
+
+
+def set_worker_lang(con, wid, lang):
+    con.execute("UPDATE workers SET lang = ? WHERE id = ?", (lang, wid))
     con.commit()
 
 
@@ -175,21 +181,26 @@ def survey_ticket(con, lesson_id):
     return ticket
 
 
-def save_survey(con, ticket, answers, next_topic):
+def save_survey(con, ticket, answers, next_topic, comments="", form=""):
     """Uses up the ticket and stores the answers with no link to who gave them.
     Returns False if the ticket is unknown or already used."""
     row = con.execute("SELECT lesson_id FROM survey_tickets WHERE ticket_hash = ?", (_ticket_hash(ticket or ""),)).fetchone()
     if not row:
         return False
     con.execute("DELETE FROM survey_tickets WHERE ticket_hash = ?", (_ticket_hash(ticket),))
-    con.execute("INSERT INTO survey_answers (id, lesson_id, month, answers, next_topic) VALUES (?, ?, ?, ?, ?)",
+    con.execute("INSERT INTO survey_answers (id, lesson_id, month, answers, next_topic, comments, form) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (secrets.randbits(62), row["lesson_id"], dt.date.today().strftime("%Y-%m"),
-                 ",".join(str(a) for a in answers), next_topic.strip()[:300]))
+                 ",".join(str(a) for a in answers), next_topic.strip()[:300], comments.strip()[:1000], form))
     con.commit()
     return True
 
 
-def survey_rows(con, lesson_id=None):
-    q = "SELECT lesson_id, month, answers, next_topic FROM survey_answers"
-    rows = con.execute(q + (" WHERE lesson_id = ?" if lesson_id else "") + " ORDER BY month DESC, id", (lesson_id,) if lesson_id else ())
+def survey_rows(con, lesson_id=None, form=None):
+    """Answers for one version of the form (and one lesson, if given)."""
+    q, args = "SELECT lesson_id, month, answers, next_topic, comments FROM survey_answers WHERE 1=1", []
+    if form is not None:
+        q, args = q + " AND form = ?", args + [form]
+    if lesson_id:
+        q, args = q + " AND lesson_id = ?", args + [lesson_id]
+    rows = con.execute(q + " ORDER BY month DESC, id", args)
     return [{**dict(r), "answers": [int(a) for a in r["answers"].split(",") if a]} for r in rows]

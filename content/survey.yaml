@@ -1,10 +1,58 @@
 # The anonymous survey after each passed lesson. Nothing links an answer to a person.
-# Ratings are 1 to 5 on the scale below. Change the wording here; keep the number of
-# ratings the same once answers are coming in, or old and new answers won't line up.
-scale: [Strongly disagree, Disagree, Not sure, Agree, Strongly agree]
+# Based on United Bakery's Food Safety Culture Feedback Form (1115-FSQA-F-55-2, rev. 1,
+# issued 2026-01-22). English, Spanish, Chinese and Arabic are the form's own wording
+# (the intro says "this training" instead of "the quarterly training"). Vietnamese
+# statements and the two written questions were translated for the app: have a
+# Vietnamese speaker check them.
+# Each rating scores 0 (disagree), 1 (neutral) or 2 (agree). Changing the questions?
+# Change `form` too, so old and new answers aren't added together.
+form: 1115-FSQA-F-55-2 rev 1
+title:
+  en: Food Safety Culture Feedback
+  es: Comentarios sobre la cultura de seguridad alimentaria
+  zh: 食品安全文化反馈
+  vi: Góp ý về văn hóa an toàn thực phẩm
+  ar: ملاحظات حول ثقافة سلامة الغذاء
+intro:
+  en: This is an anonymous form for feedback on this training. Please answer honestly. This feedback will be used to improve our food safety programs. It is ok to disagree with the questions.
+  es: Este es un formulario anónimo para enviar comentarios sobre esta capacitación. Responda con sinceridad. Estos comentarios se utilizarán para mejorar nuestros programas de seguridad alimentaria. Está bien no estar de acuerdo con las preguntas.
+  zh: 这是一份匿名表格，用于对本次培训进行反馈。请诚实回答。此反馈将用于改进我们的食品安全计划。您可以对问题表示不同意。
+  vi: Đây là biểu mẫu ẩn danh để góp ý về khóa đào tạo này. Vui lòng trả lời trung thực. Ý kiến này sẽ được dùng để cải thiện các chương trình an toàn thực phẩm của chúng tôi. Bạn có thể không đồng ý với các câu hỏi.
+  ar: هذا نموذج مجهول المصدر لملاحظاتك حول هذا التدريب. يرجى الإجابة بصدق. سيتم استخدام هذه الملاحظات لتحسين برامج سلامة الغذاء لدينا. لا بأس من الاختلاف مع الأسئلة.
+scale:
+  - {en: Disagree, es: Discrepar, zh: 不同意, vi: Không đồng ý, ar: أختلف}
+  - {en: Neutral, es: Neutral, zh: 中性的, vi: Trung lập, ar: حيادي}
+  - {en: Agree, es: Aceptar, zh: 同意, vi: Đồng ý, ar: يوافق}
 ratings:
-  - The lesson was clear and easy to follow.
-  - I can use what I learned on my job.
-  - The lesson was the right length.
-  - The quiz questions were fair.
-next_topic: What would you like to learn about next?
+  - en: This training includes content that is relevant to my job duties.
+    es: Esta capacitación incluye contenido relevante para mis funciones laborales.
+    zh: 这次培训包括与我的工作职责相关的内容。
+    vi: Khóa đào tạo này có nội dung liên quan đến công việc của tôi.
+    ar: يتضمن هذا التدريب محتوى مرتبطًا بمهام وظيفتي.
+  - en: I learned something new from the training.
+    es: Aprendí algo nuevo de la formación.
+    zh: 我从培训中学到了一些新东西。
+    vi: Tôi đã học được điều mới từ khóa đào tạo.
+    ar: لقد تعلمت شيئا جديدا من التدريب.
+  - en: Management provides me with the tools and trainings that are needed to do my job duties and produce safe, quality, authentic and legally compliant products.
+    es: La gerencia me proporciona las herramientas y capacitaciones necesarias para realizar mis tareas laborales y producir productos seguros, de calidad, auténticos y legalmente compatibles.
+    zh: 管理层为我提供履行工作职责和生产安全、优质、真实且合法的产品所需的工具和培训。
+    vi: Ban quản lý cung cấp cho tôi các công cụ và khóa đào tạo cần thiết để làm công việc của mình và sản xuất sản phẩm an toàn, chất lượng, chân chính và tuân thủ pháp luật.
+    ar: تزودني الإدارة بالأدوات والتدريبات اللازمة للقيام بواجباتي الوظيفية وإنتاج منتجات آمنة وعالية الجودة وأصيلة ومتوافقة مع القانون.
+  - en: I feel comfortable bringing up food safety related issues to my supervisor or Management.
+    es: Me siento cómodo planteando cuestiones relacionadas con la seguridad alimentaria a mi supervisor o a la gerencia.
+    zh: 我可以放心地向我的主管或管理层提出食品安全相关的问题。
+    vi: Tôi cảm thấy thoải mái khi nêu các vấn đề liên quan đến an toàn thực phẩm với người giám sát hoặc ban quản lý.
+    ar: أشعر بالراحة عند إثارة القضايا المتعلقة بسلامة الغذاء مع المشرف أو الإدارة.
+next_topic:
+  en: What would you like to learn about next?
+  es: ¿Sobre qué le gustaría aprender la próxima vez?
+  zh: 您接下来想学习什么内容？
+  vi: Bạn muốn học về chủ đề gì tiếp theo?
+  ar: ما الذي تود أن تتعلمه في المرة القادمة؟
+comments:
+  en: Additional comments
+  es: Comentarios adicionales
+  zh: 其他意见
+  vi: Ý kiến khác
+  ar: تعليقات إضافية

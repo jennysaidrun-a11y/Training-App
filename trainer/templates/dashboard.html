@@ -86,20 +86,27 @@
   {% if not survey.enough %}
     <p class="muted">Results show once there are at least {{ survey.min }} answers, so no one's answers can be picked out.</p>
   {% else %}
-    <p class="muted">Average rating out of 5 (5 = {{ survey.scale[4] | lower }}).</p>
+    <div class="survey-score"><b>{{ survey.avg_score }}</b><span> / {{ survey.max_score }} average score</span> <span class="muted">(form {{ survey.form }}: disagree 0, neutral 1, agree 2)</span></div>
     <div class="bars">
     {% for b in survey.bars %}
       <div class="bar-row">
         <span class="bar-label">{{ b.text }}</span>
-        <span class="bar-track"><span class="bar-fill" style="width: {{ b.pct }}%"></span></span>
-        <span class="bar-value">{{ b.avg }}<small> · {{ b.agree }}% agree</small></span>
+        <span class="bar-track stacked" role="img" aria-label="{% for c in b.counts %}{{ survey.scale[loop.index0] }} {{ c }}{% if not loop.last %}, {% endif %}{% endfor %}">
+          {% for p in b.pcts %}{% if p %}<span class="seg seg{{ loop.index0 }}" style="width: {{ p }}%">{{ p }}%</span>{% endif %}{% endfor %}
+        </span>
+        <span class="bar-value">{{ b.avg }}<small> / 2</small></span>
       </div>
     {% endfor %}
     </div>
+    <p class="legend"><span class="cell-pill seg-key seg0">{{ survey.scale[0] }}</span> <span class="cell-pill seg-key seg1">{{ survey.scale[1] }}</span> <span class="cell-pill seg-key seg2">{{ survey.scale[2] }}</span></p>
     <h3>{{ survey.next_topic }}</h3>
     {% if survey.topics %}
     <ul class="topics">{% for t in survey.topics %}<li>“{{ t.text }}” <span class="muted">· after {{ t.lesson }} · {{ t.month }}</span></li>{% endfor %}</ul>
     {% else %}<p class="muted">No ideas written in yet.</p>{% endif %}
+    <h3>Additional comments</h3>
+    {% if survey.comments %}
+    <ul class="topics">{% for t in survey.comments %}<li>“{{ t.text }}” <span class="muted">· after {{ t.lesson }} · {{ t.month }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted">No comments yet.</p>{% endif %}
   {% endif %}
 </section>
 {% endblock %}

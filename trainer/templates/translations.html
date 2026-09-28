@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Languages · Training · United Bakery{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block body %}
+{% include "_manager_nav.html" %}
+<div class="page-head"><h1>Lesson languages</h1>
+  {% if research_ready %}<button type="button" id="all-missing" class="small">Translate everything missing</button>{% endif %}</div>
+<p class="muted">Workers pick their language on the sign-in page. A lesson shows in their language once it has a current translation; otherwise it shows in English. When you change a lesson's English, its translations go out of date and workers see English until you translate it again.</p>
+<p class="note">Translations are made by Claude. Before relying on one for a safety lesson, have someone who reads that language check it.</p>
+{% if not research_ready %}<p class="note bad">Claude isn't set up in this Codespace yet, so translating is off. See the lesson editor's Claude panel for the steps.</p>{% endif %}
+<div class="table-wrap"><table class="grid req" id="langs">
+  <thead><tr><th class="sticky">Lesson</th>{% for code, name in langs %}<th lang="{{ code }}">{{ name }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for row in grid %}
+    <tr><td class="sticky"><a href="/manage/lesson/{{ row.lesson.id }}">{{ row.lesson.title }}</a></td>
+      {% for code, name in langs %}{% set st = row.states[code] %}
+      <td data-lesson="{{ row.lesson.id }}" data-lang="{{ code }}" data-state="{{ st }}">
+        <span class="cell-pill s-{{ {'current': 'done', 'stale': 'updated', 'missing': 'due'}[st] }}">{{ {'current': 'Done', 'stale': 'Out of date', 'missing': 'Not yet'}[st] }}</span>
+        {% if research_ready %}<button type="button" class="ghost small tr-btn">{{ "Redo" if st == "current" else "Translate" }}</button>{% endif %}
+        {% if st != "missing" %}<a class="cert-link" href="/lesson/{{ row.lesson.id }}?lang={{ code }}" target="_blank" rel="noopener">View</a>{% endif %}
+      </td>{% endfor %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<script>
+(() => {
+  async function run(td) {
+    const btn = td.querySelector(".tr-btn"), pill = td.querySelector(".cell-pill");
+    btn.disabled = true; pill.textContent = "Translating…"; pill.className = "cell-pill";
+    try {
+      const res = await fetch(`/api/manage/lesson/${td.dataset.lesson}/translate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lang: td.dataset.lang }) });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.error === "signin" ? "Sign Claude in first (see the lesson editor)." : (r.error || "Failed"));
+      pill.textContent = "Done"; pill.className = "cell-pill s-done"; td.dataset.state = "current"; btn.textContent = "Redo";
+    } catch (e) { pill.textContent = e.message; pill.className = "cell-pill s-failed"; }
+    btn.disabled = false;
+  }
+  document.querySelectorAll(".tr-btn").forEach((b) => b.addEventListener("click", () => run(b.closest("td"))));
+  const all = document.getElementById("all-missing");
+  if (all) all.addEventListener("click", async () => {
+    all.disabled = true;
+    for (const td of document.querySelectorAll('td[data-state="missing"], td[data-state="stale"]')) await run(td);
+    all.disabled = false;
+  });
+})();
+</script>
+{% endblock %}

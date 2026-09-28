@@ -4,16 +4,16 @@
 {% block body %}
 <div class="signin">
   <span class="avatar c{{ person.id % 6 }}">{{ person.name[:1] }}</span>
-  <h1>Hi, {{ person.name.split(' ')[0] }}</h1>
+  <h1>{{ t('hi', name=person.name.split(' ')[0]) }}</h1>
   {% if not has_pin %}
-    <p class="note bad">You don't have a PIN yet. Ask your manager to set one for you.</p>
-    <a class="btn ghost" href="/">Back</a>
+    <p class="note bad">{{ t("no_pin") }}</p>
+    <a class="btn ghost" href="/">{{ t("back") }}</a>
   {% elif locked %}
-    <p class="note bad">Too many wrong tries. Wait {{ (locked // 60) + 1 }} minutes, or ask your manager to reset your PIN.</p>
-    <a class="btn ghost" href="/">Back</a>
+    <p class="note bad">{{ t("pin_locked", m=(locked // 60) + 1) }}</p>
+    <a class="btn ghost" href="/">{{ t("back") }}</a>
   {% else %}
-    <p class="muted">Type your 4-digit PIN.</p>
-    {% if wrong %}<p class="note bad">That PIN isn't right. Try again.</p>{% endif %}
+    <p class="muted">{{ t("type_pin") }}</p>
+    {% if wrong %}<p class="note bad">{{ t("pin_wrong") }}</p>{% endif %}
     <form method="post" id="pin-form" class="pin-form">
       <input name="pin" id="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" required autofocus aria-label="PIN">
       <div class="pin-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
@@ -24,7 +24,7 @@
       </div>
       <noscript><button>Sign in</button></noscript>
     </form>
-    <a class="muted" href="/">Not {{ person.name.split(' ')[0] }}? Go back</a>
+    <a class="muted" href="/">{{ t("not_you", name=person.name.split(' ')[0]) }}</a>
     <script>
       (() => {
         const pin = document.getElementById("pin"), dots = document.querySelectorAll(".pin-dots i");

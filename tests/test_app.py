@@ -104,12 +104,15 @@ def test_worker_takes_a_lesson(client, anon):
 
     # The survey: once per completion, stored without the worker.
     ticket = r["survey_ticket"]
-    assert anon.post("/api/survey", json={"ticket": ticket, "answers": [5, 4, 3]}).status_code == 400
-    assert anon.post("/api/survey", json={"ticket": ticket, "answers": [5, 4, 4, 5], "next_topic": "Oven safety"}).json()["ok"]
-    assert anon.post("/api/survey", json={"ticket": ticket, "answers": [5, 4, 4, 5]}).status_code == 400
+    assert anon.post("/api/survey", json={"ticket": ticket, "answers": [2, 1, 0]}).status_code == 400
+    assert anon.post("/api/survey", json={"ticket": ticket, "answers": [2, 1, 3, 0]}).status_code == 400   # 0-2 only
+    assert anon.post("/api/survey", json={"ticket": ticket, "answers": [2, 2, 1, 0], "next_topic": "Oven safety",
+                                          "comments": "More pictures"}).json()["ok"]
+    assert anon.post("/api/survey", json={"ticket": ticket, "answers": [2, 2, 1, 0]}).status_code == 400
     with db.connect() as con:
         rows = db.survey_rows(con)
-        assert rows == [{"lesson_id": "forklifts", "month": dt.date.today().strftime("%Y-%m"), "answers": [5, 4, 4, 5], "next_topic": "Oven safety"}]
+        assert rows == [{"lesson_id": "forklifts", "month": dt.date.today().strftime("%Y-%m"), "answers": [2, 2, 1, 0],
+                         "next_topic": "Oven safety", "comments": "More pictures"}]
         assert "worker" not in str(con.execute("PRAGMA table_info(survey_answers)").fetchall())
 
     # Someone else can't see Sam's record or certificate.
@@ -646,7 +649,61 @@ def test_dashboard_requirements_and_survey_chart(client, anon):
     # Survey bars show only with enough answers.
     assert "at least 3 answers" in client.get("/manage/dashboard").text
     with db.connect() as con:
-        for a in ([5, 5, 4, 4], [4, 4, 4, 4], [3, 5, 4, 2]):
-            db.save_survey(con, db.survey_ticket(con, "allergens"), a, "Knife safety")
+        form = content.load_survey()["form"]
+        for a in ([2, 2, 2, 2], [2, 1, 2, 2], [0, 2, 2, 1]):
+            db.save_survey(con, db.survey_ticket(con, "allergens"), a, "Knife safety", "Good", form)
+        db.save_survey(con, db.survey_ticket(con, "allergens"), [0, 0, 0, 0], "old form", "", "older form")
     page = client.get("/manage/dashboard").text
-    assert "bar-fill" in page and "4.0" in page and "Knife safety" in page
+    assert "seg2" in page and "6.7" in page and "/ 8 average score" in page and "Knife safety" in page
+    assert "old form" not in page                                   # answers to an older form aren't mixed in
+
+
+def test_languages(client, anon):
+    with db.connect() as con:
+        wid = db.add_worker(con, "Lin", "baking", __import__("trainer.auth", fromlist=["x"]).hash_pin("4321"))
+    anon.post("/lang", data={"lang": "es", "back": "/"})
+    assert "¿Quién se capacita hoy?" in anon.get("/").text
+    anon.post(f"/signin/{wid}", data={"pin": "4321"})
+    anon.post("/lang", data={"lang": "ar", "back": f"/me/{wid}"})
+    page = anon.get(f"/me/{wid}").text
+    assert 'dir="rtl"' in page
+    with db.connect() as con:
+        assert db.worker(con, wid)["lang"] == "ar"
+    # No translation yet: English lesson with a note; survey in Arabic.
+    page = anon.get("/lesson/lockout-tagout").text
+    assert "غير مترجم" in page and json.dumps("أختلف")[1:-1] in page
+    # A translation made for the current English is used; a stale one isn't.
+    from trainer import app as app_module
+    lesson = content.load_lessons()["lockout-tagout"]
+    tr = {"source": app_module.content_hash(lesson), "title": "القفل", "summary": "", "sections": [{"heading": "لماذا", "text": "نص"}],
+          "questions": [{"q": "سؤال", "choices": [], "why": ""}]}
+    lesson["translations"] = {"ar": tr}
+    content.save_lesson(lesson)
+    page = anon.get("/lesson/lockout-tagout").text
+    assert "القفل" in page and "غير مترجم" not in page
+    lesson = content.load_lessons()["lockout-tagout"]
+    lesson["sections"][0]["text"] += " Changed."
+    content.save_lesson(lesson)
+    assert "غير مترجم" in anon.get("/lesson/lockout-tagout").text          # English changed: back to English
+
+
+def test_translate_lesson(client, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    def fake(lesson, lang):
+        return {"title": "Montacargas", "summary": "", "sections": [{"heading": "H", "text": "T"} for _ in lesson["sections"]],
+                "questions": [{"q": "P", "choices": ["x"] * len(q["choices"]), "why": ""} for q in lesson["questions"]]}
+    monkeypatch.setattr(research, "translate", fake)
+    assert "Not yet" in client.get("/manage/translations").text
+    assert client.post("/api/manage/lesson/forklifts/translate", json={"lang": "es"}).json()["ok"]
+    assert content.translation_state(content.load_lessons()["forklifts"], "es") == "current"
+    assert "Montacargas" in client.get("/lesson/forklifts?lang=es").text
+    assert client.post("/api/manage/lesson/forklifts/translate", json={"lang": "en"}).status_code == 400
+
+
+def test_translation_shape_is_checked(monkeypatch):
+    lesson = content.load_lessons()["forklifts"]
+    short = json.dumps({"structured_output": {"title": "x", "summary": "", "sections": [], "questions": []}})
+    monkeypatch.setattr(research, "mode", lambda: "cli")
+    monkeypatch.setattr(research, "claude_command", lambda: "claude")
+    with pytest.raises(RuntimeError, match="missing pieces"):
+        research.translate(lesson, "vi", runner=lambda *a, **k: _Done(short))

@@ -571,8 +571,8 @@ table.req td { text-align: center; } table.req td.sticky { text-align: left; }
 /* ---- Survey ------------------------------------------------------------------ */
 .survey-q { border: 0; padding: 0; margin: 0 0 18px; }
 .survey-q legend { font-weight: 700; color: var(--heading); margin-bottom: 8px; }
-.rates { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-.rates .rate { flex-direction: column; gap: 2px; min-height: 64px; padding: 6px 4px; white-space: normal; line-height: 1.15; font-size: 0.7rem;
+.rates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.rates .rate { flex-direction: column; gap: 2px; min-height: 52px; padding: 6px 6px; white-space: normal; line-height: 1.15; font-size: 0.9rem;
                background: var(--bg); color: var(--text); border: 2px solid var(--line); box-shadow: 0 3px 0 var(--line); }
 .rates .rate b { font-size: 1.1rem; }
 .rates .rate.on { background: var(--blue-soft); border-color: var(--blue-line); box-shadow: 0 3px 0 var(--blue-line); color: var(--crust); }
@@ -603,3 +603,18 @@ body.cert-page { background: var(--soft); padding: 16px; }
   .cert-actions { display: none; }
   .cert { border-radius: 0; }
 }
+
+.lang-picker { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 12px 0 4px; }
+.lang-picker .chip-lang { min-height: 34px; padding: 0 12px; font-size: 0.85rem; background: var(--bg); color: var(--text); border: 1px solid var(--line); box-shadow: none; }
+.lang-picker .chip-lang.on { background: var(--crust); color: #fff; border-color: var(--crust); }
+.lang-picker .chip-lang:active { transform: none; }
+[dir="rtl"] .reading ol li { flex-direction: row; }
+[dir="rtl"] .tabs { margin-left: 0; margin-right: auto; }
+[dir="rtl"] .footer .actions { margin-left: 0; margin-right: auto; }
+[dir="rtl"] .eyebrow, [dir="rtl"] .survey-q legend { text-align: right; }
+
+.survey-score { margin: 6px 0 14px; } .survey-score b { font: 700 1.8rem/1 var(--font-head); color: var(--crust); }
+.bar-track.stacked { display: flex; height: 26px; }
+.seg { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.72rem; font-weight: 700; overflow: hidden; white-space: nowrap; }
+.seg0 { background: var(--red); } .seg1 { background: var(--grey-edge); } .seg2 { background: var(--ok); }
+.seg-key { color: #fff; }

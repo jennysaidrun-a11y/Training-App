@@ -1,0 +1,4 @@
+<form method="post" action="/lang" class="lang-picker" aria-label="{{ t('language') }}">
+  <input type="hidden" name="back" value="{{ request.url.path }}">
+  {% for code, name in langs %}<button name="lang" value="{{ code }}" class="chip-lang{{ ' on' if code == lang else '' }}" lang="{{ code }}"{% if code == lang %} aria-current="true"{% endif %}>{{ name }}</button>{% endfor %}
+</form>

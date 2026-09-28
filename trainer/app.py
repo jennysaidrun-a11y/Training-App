@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, content, db, editor, extract, research, rules
+from . import auth, content, db, editor, extract, i18n, research, rules
 
 HERE = content.ROOT / "trainer"
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -60,6 +60,8 @@ STATE_LABELS = {
 def render(request, name, **ctx):
     ctx.setdefault("role_names", content.role_names())
     ctx.setdefault("who", auth.current(request))
+    lang = ctx.setdefault("lang", i18n.pick(request, ctx["who"]))
+    ctx.update(langs=i18n.LANGS, rtl=lang in i18n.RTL, t=lambda key, **kw: i18n.t(key, lang, **kw))
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -181,6 +183,18 @@ def signin(request: Request, wid: int, pin: str = Form("")):
     return response
 
 
+@app.post("/lang")
+def set_language(request: Request, lang: str = Form("en"), back: str = Form("/")):
+    lang = lang if lang in i18n.CODES else "en"
+    who = auth.current(request)
+    if who and who["kind"] == "w":
+        with db.connect() as con:
+            db.set_worker_lang(con, who["id"], lang)
+    response = RedirectResponse(_safe_next(back, "/"), status_code=303)
+    response.set_cookie(i18n.COOKIE, lang, max_age=365 * 86400, samesite="lax", path="/")
+    return response
+
+
 @app.post("/signout")
 def signout():
     response = RedirectResponse("/", status_code=303)
@@ -215,6 +229,31 @@ def _get_lesson(lesson_id):
     return lesson
 
 
+content_hash = content.content_hash
+
+
+def localize(lesson, lang):
+    """The lesson in one language: its translation laid over the English, piece by
+    piece, so anything not translated yet still shows (in English)."""
+    if lang == "en":
+        return lesson, True
+    if content.translation_state(lesson, lang) != "current":
+        return lesson, False
+    tr = lesson["translations"][lang]
+    out = dict(lesson)
+    for k in ("title", "summary"):
+        out[k] = tr.get(k) or lesson[k]
+    tsec = tr.get("sections") or []
+    out["sections"] = [{**s, **{k: v for k, v in (tsec[i] if i < len(tsec) else {}).items() if v and k in ("heading", "text")}}
+                       for i, s in enumerate(lesson["sections"])]
+    out["questions"] = []
+    for i, q in enumerate(lesson["questions"]):
+        tq = (tr.get("questions") or [])[i] if i < len(tr.get("questions") or []) else {}
+        choices = tq.get("choices") if tq.get("choices") and len(tq["choices"]) == len(q["choices"]) else q["choices"]
+        out["questions"].append({**q, "q": tq.get("q") or q["q"], "choices": choices, "why": tq.get("why") or q.get("why", "")})
+    return out, True
+
+
 def _public_lesson(lesson):
     """What the player needs, without the answers."""
     return {
@@ -228,22 +267,32 @@ def _public_lesson(lesson):
     }
 
 
+def _survey_for(lang):
+    sv = content.load_survey()
+    return {"form": sv.get("form", ""), "title": i18n.localized(sv["title"], lang), "intro": i18n.localized(sv["intro"], lang),
+            "scale": [i18n.localized(x, lang) for x in sv["scale"]], "ratings": [i18n.localized(x, lang) for x in sv["ratings"]],
+            "next_topic": i18n.localized(sv["next_topic"], lang), "comments": i18n.localized(sv["comments"], lang)}
+
+
 @app.get("/lesson/{lesson_id}", response_class=HTMLResponse)
 def lesson_page(request: Request, lesson_id: str):
     """Results are saved only for the signed-in worker; anyone else sees a preview."""
-    lesson = _get_lesson(lesson_id)
     who = auth.current(request)
+    lang = request.query_params.get("lang")
+    lang = lang if lang in i18n.CODES else i18n.pick(request, who)
+    lesson, translated = localize(_get_lesson(lesson_id), lang)
     person = who if who and who["kind"] == "w" else None
     status = rules.load_status()
     return render(request, "lesson.html", lesson=lesson, person=person, data=_public_lesson(lesson),
-                  rule_status=status.get("rules", {}), survey=content.load_survey(), who=who)
+                  rule_status=status.get("rules", {}), survey=_survey_for(lang), who=who, lang=lang,
+                  translated=translated, strings=i18n.table(lang))
 
 
 @app.post("/api/lesson/{lesson_id}/check")
 async def check_answer(lesson_id: str, request: Request):
     """Feedback for one answer while the lesson plays."""
     body = await request.json()
-    lesson = _get_lesson(lesson_id)
+    lesson, _ = localize(_get_lesson(lesson_id), i18n.pick(request, auth.current(request)))
     try:
         q = lesson["questions"][int(body["question"])]
     except (KeyError, IndexError, ValueError):
@@ -280,15 +329,16 @@ async def survey(request: Request):
     """The anonymous survey after a passed lesson. The ticket proves a completion
     without saying whose; it works once."""
     body = await request.json()
-    ratings = content.load_survey()["ratings"]
+    sv = content.load_survey()
     try:
         answers = [int(a) for a in body.get("answers") or []]
     except (TypeError, ValueError):
         answers = []
-    if len(answers) != len(ratings) or not all(1 <= a <= 5 for a in answers):
+    if len(answers) != len(sv["ratings"]) or not all(0 <= a < len(sv["scale"]) for a in answers):
         raise HTTPException(400, "Pick an answer for each question.")
     with db.connect() as con:
-        if not db.save_survey(con, str(body.get("ticket") or ""), answers, str(body.get("next_topic") or "")):
+        if not db.save_survey(con, str(body.get("ticket") or ""), answers, str(body.get("next_topic") or ""),
+                              str(body.get("comments") or ""), sv.get("form", "")):
             raise HTTPException(400, "This survey was already sent.")
     return {"ok": True}
 
@@ -384,21 +434,28 @@ def _cell(con, person, lesson, last_try):
 
 
 def _survey_summary(con, lesson_id, lessons):
+    """Per statement: how many disagreed / were neutral / agreed, and the average
+    score out of the form's total (0-1-2 per statement, like the paper form)."""
     survey = content.load_survey()
-    rows = db.survey_rows(con, lesson_id or None)
+    rows = db.survey_rows(con, lesson_id or None, survey.get("form", ""))
     n = len(rows)
-    out = {"n": n, "enough": n >= MIN_SURVEY_ANSWERS, "min": MIN_SURVEY_ANSWERS, "bars": [], "topics": [],
-           "scale": survey["scale"], "next_topic": survey["next_topic"]}
+    top = len(survey["scale"]) - 1
+    out = {"n": n, "enough": n >= MIN_SURVEY_ANSWERS, "min": MIN_SURVEY_ANSWERS, "bars": [], "topics": [], "comments": [],
+           "scale": [i18n.localized(x, "en") for x in survey["scale"]], "next_topic": i18n.localized(survey["next_topic"], "en"),
+           "max_score": top * len(survey["ratings"]), "form": survey.get("form", "")}
     if not out["enough"]:
         return out
     for i, text in enumerate(survey["ratings"]):
         vals = [r["answers"][i] for r in rows if len(r["answers"]) > i]
-        counts = [sum(1 for v in vals if v == k) for k in range(1, 6)]
-        avg = sum(vals) / len(vals) if vals else 0
-        out["bars"].append({"text": text, "avg": round(avg, 1), "pct": round(100 * avg / 5),
-                            "agree": round(100 * (counts[3] + counts[4]) / len(vals)) if vals else 0, "counts": counts})
-    out["topics"] = [{"text": r["next_topic"], "lesson": lessons.get(r["lesson_id"], {}).get("title", r["lesson_id"]),
-                      "month": r["month"]} for r in rows if r["next_topic"]][:60]
+        counts = [sum(1 for v in vals if v == k) for k in range(top + 1)]
+        out["bars"].append({"text": i18n.localized(text, "en"), "counts": counts,
+                            "pcts": [round(100 * c / len(vals)) if vals else 0 for c in counts],
+                            "avg": round(sum(vals) / len(vals), 1) if vals else 0})
+    totals = [sum(r["answers"]) for r in rows]
+    out["avg_score"] = round(sum(totals) / n, 1)
+    title = lambda lid: lessons.get(lid, {}).get("title", lid)
+    out["topics"] = [{"text": r["next_topic"], "lesson": title(r["lesson_id"]), "month": r["month"]} for r in rows if r["next_topic"]][:60]
+    out["comments"] = [{"text": r["comments"], "lesson": title(r["lesson_id"]), "month": r["month"]} for r in rows if r["comments"]][:60]
     return out
 
 
@@ -457,6 +514,40 @@ async def save_requirements(request: Request):
             lesson["roles"] = roles
             content.save_lesson(lesson)
     return RedirectResponse("/manage/requirements?saved=1", status_code=303)
+
+
+@app.get("/manage/translations", response_class=HTMLResponse)
+def translations_page(request: Request):
+    lessons = sorted(content.load_lessons().values(), key=lambda l: l["title"])
+    grid = [{"lesson": l, "states": {code: content.translation_state(l, code) for code in i18n.CODES if code != "en"}} for l in lessons]
+    return render(request, "translations.html", grid=grid, langs=[x for x in i18n.LANGS if x[0] != "en"],
+                  research_ready=research.available(), lang="en")
+
+
+@app.post("/api/manage/lesson/{lesson_id}/translate")
+async def translate_lesson(request: Request, lesson_id: str):
+    """Has Claude translate one lesson into one language and saves it with the
+    fingerprint of the English it came from."""
+    lang = (await request.json()).get("lang")
+    if lang not in i18n.CODES or lang == "en":
+        raise HTTPException(400, "Unknown language")
+    if not research.available():
+        return JSONResponse({"error": "setup"}, status_code=503)
+    lesson = _get_lesson(lesson_id)
+    try:
+        words = await run_in_threadpool(research.translate, lesson, lang)
+    except research.NotSignedIn:
+        return JSONResponse({"error": "signin"}, status_code=503)
+    except Exception as e:
+        print(f"Translation failed: {e.__class__.__name__}: {e}")
+        return JSONResponse({"error": f"Claude couldn't finish that ({e.__class__.__name__}). Try again."}, status_code=502)
+    lesson = dict(_get_lesson(lesson_id))    # re-read: the lesson may have been saved meanwhile
+    if content.content_hash(lesson) != content.content_hash(_get_lesson(lesson_id)):
+        return JSONResponse({"error": "The lesson changed while translating. Try again."}, status_code=409)
+    lesson["translations"] = {**(lesson.get("translations") or {}),
+                              lang: {"source": content.content_hash(lesson), "made_on": dt.date.today().isoformat(), "by": "Claude", **words}}
+    content.save_lesson(lesson)
+    return {"ok": True, "state": "current"}
 
 
 # ---- Manager sign-in ----------------------------------------------------------

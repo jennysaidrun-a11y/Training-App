@@ -98,6 +98,25 @@ def broken_lesson_files():
     return bad
 
 
+def content_hash(lesson):
+    """Fingerprint of a lesson's English words. A translation stores the fingerprint
+    it was made from; once the English changes, the old translation isn't used."""
+    import hashlib
+    import json
+    words = {"title": lesson.get("title"), "summary": lesson.get("summary"),
+             "sections": [[s.get("heading"), s.get("text")] for s in lesson.get("sections", [])],
+             "questions": [[q.get("q"), q.get("choices"), q.get("why")] for q in lesson.get("questions", [])]}
+    return hashlib.sha1(json.dumps(words, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
+
+
+def translation_state(lesson, lang):
+    """'current', 'stale' (English changed since) or 'missing'."""
+    tr = (lesson.get("translations") or {}).get(lang)
+    if not tr:
+        return "missing"
+    return "current" if tr.get("source") == content_hash(lesson) else "stale"
+
+
 def lessons_for_role(lessons, role):
     return [l for l in lessons.values() if "all" in l["roles"] or role in l["roles"]]
 
@@ -105,6 +124,9 @@ def lessons_for_role(lessons, role):
 def save_lesson(lesson):
     keep = ["id", "title", "roles", "version", "reviewed_on", "summary", "video", "sections", "questions", "citations", "sources"]
     data = {k: lesson.get(k) for k in keep}
+    for k in ("topic", "translations"):     # optional; left out of the file when empty
+        if lesson.get(k):
+            data[k] = lesson[k]
     path = LESSONS / f"{data['id']}.yaml"
     path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100))
     return path

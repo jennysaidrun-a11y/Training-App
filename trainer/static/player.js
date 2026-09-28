@@ -15,6 +15,7 @@
   const asked = new Set();
   let onKey = null;   // keyboard handler for the current screen
 
+  const tr = (key, vars = {}) => (window.T?.[key] || key).replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
   const el = (tag, attrs = {}, ...kids) => {
     const n = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) {
@@ -78,9 +79,9 @@
 
   function showSection(si, next) {
     const s = L.sections[si];
-    stage.replaceChildren(...[el("p", { class: "eyebrow" }, `Part ${si + 1} of ${L.sections.length}`), el("h1", {}, s.heading),
+    stage.replaceChildren(...[el("p", { class: "eyebrow" }, tr("part_of", { a: si + 1, b: L.sections.length })), el("h1", {}, s.heading),
       s.image ? el("img", { class: "slide-img", src: s.image, alt: "" }) : null, reading(s.text)].filter(Boolean));
-    setFooter({ buttons: [button("Continue", next)] });
+    setFooter({ buttons: [button(tr("continue"), next)] });
     onKey = (e) => { if (e.key === "Enter") next(); };
   }
 
@@ -95,7 +96,7 @@
       b.addEventListener("click", () => pick(ci));
       return b;
     });
-    const checkBtn = button("Check", () => check(), "", true);
+    const checkBtn = button(tr("check"), () => check(), "", true);
     host.append(eyebrow ? el("p", { class: "eyebrow" }, eyebrow) : null, el("p", { class: "q" }, q.q), el("div", { class: "choices" }, ...choiceButtons));
     setFooter({ buttons: [checkBtn] });
 
@@ -117,7 +118,7 @@
         }).then((x) => x.json());
       } catch (err) {
         checkBtn.disabled = false;
-        setFooter({ mood: "bad", title: "Couldn't reach the app", text: "Check the connection and press Check again.", buttons: [checkBtn] });
+        setFooter({ mood: "bad", title: tr("cant_reach"), text: tr("check_again"), buttons: [checkBtn] });
         return;
       }
       choiceButtons.forEach((b) => (b.disabled = true));
@@ -126,7 +127,7 @@
       mine.classList.add(r.correct ? "right" : "wrong");
       if (r.correct) {
         const go = () => { onKey = null; done(); };
-        setFooter({ mood: "good", title: "Nice job!", text: r.why, buttons: [button("Continue", go)] });
+        setFooter({ mood: "good", title: tr("nice_job"), text: r.why, buttons: [button(tr("continue"), go)] });
         onKey = (e) => { if (e.key === "Enter") go(); };
       } else {
         const retry = () => {
@@ -137,7 +138,7 @@
           checkBtn.disabled = true;
           onKey = keys;
         };
-        setFooter({ mood: "bad", title: "Not quite", text: r.why, buttons: [button("Try again", retry, "red")] });
+        setFooter({ mood: "bad", title: tr("not_quite"), text: r.why, buttons: [button(tr("try_again"), retry, "red")] });
         onKey = (e) => { if (e.key === "Enter") retry(); };
       }
     }
@@ -190,13 +191,13 @@
   async function showVideo(next) {
     const timed = L.questions.map((q, i) => ({ ...q, i })).filter((q) => q.at != null).sort((a, b) => a.at - b.at);
     const qhost = el("div");
-    stage.replaceChildren(el("p", { class: "eyebrow" }, "Watch"), el("h1", {}, L.title));
+    stage.replaceChildren(el("p", { class: "eyebrow" }, tr("watch")), el("h1", {}, L.title));
     const player = await makeVideo(L.video, stage);
     stage.append(qhost);
     let busy = false, finished = false;
     const finish = () => { if (!finished) { finished = true; clearInterval(timer); onKey = null; next(); } };
     const idle = () => {
-      setFooter({ text: "", buttons: [button(timed.length ? "Skip to the reading" : "Continue", finish, timed.length ? "ghost" : "")] });
+      setFooter({ text: "", buttons: [button(timed.length ? tr("skip_reading") : tr("continue"), finish, timed.length ? "ghost" : "")] });
     };
     idle();
     player.onEnd(() => { if (!busy) finish(); });
@@ -208,7 +209,7 @@
       player.pause();
       qhost.replaceChildren();
       qhost.className = "video-q";
-      showQuestion(q.i, qhost, () => { qhost.replaceChildren(); qhost.className = ""; busy = false; idle(); player.play(); }, "Quick check");
+      showQuestion(q.i, qhost, () => { qhost.replaceChildren(); qhost.className = ""; busy = false; idle(); player.play(); }, tr("quick_check"));
     }, 300);
   }
 
@@ -223,12 +224,12 @@
     if (step.type === "section") return showSection(step.si, next);
     if (asked.has(step.i)) return next();   // already asked during the video
     stage.replaceChildren();
-    showQuestion(step.i, stage, next, step.quiz ? "Quiz" : "Check what you read");
+    showQuestion(step.i, stage, next, step.quiz ? tr("quiz") : tr("check_read"));
   }
 
   async function finishLesson() {
     onKey = null;
-    setFooter({ buttons: [button("Saving…", () => {}, "", true)] });
+    setFooter({ buttons: [button(tr("saving"), () => {}, "", true)] });
     let r;
     try {
       r = await fetch(`/api/lesson/${L.id}/finish`, {
@@ -237,22 +238,22 @@
         body: JSON.stringify({ answers: firstTry }),
       }).then((x) => x.json());
     } catch (err) {
-      setFooter({ mood: "bad", title: "Couldn't save your result", text: "Check the connection and try again.", buttons: [button("Try again", finishLesson, "red")] });
+      setFooter({ mood: "bad", title: tr("cant_save"), text: tr("check_conn"), buttons: [button(tr("try_again"), finishLesson, "red")] });
       return;
     }
     stage.replaceChildren(
       el("div", { class: "result " + (r.passed ? "pass" : "fail") },
-        el("h1", {}, r.passed ? "Lesson complete!" : "Almost there"),
+        el("h1", {}, r.passed ? tr("complete") : tr("almost")),
         el("p", { class: "muted" }, r.passed
-          ? (r.saved ? "Saved to your record, with a certificate." : "Preview only: nothing was saved.")
-          : `You need ${r.pass_mark}% or more to pass. Take it again; you know the answers now.`),
+          ? (r.saved ? tr("saved_cert") : tr("preview_saved"))
+          : tr("need_pass", { p: r.pass_mark })),
         el("div", { class: "facts" },
-          el("div", { class: "fact gold" }, el("b", {}, `${r.score}%`), el("span", {}, "Score")),
-          el("div", { class: "fact green" }, el("b", {}, `${r.right}/${r.total}`), el("span", {}, "Right first try"))),
-        r.certificate ? el("p", {}, el("a", { class: "btn ghost", href: r.certificate, target: "_blank", rel: "noopener" }, "View certificate")) : null));
+          el("div", { class: "fact gold" }, el("b", {}, `${r.score}%`), el("span", {}, tr("score"))),
+          el("div", { class: "fact green" }, el("b", {}, `${r.right}/${r.total}`), el("span", {}, tr("right_first")))),
+        r.certificate ? el("p", {}, el("a", { class: "btn ghost", href: r.certificate, target: "_blank", rel: "noopener" }, tr("view_cert"))) : null));
     const back = () => { location.href = window.BACK; };
     const onward = r.survey_ticket ? () => showSurvey(r.survey_ticket, back) : back;
-    setFooter({ buttons: r.passed ? [button("Continue", onward)] : [button("Later", back, "ghost"), button("Try again", () => location.reload())] });
+    setFooter({ buttons: r.passed ? [button(tr("continue"), onward)] : [button(tr("later"), back, "ghost"), button(tr("try_again"), () => location.reload())] });
     onKey = (e) => { if (e.key === "Enter") (r.passed ? onward() : location.reload()); };
   }
 
@@ -261,43 +262,46 @@
   function showSurvey(ticket, done) {
     onKey = null;
     const S = window.SURVEY;
-    const picks = S.ratings.map(() => 0);
-    const send = button("Send", submit, "", true);
-    const topic = el("textarea", { class: "survey-text", rows: "3", maxlength: "300", placeholder: "For example: forklift safety, a machine you use, anything" });
+    const picks = S.ratings.map(() => null);
+    const send = button(tr("send"), submit, "", true);
+    const topic = el("textarea", { class: "survey-text", rows: "2", maxlength: "300" });
+    const comments = el("textarea", { class: "survey-text", rows: "3", maxlength: "1000" });
     const rows = S.ratings.map((text, i) => {
       const opts = S.scale.map((label, k) => {
-        const b = el("button", { type: "button", class: "rate", "aria-pressed": "false" }, el("b", {}, String(k + 1)), el("span", {}, label));
+        const b = el("button", { type: "button", class: "rate", "aria-pressed": "false" }, el("span", {}, label));
         b.addEventListener("click", () => {
-          picks[i] = k + 1;
+          picks[i] = k;
           opts.forEach((o, j) => { o.classList.toggle("on", j === k); o.setAttribute("aria-pressed", String(j === k)); });
-          send.disabled = picks.some((p) => !p);
+          send.disabled = picks.some((p) => p === null);
         });
         return b;
       });
       return el("fieldset", { class: "survey-q" }, el("legend", {}, `${i + 1}. ${text}`), el("div", { class: "rates" }, ...opts));
     });
+    const n = S.ratings.length;
     stage.replaceChildren(
-      el("p", { class: "eyebrow" }, "Quick survey · anonymous"),
-      el("h1", {}, "How was this lesson?"),
-      el("p", { class: "muted" }, "Your answers aren't linked to your name. Managers only see totals from several people."),
+      el("p", { class: "eyebrow" }, tr("survey_kicker")),
+      el("h1", {}, S.title),
+      el("p", { class: "muted" }, S.intro),
       ...rows,
-      el("fieldset", { class: "survey-q" }, el("legend", {}, `${S.ratings.length + 1}. ${S.next_topic}`), topic,
-        el("p", { class: "help" }, "Optional. Please don't write your name.")));
+      el("fieldset", { class: "survey-q" }, el("legend", {}, `${n + 1}. ${S.next_topic}`), topic),
+      el("fieldset", { class: "survey-q" }, el("legend", {}, S.comments), comments,
+        el("p", { class: "help" }, tr("optional_no_name"))));
     window.scrollTo({ top: 0 });
     setFooter({ buttons: [send] });
     async function submit() {
       send.disabled = true;
       try {
         const res = await fetch("/api/survey", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ticket, answers: picks, next_topic: topic.value }) });
+          body: JSON.stringify({ ticket, answers: picks, next_topic: topic.value, comments: comments.value }) });
         if (!res.ok && res.status !== 400) throw new Error(String(res.status));
       } catch (err) {
         send.disabled = false;
-        setFooter({ mood: "bad", title: "Couldn't send it", text: "Check the connection and try again.", buttons: [send] });
+        setFooter({ mood: "bad", title: tr("cant_send"), text: tr("check_conn"), buttons: [send] });
         return;
       }
-      stage.replaceChildren(el("div", { class: "result pass" }, el("h1", {}, "Thanks!"), el("p", { class: "muted" }, "Your feedback helps make the next lessons better.")));
-      setFooter({ buttons: [button("Done", done)] });
+      stage.replaceChildren(el("div", { class: "result pass" }, el("h1", {}, tr("thanks")), el("p", { class: "muted" }, tr("thanks_text"))));
+      setFooter({ buttons: [button(tr("done"), done)] });
       onKey = (e) => { if (e.key === "Enter") done(); };
     }
   }
@@ -309,6 +313,6 @@
   onKey = (e) => { if (e.key === "Enter") start(); };
 
   document.getElementById("close").addEventListener("click", (e) => {
-    if (bar.style.width && bar.style.width !== "0%" && !confirm("Leave the lesson? Your progress in it won't be saved.")) e.preventDefault();
+    if (bar.style.width && bar.style.width !== "0%" && !confirm(tr("leave"))) e.preventDefault();
   });
 })();

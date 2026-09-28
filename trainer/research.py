@@ -328,3 +328,73 @@ def run_api(history, draft, client=None):
     lesson = _finish(proposed, role_ids)
     reply = "\n\n".join(t.strip() for t in texts if t.strip()) or ("The draft is ready." if lesson else "")
     return {"reply": reply, "lesson": lesson, "searched": searched}
+
+
+# ---- Translating a lesson ---------------------------------------------------------
+
+LANG_NAMES = {"es": "Spanish (Latin American, as spoken in California)", "zh": "Simplified Chinese",
+              "vi": "Vietnamese", "ar": "Modern Standard Arabic"}
+
+TRANSLATE_SYSTEM = """You translate short safety and food-safety training lessons for hourly \
+production workers at a commercial bakery in California. Translate into {language}.
+- Plain, everyday words at a 6th-8th grade reading level; speak to the worker directly.
+- Keep the meaning exact. Don't add, drop or soften any safety step, number, time, temperature \
+or warning. Keep rule citations (like 29 CFR 1910.147 or 8 CCR 3314), machine names that are \
+normally said in English, and numbered steps ("1." "2.") as they are.
+- Keep every piece: the same number of sections, questions and answer choices, in the same order."""
+
+
+def translate_schema():
+    text = {"type": "string"}
+    return {
+        "type": "object", "additionalProperties": False,
+        "required": ["title", "summary", "sections", "questions"],
+        "properties": {
+            "title": text, "summary": text,
+            "sections": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                                                     "required": ["heading", "text"], "properties": {"heading": text, "text": text}}},
+            "questions": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                                                      "required": ["q", "choices", "why"],
+                                                      "properties": {"q": text, "choices": {"type": "array", "items": text}, "why": text}}},
+        },
+    }
+
+
+def translate(lesson, lang, client=None, runner=subprocess.run):
+    """Returns the lesson's words in `lang` (same shape as the English), checked to
+    have the same number of sections, questions and choices."""
+    source = {"title": lesson["title"], "summary": lesson.get("summary", ""),
+              "sections": [{"heading": s.get("heading", ""), "text": s.get("text", "")} for s in lesson["sections"]],
+              "questions": [{"q": q["q"], "choices": q["choices"], "why": q.get("why", "")} for q in lesson["questions"]]}
+    system = TRANSLATE_SYSTEM.format(language=LANG_NAMES[lang])
+    prompt = "Translate this lesson. Return the same JSON shape.\n\n" + json.dumps(source, ensure_ascii=False, indent=1)
+    schema = translate_schema()
+    if client is None and mode() == "cli":
+        cmd = [claude_command(), "-p", "--output-format", "json", "--json-schema", json.dumps(schema),
+               "--system-prompt", system, "--tools", "", "--model", CLI_MODEL, "--no-session-persistence"]
+        with tempfile.TemporaryDirectory() as empty:
+            r = runner(cmd, input=prompt, capture_output=True, text=True, timeout=CLI_TIMEOUT, cwd=empty)
+        try:
+            out = json.loads(r.stdout)
+        except ValueError:
+            out = {}
+        if r.returncode != 0 or out.get("is_error") or not out:
+            tail = (r.stdout + r.stderr)[-400:].lower()
+            if any(w in tail for w in ("login", "log in", "/login", "api key", "authenticat", "oauth", "not signed")):
+                raise NotSignedIn("Claude Code isn't signed in yet.")
+            raise RuntimeError(f"Claude Code stopped: {(r.stdout + r.stderr)[-300:].strip()}")
+        result = out.get("structured_output") or json.loads(out.get("result") or "{}")
+    else:
+        import anthropic
+        client = client or anthropic.Anthropic(timeout=300.0)
+        tool = {"name": "save_translation", "description": "Save the translated lesson.", "strict": True, "input_schema": schema}
+        with client.messages.stream(model=MODEL, max_tokens=16000, system=system, tools=[tool],
+                                    tool_choice={"type": "tool", "name": "save_translation"},
+                                    messages=[{"role": "user", "content": prompt}]) as stream:
+            response = stream.get_final_message()
+        result = next((b.input for b in response.content if b.type == "tool_use"), None) or {}
+    ok = (len(result.get("sections", [])) == len(source["sections"]) and len(result.get("questions", [])) == len(source["questions"])
+          and all(len(t.get("choices", [])) == len(s["choices"]) for t, s in zip(result["questions"], source["questions"])))
+    if not ok or not result.get("title"):
+        raise RuntimeError("The translation came back with missing pieces. Try again.")
+    return result

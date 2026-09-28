@@ -9,23 +9,24 @@
   <span class="avatar c{{ person.id % 6 }}">{{ person.name[:1] }}</span>
   <div><h1>{{ person.name }}</h1><span class="pill">{{ role_names.get(person.role, person.role) }}</span></div>
 </div>
+{% if who and who.kind == "w" %}{% include "_lang_picker.html" %}{% endif %}
 <div class="unit">
-  <h2>{% if done == total and total %}All caught up!{% else %}{{ total - done }} lesson{{ "" if total - done == 1 else "s" }} to go{% endif %}</h2>
+  <h2>{% if done == total and total %}{{ t("caught_up") }}{% elif total - done == 1 %}{{ t("one_to_go") }}{% else %}{{ t("to_go", n=total - done) }}{% endif %}</h2>
   <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="{{ total }}" aria-valuenow="{{ done }}"><span style="width: {{ (100 * done / total) if total else 100 }}%"></span></div>
-  <p style="margin:8px 0 0">{{ done }} of {{ total }} done</p>
+  <p style="margin:8px 0 0">{{ t("n_of_t_done", d=done, t=total) }}</p>
 </div>
 {% set ns = namespace(first=true) %}
 <ol class="path">
   {% for r in rows %}
   {% set is_next = ns.first and r.state != "done" %}{% if is_next %}{% set ns.first = false %}{% endif %}
   <li class="stop{{ ' next' if is_next else '' }}">
-    {% if is_next %}<span class="bubble">Start</span>{% endif %}
+    {% if is_next %}<span class="bubble">{{ t("start") }}</span>{% endif %}
     <a class="node {{ r.state }}" href="/lesson/{{ r.lesson.id }}" aria-label="{{ r.lesson.title }}: {{ r.label }}">
       {% if r.state == "done" %}{{ icon("star") }}{% elif r.state in ("updated", "refresh") %}{{ icon("redo") }}{% else %}{{ icon("play") }}{% endif %}
     </a>
     <span class="label">{{ r.lesson.title }}</span>
-    <span class="sub">{% if r.state == "done" %}Done {{ r.last.completed_at[:10] }}{% else %}{{ r.label }}{% endif %}</span>
-    {% if r.last %}<a class="cert-link" href="/certificate/{{ r.last.id }}">Certificate</a>{% endif %}
+    <span class="sub">{% if r.state == "done" %}{{ t("done_on", date=r.last.completed_at[:10]) }}{% else %}{{ t("state_" ~ r.state) }}{% endif %}</span>
+    {% if r.last %}<a class="cert-link" href="/certificate/{{ r.last.id }}">{{ t("certificate") }}</a>{% endif %}
   </li>
   {% endfor %}
 </ol>
