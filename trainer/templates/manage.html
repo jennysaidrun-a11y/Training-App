@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "icons.html" import icon %}
-{% block title %}Manager · Bakery Training{% endblock %}
+{% block title %}Manager · Training · United Bakery{% endblock %}
 {% block body %}
 {% set needs = [] %}{% for lid, f in flagged.items() if f %}{% set _ = needs.append(lid) %}{% endfor %}
 {% set ns = namespace(done=0, total=0) %}{% for p in progress %}{% set ns.done = ns.done + p.done %}{% set ns.total = ns.total + p.total %}{% endfor %}
@@ -16,7 +16,7 @@
   <div class="stat"><span class="ico" style="background:var(--blue)">{{ icon("users") }}</span><div><b>{{ progress | length }}</b><span>People</span></div></div>
   <div class="stat"><span class="ico" style="background:var(--green)">{{ icon("trophy") }}</span><div><b>{{ (100 * ns.done / ns.total) | round | int if ns.total else 0 }}%</b><span>Lessons done</span></div></div>
   <div class="stat"><span class="ico" style="background:{{ 'var(--orange)' if needs else 'var(--green)' }}">{{ icon("alert" if needs else "rules") }}</span><div><b>{{ needs | length }}</b><span>Need review</span></div></div>
-  <div class="stat"><span class="ico" style="background:#ce82ff">{{ icon("book") }}</span><div><b>{{ lessons | length }}</b><span>Lessons</span></div></div>
+  <div class="stat"><span class="ico" style="background:var(--gold)">{{ icon("book") }}</span><div><b>{{ lessons | length }}</b><span>Lessons</span></div></div>
 </div>
 
 <section class="section" id="rules">

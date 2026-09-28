@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "icons.html" import icon %}
-{% block title %}{{ lesson.title }} · Bakery Training{% endblock %}
+{% block title %}{{ lesson.title }} · Training · United Bakery{% endblock %}
 {% block body_class %}focus{% endblock %}
 {% block body %}
 {% set back = "/me/" ~ person.id if person else "/manage#lessons" %}
@@ -11,8 +11,8 @@
 <div id="stage" class="stage">
   <div class="intro">
     <svg class="badge-art" viewBox="0 0 140 140" aria-hidden="true">
-      <circle cx="70" cy="70" r="64" fill="var(--green-soft)"/>
-      <circle cx="70" cy="66" r="44" fill="var(--green)"/><circle cx="70" cy="62" r="44" fill="#78e02a"/>
+      <circle cx="70" cy="70" r="64" fill="var(--blue-soft)"/>
+      <circle cx="70" cy="66" r="44" fill="var(--green)"/><circle cx="70" cy="62" r="44" fill="var(--gold)"/>
       <path d="M52 64c0-11 8-19 18-19s18 8 18 19v6a3 3 0 0 1-3 3H55a3 3 0 0 1-3-3z" fill="#fff"/>
       <path d="M62 56c1.6 2.3 1.6 5.5 0 8M70 53c1.6 3 1.6 6.5 0 10.5M78 56c1.6 2.3 1.6 5.5 0 8" stroke="var(--green-edge)" stroke-width="3" fill="none" stroke-linecap="round"/>
     </svg>

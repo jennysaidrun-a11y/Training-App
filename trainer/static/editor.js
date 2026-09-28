@@ -572,8 +572,8 @@
             el("p", { class: "muted" }, `${reads} part${reads === 1 ? "" : "s"}, ${lesson.slides.length - reads} question${lesson.slides.length - reads === 1 ? "" : "s"} · for ${lesson.roles.map((r) => r === "all" ? "everyone" : (ROLES.find((x) => x.id === r) || { name: r }).name).join(", ")}`)));
         } else if (pg.kind === "reading") {
           const part = lesson.slides.slice(0, lesson.slides.indexOf(pg.sl) + 1).filter((x) => x.type === "reading").length;
-          body.replaceChildren(el("p", { class: "eyebrow" }, `Part ${part} of ${reads}`), el("h1", {}, pg.sl.heading),
-            pg.sl.image ? el("img", { class: "slide-img", src: pg.sl.image, alt: "" }) : null, readingBox(pg.sl.text));
+          body.replaceChildren(...[el("p", { class: "eyebrow" }, `Part ${part} of ${reads}`), el("h1", {}, pg.sl.heading),
+            pg.sl.image ? el("img", { class: "slide-img", src: pg.sl.image, alt: "" }) : null, readingBox(pg.sl.text)].filter(Boolean));
         } else if (pg.kind === "question") {
           const sl = pg.sl;
           const verdict = el("div", { class: "pv-verdict", hidden: true });
@@ -593,11 +593,11 @@
             el("div", { class: "choices" }, ...buttons), verdict,
             el("p", { class: "help" }, "Try an answer: this is what workers see."));
         } else {
-          body.replaceChildren(el("p", { class: "eyebrow" }, "Rules & sources"), el("h2", {}, "Based on"),
+          body.replaceChildren(...[el("p", { class: "eyebrow" }, "Rules & sources"), el("h2", {}, "Based on"),
             lesson.citations.length ? el("div", { class: "cites" }, ...lesson.citations.map((ref) => el("div", { class: "cite" }, badge(ref), el("span", {}, ref, checks[ref]?.name ? ` · ${checks[ref].name}` : ""))))
               : el("p", { class: "pill warn" }, "No rules cited yet"),
             lesson.sources.length ? el("div", {}, el("h2", { style: "margin-top:20px" }, "Sources"),
-              el("ul", {}, ...lesson.sources.map((x) => el("li", {}, el("a", { href: x.url, target: "_blank", rel: "noopener" }, x.title || x.url))))) : null);
+              el("ul", {}, ...lesson.sources.map((x) => el("li", {}, el("a", { href: x.url, target: "_blank", rel: "noopener" }, x.title || x.url))))) : null].filter(Boolean));
         }
       }
       document.body.append(dlg);

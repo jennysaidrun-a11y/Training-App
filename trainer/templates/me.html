@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "icons.html" import icon %}
-{% block title %}{{ person.name }} · Bakery Training{% endblock %}
+{% block title %}{{ person.name }} · Training · United Bakery{% endblock %}
 {% block main_class %}narrow{% endblock %}
 {% block body %}
 {% set done = rows | selectattr("state", "equalto", "done") | list | length %}

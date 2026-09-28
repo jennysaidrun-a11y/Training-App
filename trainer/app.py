@@ -103,7 +103,7 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title="Bakery Training", lifespan=lifespan)
+app = FastAPI(title="United Bakery Training", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
 
