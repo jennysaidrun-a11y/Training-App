@@ -1,0 +1,32 @@
+{% from "icons.html" import icon %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Certificate · {{ c.name }} · {{ lesson.title }} · United Bakery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body class="cert-page">
+<div class="cert-actions"><a class="btn ghost small" href="javascript:history.back()">‹ Back</a><button class="small" onclick="window.print()">Print or save as PDF</button></div>
+<article class="cert">
+  <div class="cert-brand"><span class="badge">{{ icon("wheat") }}</span><b>United<i>Bakery</i></b></div>
+  <p class="cert-kicker">Certificate of completion</p>
+  <p class="cert-small">This certifies that</p>
+  <h1 class="cert-name">{{ c.name }}</h1>
+  <p class="cert-small">{{ role_names.get(c.role, c.role) }}</p>
+  <p class="cert-small">passed the training</p>
+  <h2 class="cert-lesson">{{ lesson.title }}</h2>
+  <dl class="cert-facts">
+    <div><dt>Date</dt><dd>{{ c.completed_at[:10] }}</dd></div>
+    <div><dt>Score</dt><dd>{{ (c.score * 100) | round | int }}%</dd></div>
+    <div><dt>Training provider</dt><dd>{{ provider }}</dd></div>
+    <div><dt>Lesson version</dt><dd>{{ c.lesson_version or "—" }}</dd></div>
+  </dl>
+  {% if lesson.citations_parsed %}<p class="cert-rules">Based on {% for x in lesson.citations_parsed %}{{ x.ref }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+  <p class="cert-no">Certificate {{ number }} · United Bakery &amp; Co., West Sacramento, CA</p>
+</article>
+</body>
+</html>

@@ -234,7 +234,7 @@
       r = await fetch(`/api/lesson/${L.id}/finish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ worker: window.WORKER, answers: firstTry }),
+        body: JSON.stringify({ answers: firstTry }),
       }).then((x) => x.json());
     } catch (err) {
       setFooter({ mood: "bad", title: "Couldn't save your result", text: "Check the connection and try again.", buttons: [button("Try again", finishLesson, "red")] });
@@ -244,14 +244,62 @@
       el("div", { class: "result " + (r.passed ? "pass" : "fail") },
         el("h1", {}, r.passed ? "Lesson complete!" : "Almost there"),
         el("p", { class: "muted" }, r.passed
-          ? (window.WORKER != null ? "Saved to your record." : "Preview only: nothing was saved.")
-          : `You need ${r.pass_mark}% on the first try to pass. Take it again; you know the answers now.`),
+          ? (r.saved ? "Saved to your record, with a certificate." : "Preview only: nothing was saved.")
+          : `You need ${r.pass_mark}% or more to pass. Take it again; you know the answers now.`),
         el("div", { class: "facts" },
           el("div", { class: "fact gold" }, el("b", {}, `${r.score}%`), el("span", {}, "Score")),
-          el("div", { class: "fact green" }, el("b", {}, `${r.right}/${r.total}`), el("span", {}, "Right first try")))));
+          el("div", { class: "fact green" }, el("b", {}, `${r.right}/${r.total}`), el("span", {}, "Right first try"))),
+        r.certificate ? el("p", {}, el("a", { class: "btn ghost", href: r.certificate, target: "_blank", rel: "noopener" }, "View certificate")) : null));
     const back = () => { location.href = window.BACK; };
-    setFooter({ buttons: r.passed ? [button("Continue", back)] : [button("Later", back, "ghost"), button("Try again", () => location.reload())] });
-    onKey = (e) => { if (e.key === "Enter") (r.passed ? back() : location.reload()); };
+    const onward = r.survey_ticket ? () => showSurvey(r.survey_ticket, back) : back;
+    setFooter({ buttons: r.passed ? [button("Continue", onward)] : [button("Later", back, "ghost"), button("Try again", () => location.reload())] });
+    onKey = (e) => { if (e.key === "Enter") (r.passed ? onward() : location.reload()); };
+  }
+
+  // The anonymous survey after a passed lesson. The server gets only the ticket
+  // from this lesson and the answers; nothing about who is answering.
+  function showSurvey(ticket, done) {
+    onKey = null;
+    const S = window.SURVEY;
+    const picks = S.ratings.map(() => 0);
+    const send = button("Send", submit, "", true);
+    const topic = el("textarea", { class: "survey-text", rows: "3", maxlength: "300", placeholder: "For example: forklift safety, a machine you use, anything" });
+    const rows = S.ratings.map((text, i) => {
+      const opts = S.scale.map((label, k) => {
+        const b = el("button", { type: "button", class: "rate", "aria-pressed": "false" }, el("b", {}, String(k + 1)), el("span", {}, label));
+        b.addEventListener("click", () => {
+          picks[i] = k + 1;
+          opts.forEach((o, j) => { o.classList.toggle("on", j === k); o.setAttribute("aria-pressed", String(j === k)); });
+          send.disabled = picks.some((p) => !p);
+        });
+        return b;
+      });
+      return el("fieldset", { class: "survey-q" }, el("legend", {}, `${i + 1}. ${text}`), el("div", { class: "rates" }, ...opts));
+    });
+    stage.replaceChildren(
+      el("p", { class: "eyebrow" }, "Quick survey · anonymous"),
+      el("h1", {}, "How was this lesson?"),
+      el("p", { class: "muted" }, "Your answers aren't linked to your name. Managers only see totals from several people."),
+      ...rows,
+      el("fieldset", { class: "survey-q" }, el("legend", {}, `${S.ratings.length + 1}. ${S.next_topic}`), topic,
+        el("p", { class: "help" }, "Optional. Please don't write your name.")));
+    window.scrollTo({ top: 0 });
+    setFooter({ buttons: [send] });
+    async function submit() {
+      send.disabled = true;
+      try {
+        const res = await fetch("/api/survey", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticket, answers: picks, next_topic: topic.value }) });
+        if (!res.ok && res.status !== 400) throw new Error(String(res.status));
+      } catch (err) {
+        send.disabled = false;
+        setFooter({ mood: "bad", title: "Couldn't send it", text: "Check the connection and try again.", buttons: [send] });
+        return;
+      }
+      stage.replaceChildren(el("div", { class: "result pass" }, el("h1", {}, "Thanks!"), el("p", { class: "muted" }, "Your feedback helps make the next lessons better.")));
+      setFooter({ buttons: [button("Done", done)] });
+      onKey = (e) => { if (e.key === "Enter") done(); };
+    }
   }
 
   // Start screen: the template already shows the intro; wire the button.

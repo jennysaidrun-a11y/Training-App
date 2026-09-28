@@ -28,8 +28,16 @@ def env(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def client(env):
+def anon(env):
     return TestClient(app)
+
+
+@pytest.fixture
+def client(env):
+    """Signed in as a manager (the first manager is made on the setup page)."""
+    c = TestClient(app)
+    c.post("/manage/setup", data={"name": "Pat Manager", "pin": "246810", "pin2": "246810"})
+    return c
 
 
 def test_every_lesson_is_valid():
@@ -67,24 +75,49 @@ def test_questions_text_round_trip():
     assert errors
 
 
-def test_worker_takes_a_lesson(client):
-    r = client.post("/manage/workers", data={"name": "Sam", "role": "packaging"}, follow_redirects=False)
+def test_worker_takes_a_lesson(client, anon):
+    r = client.post("/manage/workers", data={"name": "Sam", "role": "packaging", "pin": "1234"}, follow_redirects=False)
     assert r.status_code == 303
     with db.connect() as con:
         sam = db.workers(con)[0]
-    page = client.get(f"/me/{sam['id']}").text
+    assert anon.get(f"/me/{sam['id']}", follow_redirects=False).headers["location"] == f"/signin/{sam['id']}"
+    assert anon.post(f"/signin/{sam['id']}", data={"pin": "9999"}, follow_redirects=False).headers["location"].endswith("wrong=1")
+    assert anon.post(f"/signin/{sam['id']}", data={"pin": "1234"}, follow_redirects=False).headers["location"] == f"/me/{sam['id']}"
+    page = anon.get(f"/me/{sam['id']}").text
     assert "Forklifts" in page and "Mixers, sheeters" not in page  # role filter
+    assert anon.get("/manage", follow_redirects=False).status_code == 303          # workers can't open the manager side
+    assert anon.post("/api/manage/lesson/new", json={}).status_code == 401
 
     lesson = content.load_lessons()["forklifts"]
-    assert "answer" not in client.get(f"/lesson/forklifts?worker={sam['id']}").text.split("window.LESSON")[1].split(";")[0]
-    assert client.post("/api/lesson/forklifts/check", json={"question": 0, "choice": 1}).json()["correct"]
+    assert "answer" not in anon.get("/lesson/forklifts").text.split("window.LESSON")[1].split(";")[0]
+    assert anon.post("/api/lesson/forklifts/check", json={"question": 0, "choice": 1}).json()["correct"]
 
     wrong = {i: (q["answer"] + 1) % len(q["choices"]) for i, q in enumerate(lesson["questions"])}
-    r = client.post("/api/lesson/forklifts/finish", json={"worker": sam["id"], "answers": wrong}).json()
-    assert not r["passed"]
+    r = anon.post("/api/lesson/forklifts/finish", json={"answers": wrong}).json()
+    assert not r["passed"] and r["saved"] and "survey_ticket" not in r
     right = {i: q["answer"] for i, q in enumerate(lesson["questions"])}
-    r = client.post("/api/lesson/forklifts/finish", json={"worker": sam["id"], "answers": right}).json()
-    assert r["passed"] and r["score"] == 100
+    r = anon.post("/api/lesson/forklifts/finish", json={"answers": right}).json()
+    assert r["passed"] and r["score"] == 100 and r["certificate"].startswith("/certificate/")
+    cert = anon.get(r["certificate"]).text
+    assert "Sam" in cert and lesson["title"] in cert and "United Bakery" in cert
+    assert client.get(r["certificate"]).status_code == 200                        # managers see it too
+
+    # The survey: once per completion, stored without the worker.
+    ticket = r["survey_ticket"]
+    assert anon.post("/api/survey", json={"ticket": ticket, "answers": [5, 4, 3]}).status_code == 400
+    assert anon.post("/api/survey", json={"ticket": ticket, "answers": [5, 4, 4, 5], "next_topic": "Oven safety"}).json()["ok"]
+    assert anon.post("/api/survey", json={"ticket": ticket, "answers": [5, 4, 4, 5]}).status_code == 400
+    with db.connect() as con:
+        rows = db.survey_rows(con)
+        assert rows == [{"lesson_id": "forklifts", "month": dt.date.today().strftime("%Y-%m"), "answers": [5, 4, 4, 5], "next_topic": "Oven safety"}]
+        assert "worker" not in str(con.execute("PRAGMA table_info(survey_answers)").fetchall())
+
+    # Someone else can't see Sam's record or certificate.
+    other = TestClient(app)
+    assert other.get(r["certificate"], follow_redirects=False).status_code == 303
+    # Not signed in: the lesson is only a preview and nothing is saved.
+    assert "saved" in other.post("/api/lesson/forklifts/finish", json={"answers": right}).json() and \
+        not other.post("/api/lesson/forklifts/finish", json={"answers": right}).json()["saved"]
     with db.connect() as con:
         assert db.lesson_state(con, sam["id"], lesson)[0] == "done"
         # A year and a bit later it's due as a refresher.
@@ -213,7 +246,8 @@ def test_slides_round_trip_every_lesson():
 
 
 def test_pages_render(client):
-    for path in ["/", "/manage", "/rules", "/lesson/indoor-heat", "/manage/lesson/new", "/health"]:
+    for path in ["/", "/manage", "/manage/dashboard", "/manage/requirements", "/rules", "/lesson/indoor-heat",
+                 "/manage/lesson/new", "/health"]:
         assert client.get(path).status_code == 200, path
 
 
@@ -565,3 +599,54 @@ def test_commons_photo_license_is_checked_by_the_app(client):
     for bad in ("CC BY-NC-SA 4.0", "All rights reserved", "CC BY-ND 4.0"):
         lesson = {"slides": [{"type": "reading", "image": page}], "sources": []}
         assert app_module._settle_pictures(lesson, get=commons(bad)) == 1 and lesson["slides"][0]["image"] == "", bad
+
+
+def test_manager_setup_and_sign_in(anon):
+    assert anon.get("/manage", follow_redirects=False).headers["location"] == "/manage/signin?next=/manage"
+    assert anon.get("/manage/signin", follow_redirects=False).headers["location"] == "/manage/setup"
+    assert "bad=pin" in anon.post("/manage/setup", data={"name": "Pat", "pin": "1234", "pin2": "1234"}, follow_redirects=False).headers["location"]
+    anon.post("/manage/setup", data={"name": "Pat", "pin": "135790", "pin2": "135790"})
+    assert anon.get("/manage/dashboard").status_code == 200
+    anon.post("/signout")
+    assert anon.get("/manage/setup", follow_redirects=False).headers["location"] == "/manage/signin"   # only once
+    with db.connect() as con:
+        pat = db.managers(con)[0]
+        assert "135790" not in pat["pin_hash"]
+    r = anon.post("/manage/signin", data={"manager": pat["id"], "pin": "135790", "next": "//evil.example"}, follow_redirects=False)
+    assert r.headers["location"] == "/manage/dashboard"
+    for _ in range(5):
+        anon.post("/manage/signin", data={"manager": pat["id"], "pin": "000000"})
+    fresh = TestClient(app)
+    r = fresh.post("/manage/signin", data={"manager": pat["id"], "pin": "135790"}, follow_redirects=False)
+    assert "wrong=1" in r.headers["location"]                                   # locked after 5 wrong tries
+    from trainer import auth
+    auth._fails.clear()
+
+
+def test_dashboard_requirements_and_survey_chart(client, anon):
+    with db.connect() as con:
+        amy = db.add_worker(con, "Amy", "baking")
+        db.add_worker(con, "Zed Quill", "sanitation")
+        lessons = content.load_lessons()
+        db.record(con, amy, lessons["lockout-tagout"], 1.0)
+        db.record(con, amy, lessons["allergens"], 0.5)
+    page = client.get("/manage/dashboard?role=baking").text
+    assert "Amy" in page and "Zed Quill" not in page
+    page = client.get("/manage/dashboard?lesson=lockout-tagout").text
+    assert "Who has done" in page and "/certificate/" in page
+    assert "Failed, retake" in client.get("/manage/dashboard?role=baking&lesson=allergens").text
+
+    # Requirements: untick everything for Sanitation on the forklift lesson.
+    form = [("req", f"{l['id']}|{r['id']}") for l in content.load_lessons().values() for r in content.load_roles()
+            if r["id"] in l["roles"] or "all" in l["roles"]]
+    form = [f for f in form if f[1] != "forklifts|packaging"]
+    client.post("/manage/requirements", data=form)
+    assert "packaging" not in content.load_lessons()["forklifts"]["roles"]
+
+    # Survey bars show only with enough answers.
+    assert "at least 3 answers" in client.get("/manage/dashboard").text
+    with db.connect() as con:
+        for a in ([5, 5, 4, 4], [4, 4, 4, 4], [3, 5, 4, 2]):
+            db.save_survey(con, db.survey_ticket(con, "allergens"), a, "Knife safety")
+    page = client.get("/manage/dashboard").text
+    assert "bar-fill" in page and "4.0" in page and "Knife safety" in page

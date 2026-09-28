@@ -1,0 +1,6 @@
+{% set here = request.url.path %}
+<nav class="subnav" aria-label="Manager">
+  <a class="{{ 'on' if here.startswith('/manage/dashboard') else '' }}" href="/manage/dashboard">Dashboard</a>
+  <a class="{{ 'on' if here == '/manage' else '' }}" href="/manage">People &amp; lessons</a>
+  <a class="{{ 'on' if here.startswith('/manage/requirements') else '' }}" href="/manage/requirements">Requirements</a>
+</nav>

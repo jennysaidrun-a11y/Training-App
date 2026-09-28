@@ -501,3 +501,105 @@ dialog.preview::backdrop { background: rgba(0,0,0,.45); }
 @media (max-width: 1100px) { .studio-grid { grid-template-columns: 210px minmax(0, 1fr); } }
 @media (max-width: 720px) { .studio-grid { grid-template-columns: minmax(0, 1fr); } }
 .thumb.cover .txt { color: #fff; }
+
+/* ---- Sign-in ------------------------------------------------------------------ */
+.signout { margin-left: 8px; }
+.signout button { min-height: 34px; background: transparent; color: var(--wheat); border: 1px solid rgba(236,210,154,.4); box-shadow: none; font-size: 0.8rem; }
+.signout button:active { transform: none; }
+@media (max-width: 720px) { .signout { margin-left: auto; } }
+.signin { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding-top: 12px; }
+.signin h1 { margin: 4px 0 0; }
+.signin .note { width: 100%; }
+.pin-form { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; }
+.pin-form #pin { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.pin-dots { display: flex; gap: 14px; }
+.pin-dots i { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--grey-edge); }
+.pin-dots i.on { background: var(--crust); border-color: var(--crust); }
+.keypad { display: grid; grid-template-columns: repeat(3, 76px); gap: 12px; }
+.keypad .key-btn { min-height: 64px; font-size: 1.5rem; background: var(--bg); color: var(--heading); border: 2px solid var(--line); box-shadow: 0 4px 0 var(--line); }
+.stack-form { display: grid; gap: 12px; width: 100%; text-align: left; padding: 18px; }
+.pin-in { max-width: 150px; }
+.warn-text { color: var(--orange); }
+details.pin-set { position: relative; }
+details.pin-set summary { list-style: none; }
+details.pin-set summary::-webkit-details-marker { display: none; }
+details.pin-set form { position: absolute; right: 0; top: 46px; z-index: 5; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; box-shadow: var(--shadow, 0 4px 14px rgba(67,39,11,.1)); flex-wrap: nowrap; }
+
+/* ---- Manager pages ------------------------------------------------------------- */
+main.wide { max-width: 1240px; }
+.subnav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 0 12px; overflow-x: auto; }
+.subnav a { padding: 10px 14px; color: var(--muted); font-weight: 600; border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.subnav a:hover { color: var(--heading); text-decoration: none; }
+.subnav a.on { color: var(--crust); border-bottom-color: var(--oven); }
+.filters { display: flex; flex-wrap: wrap; gap: 12px; padding: 14px; margin-bottom: 16px; }
+.filters .field { flex: 1 1 220px; margin: 0; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+table.grid { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+table.grid th, table.grid td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+table.grid thead th { background: var(--soft); color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+table.grid tbody tr:last-child td { border-bottom: 0; }
+table.grid .sticky { position: sticky; left: 0; background: var(--bg); z-index: 1; min-width: 160px; }
+table.grid thead .sticky { background: var(--soft); }
+table.grid .meta { color: var(--muted); font-size: 0.78rem; }
+table.matrix th.col { min-width: 92px; max-width: 120px; font-size: 0.7rem; text-transform: none; letter-spacing: 0; line-height: 1.25; }
+table.matrix th.col a { color: var(--heading); }
+table.matrix td.m { text-align: center; font-weight: 700; font-size: 1.05rem; }
+table.matrix td.m small { display: block; font-size: 0.66rem; font-weight: 500; color: var(--muted); }
+td.m.s-done { background: var(--green-soft); } td.m.s-done a { color: var(--ok); }
+td.m.s-updated, td.m.s-refresh { background: var(--orange-soft); color: var(--orange); }
+td.m.s-failed { background: var(--red-soft); color: var(--red-ink); }
+td.m.s-due { color: var(--grey-edge); }
+td.m.s-na { color: var(--line); background: var(--soft); }
+.cell-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; background: var(--soft); color: var(--muted); }
+.cell-pill.s-done { background: var(--green-soft); color: var(--ok); }
+.cell-pill.s-updated, .cell-pill.s-refresh { background: var(--orange-soft); color: var(--orange); }
+.cell-pill.s-failed { background: var(--red-soft); color: var(--red-ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.bars { display: grid; gap: 12px; margin: 10px 0 20px; }
+.bar-row { display: grid; grid-template-columns: minmax(160px, 1.3fr) 2fr auto; gap: 12px; align-items: center; }
+.bar-label { font-weight: 600; font-size: 0.92rem; }
+.bar-track { height: 22px; background: var(--soft); border-radius: 6px; overflow: hidden; }
+.bar-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--oven), var(--gold-edge)); border-radius: 6px; }
+.bar-value { font-weight: 700; min-width: 110px; } .bar-value small { color: var(--muted); font-weight: 500; }
+@media (max-width: 720px) { .bar-row { grid-template-columns: 1fr auto; } .bar-label { grid-column: 1 / -1; } }
+.topics { padding-left: 18px; } .topics li { margin: 4px 0; }
+table.req td { text-align: center; } table.req td.sticky { text-align: left; }
+.tick input { width: 22px; height: 22px; accent-color: var(--crust); }
+.save-row { display: flex; justify-content: flex-end; margin: 14px 0; }
+.cert-link { font-size: 0.78rem; font-weight: 600; }
+
+/* ---- Survey ------------------------------------------------------------------ */
+.survey-q { border: 0; padding: 0; margin: 0 0 18px; }
+.survey-q legend { font-weight: 700; color: var(--heading); margin-bottom: 8px; }
+.rates { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.rates .rate { flex-direction: column; gap: 2px; min-height: 64px; padding: 6px 4px; white-space: normal; line-height: 1.15; font-size: 0.7rem;
+               background: var(--bg); color: var(--text); border: 2px solid var(--line); box-shadow: 0 3px 0 var(--line); }
+.rates .rate b { font-size: 1.1rem; }
+.rates .rate.on { background: var(--blue-soft); border-color: var(--blue-line); box-shadow: 0 3px 0 var(--blue-line); color: var(--crust); }
+.survey-text { width: 100%; font-family: inherit; font-size: 1rem; font-weight: 500; }
+
+/* ---- Certificate ------------------------------------------------------------- */
+body.cert-page { background: var(--soft); padding: 16px; }
+.cert-actions { max-width: 900px; margin: 0 auto 12px; display: flex; justify-content: space-between; gap: 8px; }
+.cert { max-width: 900px; margin: 0 auto; background: #fffdf8; color: #2a1d14; text-align: center; padding: 48px 40px;
+        border: 3px solid #43270b; outline: 2px solid #c8911f; outline-offset: -12px; border-radius: 6px; }
+.cert-brand { display: inline-flex; align-items: center; gap: 10px; color: #43270b; }
+.cert-brand .badge { width: 44px; height: 34px; border-radius: 50%; background: #c8911f; color: #43270b; display: grid; place-items: center; box-shadow: 0 0 0 2px #1f1206, 0 0 0 3px #c8911f; }
+.cert-brand .badge svg { width: 22px; height: 22px; }
+.cert-brand b { font: 700 22px/1 var(--font-head); letter-spacing: .06em; text-transform: uppercase; }
+.cert-brand b i { font: italic 600 22px/1 var(--font-head); letter-spacing: 0; text-transform: none; margin-left: 6px; }
+.cert-kicker { font: 600 0.85rem/1 var(--font-head); letter-spacing: 0.25em; text-transform: uppercase; color: #9c6f14; margin: 26px 0 18px; }
+.cert-small { margin: 4px 0; color: #7a6a5a; }
+.cert-name { font-size: 2.6rem; margin: 6px 0; color: #43270b; border-bottom: 1px solid #e7dccd; display: inline-block; padding: 0 24px 6px; }
+.cert-lesson { font-size: 1.6rem; margin: 8px 0 22px; color: #43270b; }
+.cert-facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 36px; margin: 0 0 18px; }
+.cert-facts dt { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #7a6a5a; }
+.cert-facts dd { margin: 2px 0 0; font-weight: 700; }
+.cert-rules { font-size: 0.85rem; color: #7a6a5a; }
+.cert-no { font-size: 0.75rem; color: #7a6a5a; margin-top: 22px; font-family: var(--font-mono, monospace); }
+@media print {
+  @page { size: landscape; margin: 12mm; }
+  body.cert-page { background: #fff; padding: 0; }
+  .cert-actions { display: none; }
+  .cert { border-radius: 0; }
+}

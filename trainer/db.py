@@ -1,7 +1,10 @@
-"""Workers and completions. Stored in data/training.db, which never goes to git:
-it holds employee records and the repo is public."""
+"""Workers, managers, completions and the anonymous survey. Stored in
+data/training.db, which never goes to git: it holds employee records and the repo
+is public. Completions are never deleted (they are the training record)."""
 import datetime as dt
+import hashlib
 import os
+import secrets
 import sqlite3
 from pathlib import Path
 
@@ -26,7 +29,28 @@ CREATE TABLE IF NOT EXISTS completions (
   lesson_version TEXT,
   completed_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS managers (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  pin_hash TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1
+);
+-- Anonymous on purpose: no worker, no time of day, and a random id so the order
+-- of answers can't be lined up with the order of completions.
+CREATE TABLE IF NOT EXISTS survey_answers (
+  id INTEGER PRIMARY KEY,
+  lesson_id TEXT NOT NULL,
+  month TEXT NOT NULL,
+  answers TEXT NOT NULL,
+  next_topic TEXT NOT NULL DEFAULT ''
+);
+-- One unused ticket per passed lesson, so each completion can answer once.
+CREATE TABLE IF NOT EXISTS survey_tickets (
+  ticket_hash TEXT PRIMARY KEY,
+  lesson_id TEXT NOT NULL
+);
 """
+ADDED_COLUMNS = [("workers", "pin_hash", "TEXT")]
 
 
 def db_path():
@@ -39,6 +63,9 @@ def connect():
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)  # creates anything missing, so a fresh or damaged setup heals itself
+    for table, column, kind in ADDED_COLUMNS:  # columns added after the first release
+        if column not in {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
     return con
 
 
@@ -52,9 +79,35 @@ def worker(con, wid):
     return dict(r) if r else None
 
 
-def add_worker(con, name, role):
-    con.execute("INSERT INTO workers (name, role) VALUES (?, ?)", (name.strip(), role))
+def add_worker(con, name, role, pin_hash=None):
+    cur = con.execute("INSERT INTO workers (name, role, pin_hash) VALUES (?, ?, ?)", (name.strip(), role, pin_hash))
     con.commit()
+    return cur.lastrowid
+
+
+def set_worker_pin(con, wid, pin_hash):
+    con.execute("UPDATE workers SET pin_hash = ? WHERE id = ?", (pin_hash, wid))
+    con.commit()
+
+
+def set_worker_role(con, wid, role):
+    con.execute("UPDATE workers SET role = ? WHERE id = ?", (role, wid))
+    con.commit()
+
+
+def managers(con):
+    return [dict(r) for r in con.execute("SELECT * FROM managers WHERE active = 1 ORDER BY name")]
+
+
+def manager(con, mid):
+    r = con.execute("SELECT * FROM managers WHERE id = ?", (mid,)).fetchone()
+    return dict(r) if r else None
+
+
+def add_manager(con, name, pin_hash):
+    cur = con.execute("INSERT INTO managers (name, pin_hash) VALUES (?, ?)", (name.strip(), pin_hash))
+    con.commit()
+    return cur.lastrowid
 
 
 def set_worker_active(con, wid, active):
@@ -63,13 +116,28 @@ def set_worker_active(con, wid, active):
 
 
 def record(con, wid, lesson, score):
+    """Saves an attempt; returns (passed, completion id)."""
     passed = score >= PASS_MARK
-    con.execute(
+    cur = con.execute(
         "INSERT INTO completions (worker_id, lesson_id, score, passed, lesson_version, completed_at) VALUES (?,?,?,?,?,?)",
         (wid, lesson["id"], score, int(passed), lesson.get("version"), dt.datetime.now().isoformat(timespec="seconds")),
     )
     con.commit()
-    return passed
+    return passed, cur.lastrowid
+
+
+def completion(con, cid):
+    r = con.execute("SELECT c.*, w.name, w.role FROM completions c JOIN workers w ON w.id = c.worker_id WHERE c.id = ?",
+                    (cid,)).fetchone()
+    return dict(r) if r else None
+
+
+def attempts(con, wid=None):
+    """Every attempt, newest first (passed and not), with the worker's name."""
+    q = "SELECT c.*, w.name, w.role FROM completions c JOIN workers w ON w.id = c.worker_id"
+    rows = con.execute(q + (" WHERE c.worker_id = ?" if wid else "") + " ORDER BY c.completed_at DESC, c.id DESC",
+                       (wid,) if wid else ())
+    return [dict(r) for r in rows]
 
 
 def last_pass(con, wid, lesson_id):
@@ -92,3 +160,36 @@ def lesson_state(con, wid, lesson, today=None):
     if (today - done).days > REFRESH_DAYS:
         return "refresh", p
     return "done", p
+
+
+# ---- Anonymous survey ---------------------------------------------------------
+
+def _ticket_hash(ticket):
+    return hashlib.sha256(ticket.encode()).hexdigest()
+
+
+def survey_ticket(con, lesson_id):
+    ticket = secrets.token_urlsafe(18)
+    con.execute("INSERT INTO survey_tickets (ticket_hash, lesson_id) VALUES (?, ?)", (_ticket_hash(ticket), lesson_id))
+    con.commit()
+    return ticket
+
+
+def save_survey(con, ticket, answers, next_topic):
+    """Uses up the ticket and stores the answers with no link to who gave them.
+    Returns False if the ticket is unknown or already used."""
+    row = con.execute("SELECT lesson_id FROM survey_tickets WHERE ticket_hash = ?", (_ticket_hash(ticket or ""),)).fetchone()
+    if not row:
+        return False
+    con.execute("DELETE FROM survey_tickets WHERE ticket_hash = ?", (_ticket_hash(ticket),))
+    con.execute("INSERT INTO survey_answers (id, lesson_id, month, answers, next_topic) VALUES (?, ?, ?, ?, ?)",
+                (secrets.randbits(62), row["lesson_id"], dt.date.today().strftime("%Y-%m"),
+                 ",".join(str(a) for a in answers), next_topic.strip()[:300]))
+    con.commit()
+    return True
+
+
+def survey_rows(con, lesson_id=None):
+    q = "SELECT lesson_id, month, answers, next_topic FROM survey_answers"
+    rows = con.execute(q + (" WHERE lesson_id = ?" if lesson_id else "") + " ORDER BY month DESC, id", (lesson_id,) if lesson_id else ())
+    return [{**dict(r), "answers": [int(a) for a in r["answers"].split(",") if a]} for r in rows]

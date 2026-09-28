@@ -48,6 +48,11 @@ def load_roles():
     return yaml.safe_load((CONTENT / "roles.yaml").read_text()) or []
 
 
+def load_survey():
+    with open(CONTENT / "survey.yaml") as f:
+        return yaml.safe_load(f)
+
+
 def role_names():
     return {r["id"]: r["name"] for r in load_roles()}
 

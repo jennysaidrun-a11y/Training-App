@@ -4,11 +4,16 @@
 {% block body %}
 {% set needs = [] %}{% for lid, f in flagged.items() if f %}{% set _ = needs.append(lid) %}{% endfor %}
 {% set ns = namespace(done=0, total=0) %}{% for p in progress %}{% set ns.done = ns.done + p.done %}{% set ns.total = ns.total + p.total %}{% endfor %}
+{% include "_manager_nav.html" %}
 <div class="page-head">
-  <h1>Manager</h1>
+  <h1>People &amp; lessons</h1>
   <a class="btn" href="/manage/lesson/new">{{ icon("plus") }} New lesson</a>
 </div>
 {% if request.query_params.get('saved') %}<p class="note">Saved. Everyone sees the new version now.</p>{% endif %}
+{% if request.query_params.get('pin_bad') %}<p class="note bad">A worker PIN must be exactly 4 digits.</p>{% endif %}
+{% if request.query_params.get('pin_set') %}<p class="note">PIN saved. Tell the person their new PIN.</p>{% endif %}
+{% if request.query_params.get('manager_bad') %}<p class="note bad">A manager needs a name and a 6-digit PIN.</p>{% endif %}
+{% if request.query_params.get('manager_added') %}<p class="note">Manager added.</p>{% endif %}
 {% if request.query_params.get('checking') %}<p class="note">Checking the rules now. Refresh in a minute to see the results.</p>{% endif %}
 {% for name, err in broken %}<p class="note bad">The lesson file {{ name }} can't be read ({{ err }}). It's hidden until it's fixed.</p>{% endfor %}
 
@@ -44,6 +49,7 @@
   <form method="post" action="/manage/workers" class="row" style="margin-bottom:14px">
     <input name="name" placeholder="Name" required aria-label="Name">
     <select name="role" aria-label="Role">{% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}</select>
+    <input name="pin" placeholder="4-digit PIN" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" aria-label="4-digit PIN" class="pin-in">
     <button class="blue">{{ icon("plus") }} Add</button>
   </form>
   {% if progress %}
@@ -53,10 +59,15 @@
       <span class="avatar sm c{{ p.person.id % 6 }}">{{ p.person.name[:1] }}</span>
       <div class="grow">
         <a class="title" href="/me/{{ p.person.id }}">{{ p.person.name }}</a>
-        <div class="meta">{{ role_names.get(p.person.role, p.person.role) }} · {{ p.done }} of {{ p.total }} done</div>
+        <div class="meta">{{ role_names.get(p.person.role, p.person.role) }} · {{ p.done }} of {{ p.total }} done{% if not p.person.pin_hash %} · <b class="warn-text">no PIN yet</b>{% endif %}</div>
         {% if p.todo %}<div class="todo">{% for r in p.todo[:3] %}<span class="pill {{ r.state }}">{{ r.lesson.title }}{% if r.state != 'due' %} · {{ r.label }}{% endif %}</span>{% endfor %}{% if p.todo | length > 3 %}<a class="pill" href="/me/{{ p.person.id }}">+{{ p.todo | length - 3 }} more</a>{% endif %}</div>{% endif %}
       </div>
       <div class="meter light"><span style="width: {{ (100 * p.done / p.total) if p.total else 100 }}%"></span></div>
+      <details class="pin-set"><summary class="btn ghost small">{{ "Reset PIN" if p.person.pin_hash else "Set PIN" }}</summary>
+        <form method="post" action="/manage/workers/{{ p.person.id }}/pin" class="row">
+          <input name="pin" placeholder="4 digits" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required autocomplete="off" aria-label="New PIN for {{ p.person.name }}" class="pin-in">
+          <button class="small">Save</button>
+        </form></details>
       <form method="post" action="/manage/workers/{{ p.person.id }}/active" onsubmit="return confirm('Remove {{ p.person.name }}? Their records are kept and you can bring them back.')">
         <input type="hidden" name="active" value="0"><button class="ghost small danger">Remove</button>
       </form>
@@ -73,6 +84,16 @@
     {% endfor %}</div>
   </details>
   {% endif %}
+</section>
+
+<section class="section" id="managers">
+  <div class="section-head"><h2>Managers</h2></div>
+  <p class="muted">{% for m in managers %}{{ m.name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+  <form method="post" action="/manage/managers" class="row">
+    <input name="name" placeholder="Name" required aria-label="Manager name">
+    <input name="pin" type="password" placeholder="6-digit PIN" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="new-password" aria-label="Manager PIN">
+    <button class="blue small">Add manager</button>
+  </form>
 </section>
 
 <section class="section" id="lessons">

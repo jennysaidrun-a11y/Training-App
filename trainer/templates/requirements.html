@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Requirements · Training · United Bakery{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block body %}
+{% include "_manager_nav.html" %}
+<div class="page-head"><h1>Requirements by position</h1></div>
+{% if saved %}<p class="note">Saved. Each person's lesson list follows these now.</p>{% endif %}
+<p class="muted">Tick the lessons each position must pass. A lesson ticked for every position is required for everyone, including positions you add later.</p>
+<form method="post">
+  <div class="table-wrap"><table class="grid req">
+    <thead><tr><th class="sticky">Lesson</th>{% for r in roles %}<th>{{ r.name }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for l in lessons %}
+      <tr><td class="sticky"><a href="/manage/lesson/{{ l.id }}">{{ l.title }}</a></td>
+        {% for r in roles %}<td><label class="tick"><input type="checkbox" name="req" value="{{ l.id }}|{{ r.id }}" {{ 'checked' if required(l, r.id) else '' }} aria-label="{{ l.title }} for {{ r.name }}"></label></td>{% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <div class="save-row"><button>Save requirements</button></div>
+</form>
+{% endblock %}

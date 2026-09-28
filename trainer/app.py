@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import content, db, editor, extract, research, rules
+from . import auth, content, db, editor, extract, research, rules
 
 HERE = content.ROOT / "trainer"
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -59,6 +59,7 @@ STATE_LABELS = {
 
 def render(request, name, **ctx):
     ctx.setdefault("role_names", content.role_names())
+    ctx.setdefault("who", auth.current(request))
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -107,6 +108,22 @@ app = FastAPI(title="United Bakery Training", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
 
+OPEN_MANAGER_PATHS = ("/manage/signin", "/manage/setup")
+
+
+@app.middleware("http")
+async def managers_only(request: Request, call_next):
+    """Everything under /manage and /api/manage needs a signed-in manager."""
+    path = request.url.path
+    if (path.startswith("/manage") or path.startswith("/api/manage")) and not path.startswith(OPEN_MANAGER_PATHS):
+        who = auth.current(request)
+        if not who or who["kind"] != "m":
+            if path.startswith("/api/"):
+                return JSONResponse({"error": "Sign in as a manager first."}, status_code=401)
+            return RedirectResponse("/manage/signin?next=" + path, status_code=303)
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def fresh_static_files(request: Request, call_next):
     """Browsers check for a newer copy of styles and scripts on every load, so an
@@ -137,14 +154,58 @@ def _my_lessons(con, person, lessons):
     return rows
 
 
+def _safe_next(url, default):
+    return url if url and url.startswith("/") and not url.startswith("//") and "\\" not in url else default
+
+
+@app.get("/signin/{wid}", response_class=HTMLResponse)
+def signin_page(request: Request, wid: int, wrong: int = 0):
+    with db.connect() as con:
+        person = db.worker(con, wid)
+    if not person or not person["active"]:
+        raise HTTPException(404, "No one with that id")
+    return render(request, "signin.html", person=person, wrong=wrong, locked=auth.locked_for("w", wid),
+                  has_pin=bool(person.get("pin_hash")))
+
+
+@app.post("/signin/{wid}")
+def signin(request: Request, wid: int, pin: str = Form("")):
+    with db.connect() as con:
+        person = db.worker(con, wid)
+    if not person or not person["active"]:
+        raise HTTPException(404, "No one with that id")
+    if not auth.check_pin("w", wid, pin.strip(), person.get("pin_hash")):
+        return RedirectResponse(f"/signin/{wid}?wrong=1", status_code=303)
+    response = RedirectResponse(f"/me/{wid}", status_code=303)
+    auth.set_session(response, request, "w", wid)
+    return response
+
+
+@app.post("/signout")
+def signout():
+    response = RedirectResponse("/", status_code=303)
+    auth.clear_session(response)
+    return response
+
+
+def _can_see(who, wid):
+    return bool(who) and (who["kind"] == "m" or who["id"] == wid)
+
+
 @app.get("/me/{wid}", response_class=HTMLResponse)
 def my_page(request: Request, wid: int):
+    who = auth.current(request)
+    if not _can_see(who, wid):
+        return RedirectResponse(f"/signin/{wid}", status_code=303)
     with db.connect() as con:
         person = db.worker(con, wid)
         if not person:
             raise HTTPException(404, "No one with that id")
-        rows = _my_lessons(con, person, content.load_lessons())
-    return render(request, "me.html", person=person, rows=rows)
+        lessons = content.load_lessons()
+        rows = _my_lessons(con, person, lessons)
+        history = db.attempts(con, wid)
+    return render(request, "me.html", person=person, rows=rows, history=history, who=who,
+                  titles={lid: l["title"] for lid, l in lessons.items()})
 
 
 def _get_lesson(lesson_id):
@@ -168,15 +229,14 @@ def _public_lesson(lesson):
 
 
 @app.get("/lesson/{lesson_id}", response_class=HTMLResponse)
-def lesson_page(request: Request, lesson_id: str, worker: int | None = None):
+def lesson_page(request: Request, lesson_id: str):
+    """Results are saved only for the signed-in worker; anyone else sees a preview."""
     lesson = _get_lesson(lesson_id)
-    person = None
-    if worker is not None:
-        with db.connect() as con:
-            person = db.worker(con, worker)
+    who = auth.current(request)
+    person = who if who and who["kind"] == "w" else None
     status = rules.load_status()
     return render(request, "lesson.html", lesson=lesson, person=person, data=_public_lesson(lesson),
-                  rule_status=status.get("rules", {}))
+                  rule_status=status.get("rules", {}), survey=content.load_survey(), who=who)
 
 
 @app.post("/api/lesson/{lesson_id}/check")
@@ -202,14 +262,55 @@ async def finish(lesson_id: str, request: Request):
     right = sum(1 for i, q in enumerate(lesson["questions"]) if answers.get(i) == q["answer"])
     score = right / total if total else 1.0
     passed = score >= db.PASS_MARK
-    wid = body.get("worker")
-    if wid is not None:
+    out = {"score": round(score * 100), "passed": passed, "right": right, "total": total,
+           "pass_mark": round(db.PASS_MARK * 100), "saved": False}
+    who = auth.current(request)
+    if who and who["kind"] == "w":   # only the signed-in worker's own result is saved
         with db.connect() as con:
-            if not db.worker(con, int(wid)):
-                raise HTTPException(404, "No one with that id")
-            passed = db.record(con, int(wid), lesson, score)
-    return {"score": round(score * 100), "passed": passed, "right": right, "total": total,
-            "pass_mark": round(db.PASS_MARK * 100)}
+            passed, cid = db.record(con, who["id"], lesson, score)
+            out["saved"] = True
+            if passed:
+                out["certificate"] = f"/certificate/{cid}"
+                out["survey_ticket"] = db.survey_ticket(con, lesson["id"])
+    return out
+
+
+@app.post("/api/survey")
+async def survey(request: Request):
+    """The anonymous survey after a passed lesson. The ticket proves a completion
+    without saying whose; it works once."""
+    body = await request.json()
+    ratings = content.load_survey()["ratings"]
+    try:
+        answers = [int(a) for a in body.get("answers") or []]
+    except (TypeError, ValueError):
+        answers = []
+    if len(answers) != len(ratings) or not all(1 <= a <= 5 for a in answers):
+        raise HTTPException(400, "Pick an answer for each question.")
+    with db.connect() as con:
+        if not db.save_survey(con, str(body.get("ticket") or ""), answers, str(body.get("next_topic") or "")):
+            raise HTTPException(400, "This survey was already sent.")
+    return {"ok": True}
+
+
+@app.get("/certificate/{cid}", response_class=HTMLResponse)
+def certificate(request: Request, cid: int):
+    who = auth.current(request)
+    with db.connect() as con:
+        c = db.completion(con, cid)
+    if not c or not c["passed"]:
+        raise HTTPException(404, "No such certificate")
+    if not _can_see(who, c["worker_id"]):
+        return RedirectResponse(f"/signin/{c['worker_id']}", status_code=303)
+    lesson = content.load_lessons().get(c["lesson_id"]) or {"title": c["lesson_id"], "citations_parsed": []}
+    return render(request, "certificate.html", c=c, lesson=lesson, number=_certificate_number(c), provider=PROVIDER)
+
+
+PROVIDER = "United Bakery"
+
+
+def _certificate_number(c):
+    return f"UB-{c['id']:05d}-{auth._sign('cert:' + str(c['id']))[:6].upper()}"
 
 
 # ---- Manager side -----------------------------------------------------------
@@ -227,16 +328,30 @@ def manage(request: Request):
             todo = [r for r in rows if r["state"] != "done"]
             progress.append({"person": p, "done": len(rows) - len(todo), "total": len(rows), "todo": todo})
         inactive = [w for w in db.workers(con, active_only=False) if not w["active"]]
+        managers = db.managers(con)
     return render(request, "manage.html", lessons=lessons, flagged=flagged, progress=progress, inactive=inactive,
-                  roles=content.load_roles(), status=status, broken=content.broken_lesson_files())
+                  roles=content.load_roles(), status=status, broken=content.broken_lesson_files(), managers=managers)
 
 
 @app.post("/manage/workers")
-def add_worker(name: str = Form(...), role: str = Form(...)):
+def add_worker(name: str = Form(...), role: str = Form(...), pin: str = Form("")):
+    pin = pin.strip()
+    if pin and not auth.WORKER_PIN.match(pin):
+        return RedirectResponse("/manage?pin_bad=1#people", status_code=303)
     if name.strip():
         with db.connect() as con:
-            db.add_worker(con, name, role)
+            db.add_worker(con, name, role, auth.hash_pin(pin) if pin else None)
     return RedirectResponse("/manage#people", status_code=303)
+
+
+@app.post("/manage/workers/{wid}/pin")
+def worker_pin(wid: int, pin: str = Form("")):
+    if not auth.WORKER_PIN.match(pin.strip()):
+        return RedirectResponse("/manage?pin_bad=1#people", status_code=303)
+    with db.connect() as con:
+        db.set_worker_pin(con, wid, auth.hash_pin(pin.strip()))
+    auth._fails.pop(("w", wid), None)
+    return RedirectResponse("/manage?pin_set=1#people", status_code=303)
 
 
 @app.post("/manage/workers/{wid}/active")
@@ -244,6 +359,159 @@ def worker_active(wid: int, active: int = Form(...)):
     with db.connect() as con:
         db.set_worker_active(con, wid, bool(active))
     return RedirectResponse("/manage#people", status_code=303)
+
+
+# ---- Dashboard and requirements -------------------------------------------------
+
+MIN_SURVEY_ANSWERS = 3   # fewer and a manager could guess who answered
+
+
+def _required(lesson, role):
+    return "all" in lesson["roles"] or role in lesson["roles"]
+
+
+def _cell(con, person, lesson, last_try):
+    """One person x one lesson: state, the date and the certificate if passed."""
+    required = _required(lesson, person["role"])
+    state, p = db.lesson_state(con, person["id"], lesson)
+    if state == "due" and last_try:
+        state = "failed"
+    if not required and state in ("due", "failed"):
+        state = "na"
+    return {"state": state, "required": required, "pass": p, "last_try": last_try,
+            "label": {"done": "Done", "updated": "Retake (updated)", "refresh": "Yearly refresher", "due": "Not started",
+                      "failed": "Failed, retake", "na": "Not required"}[state]}
+
+
+def _survey_summary(con, lesson_id, lessons):
+    survey = content.load_survey()
+    rows = db.survey_rows(con, lesson_id or None)
+    n = len(rows)
+    out = {"n": n, "enough": n >= MIN_SURVEY_ANSWERS, "min": MIN_SURVEY_ANSWERS, "bars": [], "topics": [],
+           "scale": survey["scale"], "next_topic": survey["next_topic"]}
+    if not out["enough"]:
+        return out
+    for i, text in enumerate(survey["ratings"]):
+        vals = [r["answers"][i] for r in rows if len(r["answers"]) > i]
+        counts = [sum(1 for v in vals if v == k) for k in range(1, 6)]
+        avg = sum(vals) / len(vals) if vals else 0
+        out["bars"].append({"text": text, "avg": round(avg, 1), "pct": round(100 * avg / 5),
+                            "agree": round(100 * (counts[3] + counts[4]) / len(vals)) if vals else 0, "counts": counts})
+    out["topics"] = [{"text": r["next_topic"], "lesson": lessons.get(r["lesson_id"], {}).get("title", r["lesson_id"]),
+                      "month": r["month"]} for r in rows if r["next_topic"]][:60]
+    return out
+
+
+@app.get("/manage/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request, role: str = "", lesson: str = ""):
+    lessons = content.load_lessons()
+    roles = content.load_roles()
+    role = role if role in content.role_names() else ""
+    focus = lessons.get(lesson)
+    columns = sorted((l for l in lessons.values() if not role or _required(l, role)), key=lambda l: l["title"])
+    with db.connect() as con:
+        people = [w for w in db.workers(con) if not role or w["role"] == role]
+        latest = {}
+        for a in db.attempts(con):          # newest first, so the first seen is the latest try
+            latest.setdefault((a["worker_id"], a["lesson_id"]), a)
+        matrix, totals = [], {"required": 0, "done": 0, "behind": 0}
+        for p in people:
+            cells = [_cell(con, p, l, latest.get((p["id"], l["id"]))) for l in columns]
+            for c in cells:
+                if c["required"]:
+                    totals["required"] += 1
+                    totals["done" if c["state"] == "done" else "behind"] += 1
+            matrix.append({"person": p, "cells": cells,
+                           "done": sum(1 for c in cells if c["required"] and c["state"] == "done"),
+                           "required": sum(1 for c in cells if c["required"])})
+        who_did = None
+        if focus:
+            who_did = sorted(({"person": p, **_cell(con, p, focus, latest.get((p["id"], focus["id"])))} for p in people),
+                             key=lambda r: ({"done": 0, "updated": 1, "refresh": 1, "failed": 2, "due": 3, "na": 4}[r["state"]], r["person"]["name"]))
+        survey = _survey_summary(con, focus["id"] if focus else "", lessons)
+    totals["pct"] = round(100 * totals["done"] / totals["required"]) if totals["required"] else 100
+    return render(request, "dashboard.html", roles=roles, role=role, lessons=sorted(lessons.values(), key=lambda l: l["title"]),
+                  focus=focus, columns=columns, matrix=matrix, totals=totals, who_did=who_did, survey=survey)
+
+
+@app.get("/manage/requirements", response_class=HTMLResponse)
+def requirements_page(request: Request, saved: int = 0):
+    lessons = sorted(content.load_lessons().values(), key=lambda l: l["title"])
+    return render(request, "requirements.html", lessons=lessons, roles=content.load_roles(), saved=saved,
+                  required=_required)
+
+
+@app.post("/manage/requirements")
+async def save_requirements(request: Request):
+    """Which lessons each position must take (saved as each lesson's roles)."""
+    form = await request.form()
+    picked = {}
+    for value in form.getlist("req"):
+        lid, _, rid = str(value).partition("|")
+        picked.setdefault(lid, set()).add(rid)
+    role_ids = [r["id"] for r in content.load_roles()]
+    for lesson in content.load_lessons().values():
+        chosen = [r for r in role_ids if r in picked.get(lesson["id"], set())]
+        roles = ["all"] if len(chosen) == len(role_ids) else chosen
+        if roles != lesson["roles"]:
+            lesson["roles"] = roles
+            content.save_lesson(lesson)
+    return RedirectResponse("/manage/requirements?saved=1", status_code=303)
+
+
+# ---- Manager sign-in ----------------------------------------------------------
+
+@app.get("/manage/setup", response_class=HTMLResponse)
+def setup_page(request: Request, bad: str = ""):
+    """First run only: create the first manager."""
+    with db.connect() as con:
+        if db.managers(con):
+            return RedirectResponse("/manage/signin", status_code=303)
+    return render(request, "manager_signin.html", setup=True, bad=bad, managers=[])
+
+
+@app.post("/manage/setup")
+def setup(request: Request, name: str = Form(""), pin: str = Form(""), pin2: str = Form("")):
+    with db.connect() as con:
+        if db.managers(con):
+            return RedirectResponse("/manage/signin", status_code=303)
+        if not name.strip():
+            return RedirectResponse("/manage/setup?bad=name", status_code=303)
+        if not auth.MANAGER_PIN.match(pin.strip()) or pin.strip() != pin2.strip():
+            return RedirectResponse("/manage/setup?bad=pin", status_code=303)
+        mid = db.add_manager(con, name, auth.hash_pin(pin.strip()))
+    response = RedirectResponse("/manage/dashboard", status_code=303)
+    auth.set_session(response, request, "m", mid)
+    return response
+
+
+@app.get("/manage/signin", response_class=HTMLResponse)
+def manager_signin_page(request: Request, next: str = "", wrong: int = 0):
+    with db.connect() as con:
+        people = db.managers(con)
+    if not people:
+        return RedirectResponse("/manage/setup", status_code=303)
+    return render(request, "manager_signin.html", setup=False, managers=people, wrong=wrong, next=next)
+
+
+@app.post("/manage/signin")
+def manager_signin(request: Request, manager: int = Form(0), pin: str = Form(""), next: str = Form("")):
+    with db.connect() as con:
+        m = db.manager(con, manager)
+    if not m or not m["active"] or not auth.check_pin("m", manager, pin.strip(), m["pin_hash"]):
+        return RedirectResponse(f"/manage/signin?wrong=1&next={next if _safe_next(next, '') else ''}", status_code=303)
+    response = RedirectResponse(_safe_next(next, "/manage/dashboard"), status_code=303)
+    auth.set_session(response, request, "m", manager)
+    return response
+
+
+@app.post("/manage/managers")
+def add_manager(name: str = Form(""), pin: str = Form("")):
+    if not name.strip() or not auth.MANAGER_PIN.match(pin.strip()):
+        return RedirectResponse("/manage?manager_bad=1#managers", status_code=303)
+    with db.connect() as con:
+        db.add_manager(con, name, auth.hash_pin(pin.strip()))
+    return RedirectResponse("/manage?manager_added=1#managers", status_code=303)
 
 
 @app.post("/manage/check")

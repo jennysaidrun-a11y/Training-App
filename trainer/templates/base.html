@@ -17,10 +17,11 @@
     <a class="brand" href="/" aria-label="United Bakery Training, home"><span class="badge">{{ icon("wheat") }}</span><b>United<i>Bakery</i></b><span class="app">Training</span></a>
     {% set here = request.url.path %}
     <nav class="tabs" aria-label="Main">
-      <a class="tab {{ 'on' if here == '/' or here.startswith('/me') else '' }}" href="/">{{ icon("learn") }}<span>Learn</span></a>
+      <a class="tab {{ 'on' if here == '/' or here.startswith('/me') or here.startswith('/signin') else '' }}" href="/">{{ icon("learn") }}<span>Learn</span></a>
       <a class="tab {{ 'on' if here.startswith('/manage') else '' }}" href="/manage">{{ icon("manage") }}<span>Manager</span></a>
       <a class="tab {{ 'on' if here.startswith('/rules') else '' }}" href="/rules">{{ icon("rules") }}<span>Rules</span></a>
     </nav>
+    {% if who %}<form method="post" action="/signout" class="signout"><button class="ghost small" title="Signed in as {{ who.name }}">{{ who.name.split(' ')[0] }} · Sign out</button></form>{% endif %}
   </div>
 </header>
 <main class="{% block main_class %}{% endblock %}">

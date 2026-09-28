@@ -1,0 +1,10 @@
+# The anonymous survey after each passed lesson. Nothing links an answer to a person.
+# Ratings are 1 to 5 on the scale below. Change the wording here; keep the number of
+# ratings the same once answers are coming in, or old and new answers won't line up.
+scale: [Strongly disagree, Disagree, Not sure, Agree, Strongly agree]
+ratings:
+  - The lesson was clear and easy to follow.
+  - I can use what I learned on my job.
+  - The lesson was the right length.
+  - The quiz questions were fair.
+next_topic: What would you like to learn about next?

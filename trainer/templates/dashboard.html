@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% from "icons.html" import icon %}
+{% block title %}Dashboard · Training · United Bakery{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block body %}
+{% include "_manager_nav.html" %}
+<div class="page-head"><h1>Dashboard</h1></div>
+
+<form method="get" class="filters card" id="filters">
+  <label class="field"><span class="lbl">Position</span>
+    <select name="role" onchange="this.form.submit()">
+      <option value="">Everyone</option>
+      {% for r in roles %}<option value="{{ r.id }}" {{ 'selected' if r.id == role else '' }}>{{ r.name }}</option>{% endfor %}
+    </select></label>
+  <label class="field"><span class="lbl">Lesson</span>
+    <select name="lesson" onchange="this.form.submit()">
+      <option value="">All lessons</option>
+      {% for l in lessons %}<option value="{{ l.id }}" {{ 'selected' if focus and l.id == focus.id else '' }}>{{ l.title }}</option>{% endfor %}
+    </select></label>
+  <noscript><button class="small">Show</button></noscript>
+</form>
+
+<div class="stats">
+  <div class="stat"><span class="ico" style="background:var(--blue)">{{ icon("users") }}</span><div><b>{{ matrix | length }}</b><span>People</span></div></div>
+  <div class="stat"><span class="ico" style="background:var(--green)">{{ icon("trophy") }}</span><div><b>{{ totals.pct }}%</b><span>Required lessons done</span></div></div>
+  <div class="stat"><span class="ico" style="background:var(--ok)">{{ icon("check") }}</span><div><b>{{ totals.done }}</b><span>Done</span></div></div>
+  <div class="stat"><span class="ico" style="background:{{ 'var(--orange)' if totals.behind else 'var(--ok)' }}">{{ icon("alert" if totals.behind else "check") }}</span><div><b>{{ totals.behind }}</b><span>Still to do</span></div></div>
+</div>
+
+{% if focus %}
+<section class="section">
+  <div class="section-head"><h2>Who has done “{{ focus.title }}”</h2></div>
+  {% if who_did %}
+  <div class="table-wrap"><table class="grid">
+    <thead><tr><th>Person</th><th>Position</th><th>Status</th><th>Date</th><th>Score</th><th>Certificate</th></tr></thead>
+    <tbody>
+    {% for r in who_did %}
+      <tr>
+        <td><a href="/me/{{ r.person.id }}">{{ r.person.name }}</a></td>
+        <td>{{ role_names.get(r.person.role, r.person.role) }}</td>
+        <td><span class="cell-pill s-{{ r.state }}">{{ r.label }}</span></td>
+        <td>{{ (r.pass or r.last_try or {}).get('completed_at', '')[:10] }}</td>
+        <td>{% set t = r.pass or r.last_try %}{{ (t.score * 100) | round | int ~ '%' if t else '' }}</td>
+        <td>{% if r.pass %}<a href="/certificate/{{ r.pass.id }}" target="_blank" rel="noopener">View</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted">No one in this position yet.</p>{% endif %}
+</section>
+{% endif %}
+
+<section class="section">
+  <div class="section-head"><h2>Who has done what</h2></div>
+  <p class="muted">Tap a green tick for the certificate. Grey means the lesson isn't required for that person's position.</p>
+  {% if matrix and columns %}
+  <div class="table-wrap"><table class="grid matrix">
+    <thead><tr><th class="sticky">Person</th><th>Done</th>
+      {% for l in columns %}<th class="col"><a href="?role={{ role }}&lesson={{ l.id }}" title="{{ l.title }}">{{ l.title }}</a></th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in matrix %}
+      <tr>
+        <td class="sticky"><a href="/me/{{ row.person.id }}">{{ row.person.name }}</a><div class="meta">{{ role_names.get(row.person.role, row.person.role) }}</div></td>
+        <td>{{ row.done }}/{{ row.required }}</td>
+        {% for c in row.cells %}
+        <td class="m s-{{ c.state }}" title="{{ columns[loop.index0].title }}: {{ c.label }}{% if c.pass %} {{ c.pass.completed_at[:10] }}{% endif %}">
+          {% if c.state == "done" %}<a href="/certificate/{{ c.pass.id }}" target="_blank" rel="noopener" aria-label="Certificate">✓</a><small>{{ c.pass.completed_at[5:10] }}</small>
+          {% elif c.state in ("updated", "refresh") %}↻
+          {% elif c.state == "failed" %}✗
+          {% elif c.state == "na" %}–
+          {% else %}•{% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="legend"><span class="cell-pill s-done">✓ Done</span> <span class="cell-pill s-updated">↻ Retake due</span> <span class="cell-pill s-failed">✗ Failed, retake</span> <span class="cell-pill s-due">• Not started</span> <span class="cell-pill s-na">– Not required</span></p>
+  {% else %}
+  <div class="empty"><h2>Nothing to show</h2><p>Add people on the People &amp; lessons page, and set what each position needs on Requirements.</p></div>
+  {% endif %}
+</section>
+
+<section class="section" id="survey">
+  <div class="section-head"><h2>Anonymous feedback{% if focus %}: {{ focus.title }}{% endif %}</h2><span class="muted">{{ survey.n }} answer{{ '' if survey.n == 1 else 's' }}</span></div>
+  {% if not survey.enough %}
+    <p class="muted">Results show once there are at least {{ survey.min }} answers, so no one's answers can be picked out.</p>
+  {% else %}
+    <p class="muted">Average rating out of 5 (5 = {{ survey.scale[4] | lower }}).</p>
+    <div class="bars">
+    {% for b in survey.bars %}
+      <div class="bar-row">
+        <span class="bar-label">{{ b.text }}</span>
+        <span class="bar-track"><span class="bar-fill" style="width: {{ b.pct }}%"></span></span>
+        <span class="bar-value">{{ b.avg }}<small> · {{ b.agree }}% agree</small></span>
+      </div>
+    {% endfor %}
+    </div>
+    <h3>{{ survey.next_topic }}</h3>
+    {% if survey.topics %}
+    <ul class="topics">{% for t in survey.topics %}<li>“{{ t.text }}” <span class="muted">· after {{ t.lesson }} · {{ t.month }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted">No ideas written in yet.</p>{% endif %}
+  {% endif %}
+</section>
+{% endblock %}

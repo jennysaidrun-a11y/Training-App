@@ -2,12 +2,12 @@
 {% block body %}
 <div class="hero">
   <h1>Who's training today?</h1>
-  <p>Tap your name to see your lessons.</p>
+  <p>Tap your name, then type your 4-digit PIN.</p>
 </div>
 {% if workers %}
 <ul class="people">
   {% for w in workers %}
-  <li><a class="person" href="/me/{{ w.id }}">
+  <li><a class="person" href="/signin/{{ w.id }}">
     <span class="avatar c{{ w.id % 6 }}">{{ w.name[:1] }}</span>
     <strong>{{ w.name }}</strong>
     <span class="pill">{{ role_names.get(w.role, w.role) }}</span>
