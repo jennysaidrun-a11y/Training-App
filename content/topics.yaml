@@ -2,16 +2,25 @@
 # Manager > Topics. A lesson in no folder shows under "Other lessons".
 - id: getting-started
   name: Getting started
-  lessons: [safety-basics]
+  lessons:
+  - safety-basics
 - id: machines
   name: Machines and equipment
-  lessons: [lockout-tagout, bakery-equipment, forklifts]
+  lessons:
+  - lockout-tagout
+  - bakery-equipment
+  - forklifts
 - id: food-safety
   name: Food safety
-  lessons: [gmp-hygiene, allergens]
+  lessons:
+  - gmp-hygiene
+  - allergens
 - id: chemicals
   name: Chemicals and cleaning
-  lessons: [hazard-communication, sanitation-safety]
+  lessons:
+  - hazard-communication
+  - sanitation-safety
 - id: health
   name: Health
-  lessons: [indoor-heat]
+  lessons:
+  - indoor-heat
