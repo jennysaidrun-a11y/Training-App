@@ -53,6 +53,31 @@
   function partNumber(i) {   // i: index in D.slides
     return D.slides.slice(0, i + 1).filter((s) => s.type === "reading").length;
   }
+  // Drag and drop for files: every picture and video field takes a file dropped on it
+  // (an app rule). `onFile` gets the first file whose type starts with `kind`.
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+  function dropZone(target, kind, onFile, onWrong) {
+    target.addEventListener("dragover", (e) => { if (!hasFiles(e)) return; e.preventDefault(); e.stopPropagation(); target.classList.add("drop-on"); });
+    target.addEventListener("dragleave", (e) => { if (!target.contains(e.relatedTarget)) target.classList.remove("drop-on"); });
+    target.addEventListener("drop", (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault(); e.stopPropagation();
+      target.classList.remove("drop-on");
+      const f = [...e.dataTransfer.files].find((x) => x.type.startsWith(kind + "/"));
+      if (f) onFile(f); else if (onWrong) onWrong();
+    });
+  }
+  async function uploadPicture(slide, f) {
+    const form = new FormData();
+    form.append("image_file", f);
+    form.append("lesson", D.id || D.title || "lesson");
+    const res = await fetch("/api/manage/image", { method: "POST", body: form });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || r.detail || "That picture couldn't be added.");
+    slide.image = r.image;
+    touch();
+  }
+
   function thumb(index, kind, label, sub) {
     const b = el("button", { type: "button", class: `thumb ${kind}${index === current ? " on" : ""}${slideErrors[index] ? " has-error" : ""}`,
       onclick: () => show(index), "aria-current": index === current ? "true" : null },
@@ -64,7 +89,14 @@
       b.addEventListener("dragend", () => b.classList.remove("dragging"));
       b.addEventListener("dragover", (e) => { e.preventDefault(); b.classList.add("drop"); });
       b.addEventListener("dragleave", () => b.classList.remove("drop"));
+      if (kind === "reading") dropZone(b, "image", async (f) => {
+        b.classList.add("busy");
+        try { await uploadPicture(D.slides[index - 1], f); saveNote.textContent = "Picture added. Save the lesson to keep it."; }
+        catch (err) { saveNote.textContent = err.message; }
+        show(index);
+      }, () => { saveNote.textContent = "Drop a picture (JPG, PNG, WebP or GIF)."; });
       b.addEventListener("drop", (e) => {
+        if (hasFiles(e)) return;
         e.preventDefault();
         const from = +e.dataTransfer.getData("text/plain");
         if (from >= 1 && from <= D.slides.length && from !== index) move(from, index);
@@ -172,7 +204,9 @@
       const link = el("input", { value: D.video.startsWith("/media/") ? "" : D.video, placeholder: "or paste a YouTube link" });
       link.addEventListener("change", () => { D.video = link.value.trim(); touch(); draw(); });
       kids.push(link, el("span", { class: "help" }, "MP4 plays everywhere. On iPhone: Settings › Camera › Formats › Most Compatible."));
+      kids.splice(kids.length - 2, 0, el("span", { class: "help" }, "Or drag a video file onto this box."));
       box.replaceChildren(el("span", { class: "lbl" }, "Video (optional)"), ...kids);
+      box.upload = upload;
 
       function upload(f) {
         const form = new FormData();
@@ -199,6 +233,7 @@
         xhr.send(form);
       }
     };
+    dropZone(box, "video", (f) => box.upload(f), () => alert("That isn't a video file. MP4 works best."));
     draw();
     return box;
   }
@@ -206,46 +241,50 @@
   function readingSlide(index) {
     const s = D.slides[index - 1];
     const reads = D.slides.filter((x) => x.type === "reading").length;
-    return el("div", { class: "slide reading-slide" },
+    const pic = pictureField(s);
+    const slide = el("div", { class: "slide reading-slide" },
       el("p", { class: "eyebrow" }, `Part ${partNumber(index - 1)} of ${reads}`),
       bind(el("input", { class: "as-h1", value: s.heading, placeholder: "Heading, e.g. Washing hands", "aria-label": "Heading" }), s, "heading", refreshRailSoon),
-      pictureField(s),
+      pic,
       bind(area({ class: "as-body", value: s.text, rows: 6, placeholder: "2-5 short sentences.\n\nFor steps, one per line:\n1. Stop the machine\n2. Lock it out", "aria-label": "Text" }), s, "text"),
       el("p", { class: "help" }, "Leave a blank line between paragraphs. Lines starting 1. 2. 3. show as numbered steps."));
+    dropZone(slide, "image", pic.upload, pic.wrong);
+    return slide;
   }
 
   // A picture on a reading slide: shown above the text, the way the worker sees it.
+  // Drag a picture onto it (or anywhere on the slide, or onto its thumbnail), or tap to choose.
   function pictureField(s) {
     const box = el("div", { class: "field picture-field" });
     const draw = (msg) => {
       const file = el("input", { type: "file", accept: "image/jpeg,image/png,image/webp,image/gif" });
       file.addEventListener("change", () => file.files[0] && upload(file.files[0]));
       box.replaceChildren(...[
-        s.image ? el("img", { class: "slide-img", src: s.image, alt: "" }) : null,
-        el("div", { class: "row" },
-          el("label", { class: "upload" }, file, el("span", { class: "btn ghost small" }, s.image ? "Change picture" : "+ Add a picture")),
-          s.image ? el("button", { type: "button", class: "ghost small danger", onclick: () => { s.image = ""; touch(); draw(); drawRail(); } }, "Remove picture") : null),
+        s.image
+          ? el("div", { class: "pic-drop has-pic" }, el("img", { class: "slide-img", src: s.image, alt: "" }),
+              el("span", { class: "drop-hint" }, "Drop to replace the picture"))
+          : el("label", { class: "pic-drop upload" }, file,
+              el("span", { class: "drop-ico", "aria-hidden": "true" }, "🖼️"),
+              el("span", {}, el("b", {}, "Drag a picture here"), el("br"), "or tap to choose one"),
+              el("span", { class: "help" }, "JPG, PNG, WebP or GIF")),
+        s.image ? el("div", { class: "row" },
+          el("label", { class: "upload" }, file, el("span", { class: "btn ghost small" }, "Change picture")),
+          el("button", { type: "button", class: "ghost small danger", onclick: () => { s.image = ""; touch(); draw(); drawRail(); } }, "Remove picture")) : null,
         msg ? el("p", { class: "muted" }, msg) : null].filter(Boolean));
-      box.addEventListener("dragover", (e) => e.preventDefault());
-      box.ondrop = (e) => { e.preventDefault(); if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); };
     };
     async function upload(f) {
       draw(`Uploading ${f.name}…`);
-      const form = new FormData();
-      form.append("image_file", f);
-      form.append("lesson", D.id || D.title || "lesson");
       try {
-        const res = await fetch("/api/manage/image", { method: "POST", body: form });
-        const r = await res.json();
-        if (!res.ok) return draw(r.error || r.detail || "That picture couldn't be added.");
-        s.image = r.image;
-        touch();
+        await uploadPicture(s, f);
         draw();
         drawRail();
       } catch (e) {
-        draw("The upload didn't go through. Check the connection and try again.");
+        draw(e.message === "Failed to fetch" ? "The upload didn't go through. Check the connection and try again." : e.message);
       }
     }
+    box.upload = upload;
+    box.wrong = () => draw("That isn't a picture. Drop a JPG, PNG, WebP or GIF.");
+    dropZone(box, "image", upload, box.wrong);
     draw();
     return box;
   }

@@ -23,6 +23,8 @@ Cal/OSHA (8 CCR, Title 8) apply.
 ## Rules
 - Lesson facts come from the cited government rule; every lesson cites at least one.
   Verify a new citation exists at the source (eCFR / dir.ca.gov) before adding it.
+- Drag and drop: every place a manager adds a file (slide pictures, videos, attached training files)
+  must take a dragged-in file as well as tap-to-choose, with a visible drop area. Keep it that way in new screens.
 - Videos: only add ones the user picks or that are clearly public domain / openly
   licensed; don't guess.
 - Pictures: from the user's own files, or Wikimedia Commons photos whose license the app itself
