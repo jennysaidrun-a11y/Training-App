@@ -35,7 +35,8 @@ Rules and sources:
 - Base every fact on the government rule it comes from. Federal: OSHA 29 CFR 1910, FDA 21 CFR 117. \
 California: Cal/OSHA Title 8 (8 CCR). Look the rule up (ecfr.gov, dir.ca.gov, osha.gov, fda.gov) \
 before citing it, and cite exact sections in the form "29 CFR 1910.147" or "8 CCR 3314". \
-Never guess a section number; leave a citation out if you couldn't confirm it.
+Every lesson must cite at least one section you confirmed; the app sends a draft without one back \
+to you. Never guess a section number; leave out any citation you couldn't confirm.
 - When the manager gives a link to an existing training, read it and use it as the starting \
 point, but write the lesson in your own words (don't copy it) and list the link as a source.
 - When the manager attaches a file (in <attached_file>), it's their existing training: keep its \
@@ -45,11 +46,12 @@ dropped or changed and why.
 - Pictures: a reading slide can show one picture ("image"). The attached file's pictures appear \
 where they were as "[Picture: /media/...]" lines; put each useful one on the slide that covers the \
 same thing, using that exact link. Skip logos, decorations and pictures that repeat on every slide.
-- When a reading slide would be clearer with a photo (a machine, a guard, a label, a PPE item) and \
-the file gave none, you may pick one from Wikimedia Commons whose file page says public domain, CC0, \
-CC BY or CC BY-SA. Put its file page link (https://commons.wikimedia.org/wiki/File:...) in "image"; \
-the app checks the license itself, saves a copy and adds the photo credit to sources. Don't use \
-pictures from any other site, and never make up a link. Leave "image" '' when unsure.
+- Every reading slide without a picture from the file gets a "picture_search": 2-5 plain words \
+naming a real, photographable thing that shows the slide's point (for example "lockout padlock \
+on valve", "industrial dough mixer", "forklift pallet", "hand washing sink"). Name the object, not \
+the idea ("hard hat", not "safety"). The app searches Wikimedia Commons for free-to-use photos, \
+shows Claude the candidates, and puts one on the slide only if it really matches; it credits the \
+photo in sources. Don't put web links in "image" yourself; use '' when the file gave none.
 - Keep it to what the rule actually says; don't add requirements that aren't there.
 
 When you have a lesson (or an updated one), call propose_lesson with the whole lesson, then reply \
@@ -80,13 +82,15 @@ def lesson_tool(role_ids):
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["type", "heading", "text", "image", "q", "choices", "answer", "why"],
+                        "required": ["type", "heading", "text", "image", "picture_search", "q", "choices", "answer", "why"],
                         "properties": {
                             "type": {"type": "string", "enum": ["reading", "question"]},
                             "heading": {"type": "string", "description": "Reading slides only; '' for questions."},
                             "text": {"type": "string", "description": "Reading slides only; '' for questions."},
                             "image": {"type": "string", "description": "Reading slides only: a /media/ picture link from "
-                                      "the attached file, or a commons.wikimedia.org/wiki/File: page; '' for none."},
+                                      "the attached file; '' for none."},
+                            "picture_search": {"type": "string", "description": "Reading slides without an image: 2-5 words "
+                                               "naming a photographable object that shows this slide's point; '' otherwise."},
                             "q": {"type": "string", "description": "Question slides only; '' for readings."},
                             "choices": {"type": "array", "items": {"type": "string"}, "description": "Question slides only; [] for readings."},
                             "answer": {"type": "integer", "description": "Index of the right choice; 0 for readings."},
@@ -95,7 +99,7 @@ def lesson_tool(role_ids):
                     },
                 },
                 "citations": {"type": "array", "items": {"type": "string"},
-                              "description": "Exact sections you confirmed, e.g. '29 CFR 1910.147', '8 CCR 3314'."},
+                              "description": "At least one exact section you confirmed, e.g. '29 CFR 1910.147', '8 CCR 3314'."},
                 "sources": {
                     "type": "array",
                     "items": {"type": "object", "additionalProperties": False, "required": ["title", "url"],
@@ -147,7 +151,8 @@ def _clean_slides(slides):
         if s.get("type") == "reading":
             image = str(s.get("image") or "").strip()
             out.append({"type": "reading", "heading": s.get("heading", "").strip(), "text": s.get("text", "").strip(),
-                        "image": image if PICTURE_LINK.match(image) else ""})
+                        "image": image if PICTURE_LINK.match(image) else "",
+                        "picture_search": re.sub(r"\s+", " ", str(s.get("picture_search") or "")).strip()[:80]})
         elif s.get("type") == "question":
             choices = [c for c in s.get("choices", []) if c.strip()]
             answer = s.get("answer", 0)
@@ -218,6 +223,15 @@ def _finish(proposed, role_ids):
     }
 
 
+NO_CITATION = ("The draft has no rule citation the app can read. Every lesson must cite at least one exact "
+               "section, like '29 CFR 1910.147' or '8 CCR 3314'. Look up the rule the lesson is based on, "
+               "then send the whole lesson again with it.")
+
+
+def cited(proposed):
+    return any(content.parse_citation(str(c)) for c in (proposed or {}).get("citations") or [])
+
+
 CLI_NOTE = """
 
 You are running without the propose_lesson tool. Instead, your final answer is JSON matching the \
@@ -227,7 +241,18 @@ lesson can be empty. Use WebSearch and WebFetch to look up the rules."""
 
 
 def run_cli(history, draft, command=None, runner=subprocess.run):
-    """The same research through Claude Code, signed in with the user's Claude account."""
+    """The same research through Claude Code, signed in with the user's Claude account.
+    A lesson with no readable citation goes back once with the reason."""
+    out = _run_cli_once(history, draft, command, runner)
+    if out["lesson"] and not out["lesson"]["citations"]:
+        again = history[:-1] + [{"role": "user", "text": history[-1]["text"] + "\n\n<app_note>" + NO_CITATION + "</app_note>"}]
+        retry = _run_cli_once(again, out["lesson"], command, runner)
+        if retry["lesson"]:
+            out = retry
+    return out
+
+
+def _run_cli_once(history, draft, command=None, runner=subprocess.run):
     system, role_ids = _system()
     lesson_schema = lesson_tool(role_ids)["input_schema"]
     schema = {
@@ -286,7 +311,7 @@ def run_api(history, draft, client=None):
         {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 6},
         lesson_tool(role_ids),
     ]
-    proposed, texts, searched = None, [], []
+    proposed, texts, searched, nudged, tool_id = None, [], [], False, None
     for _ in range(MAX_CONTINUATIONS):
         with client.beta.messages.stream(
             model=MODEL,
@@ -306,6 +331,7 @@ def run_api(history, draft, client=None):
                 texts.append(block.text)
             elif block.type == "tool_use" and block.name == "propose_lesson":
                 proposed = block.input if isinstance(block.input, dict) else json.loads(block.input)
+                tool_id = block.id
             elif block.type == "web_fetch_tool_result":
                 url = getattr(getattr(block, "content", None), "url", None)
                 if url:
@@ -316,9 +342,14 @@ def run_api(history, draft, client=None):
         if response.stop_reason == "pause_turn":
             messages.append({"role": "assistant", "content": response.content})
             continue
+        if response.stop_reason == "tool_use" and proposed is not None and not cited(proposed) and not nudged:
+            nudged = True        # a lesson must cite a rule: send it back once
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": NO_CITATION}]})
+            continue
         if response.stop_reason == "tool_use" and proposed is not None and not any(t.strip() for t in texts):
             # Let Claude say what it drafted, now that the draft is in hand.
-            tool_id = next(b.id for b in response.content if b.type == "tool_use" and b.name == "propose_lesson")
             messages.append({"role": "assistant", "content": response.content})
             messages.append({"role": "user", "content": [
                 {"type": "tool_result", "tool_use_id": tool_id, "content": "The draft is in the editor."}]})
@@ -398,3 +429,63 @@ def translate(lesson, lang, client=None, runner=subprocess.run):
     if not ok or not result.get("title"):
         raise RuntimeError("The translation came back with missing pieces. Try again.")
     return result
+
+
+# ---- Matching photos to slides ------------------------------------------------------
+
+MATCH_SYSTEM = """You choose photos for the slides of a safety training lesson for workers at a \
+commercial bakery. For each slide you get its words and a few candidate photos (free-to-use photos \
+from Wikimedia Commons). Pick the photo that clearly shows what the slide is about, the way a \
+worker would recognise it on the job: the right machine, tool, sign, label or piece of protective \
+gear, shown plainly. Say -1 (no photo) when none of them fits: a different object, a diagram of \
+something else, a person as the subject, text you can't read, a drawing where a photo is needed, \
+or anything unsafe, misleading, gory or silly. No photo is better than a wrong one."""
+
+
+def match_schema():
+    return {"type": "object", "additionalProperties": False, "required": ["picks"],
+            "properties": {"picks": {"type": "array", "items": {
+                "type": "object", "additionalProperties": False, "required": ["slide", "pick"],
+                "properties": {"slide": {"type": "integer"}, "pick": {"type": "integer", "description": "Photo number, or -1."}}}}}}
+
+
+def match_pictures(asks, client=None, runner=subprocess.run):
+    """asks: [{"slide", "heading", "text", "search", "candidates": [{"path", "title"}]}].
+    Claude looks at each slide's candidate photos and returns {slide: photo index or -1}."""
+    import base64
+    schema = match_schema()
+    head = "For each slide, pick the photo number that matches it, or -1 for none.\n"
+    if client is None and mode() == "cli":
+        lines = [head, "The photos are image files in the current folder; open each one with Read before choosing."]
+        for a in asks:
+            lines.append(f"\nSlide {a['slide']}: {a['heading']}\n{a['text']}")
+            lines += [f"  Photo {k}: {os.path.basename(c['path'])} ({c['title']})" for k, c in enumerate(a["candidates"])]
+        folder = os.path.dirname(asks[0]["candidates"][0]["path"])
+        cmd = [claude_command(), "-p", "--output-format", "json", "--json-schema", json.dumps(schema),
+               "--system-prompt", MATCH_SYSTEM, "--tools", "Read", "--allowedTools", "Read",
+               "--model", CLI_MODEL, "--no-session-persistence"]
+        r = runner(cmd, input="\n".join(lines), capture_output=True, text=True, timeout=CLI_TIMEOUT, cwd=folder)
+        try:
+            out = json.loads(r.stdout)
+            result = out.get("structured_output") or json.loads(out.get("result") or "{}")
+        except ValueError:
+            result = {}
+    else:
+        import anthropic
+        client = client or anthropic.Anthropic(timeout=300.0)
+        media = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+        blocks = [{"type": "text", "text": head}]
+        for a in asks:
+            blocks.append({"type": "text", "text": f"Slide {a['slide']}: {a['heading']}\n{a['text']}"})
+            for k, c in enumerate(a["candidates"]):
+                with open(c["path"], "rb") as f:
+                    data = base64.standard_b64encode(f.read()).decode()
+                blocks += [{"type": "text", "text": f"Photo {k} ({c['title']}):"},
+                           {"type": "image", "source": {"type": "base64", "data": data,
+                                                        "media_type": media.get(os.path.splitext(c["path"])[1], "image/jpeg")}}]
+        tool = {"name": "choose_photos", "description": "Save the photo picked for each slide.", "strict": True, "input_schema": schema}
+        response = client.messages.create(model=MODEL, max_tokens=4000, system=MATCH_SYSTEM, tools=[tool],
+                                          tool_choice={"type": "tool", "name": "choose_photos"},
+                                          messages=[{"role": "user", "content": blocks}])
+        result = next((b.input for b in response.content if b.type == "tool_use"), None) or {}
+    return {p["slide"]: p["pick"] for p in result.get("picks", []) if isinstance(p, dict) and isinstance(p.get("slide"), int)}

@@ -109,6 +109,9 @@ def check_meta(data):
     video = (data.get("video") or "").strip()
     if video and not (video.startswith(("http://", "https://")) or video.startswith("/media/")):
         errors.append({"slide": 0, "error": "The video link should start with https://"})
+    if not [c for c in data.get("citations") or [] if str(c).strip()]:
+        errors.append({"slide": "rules", "error": "Add at least one rule citation, like '29 CFR 1910.147' or '8 CCR 3314'. "
+                       "Ask Claude to find it if you're not sure."})
     for c in data.get("citations") or []:
         if not content.parse_citation(c):
             errors.append({"slide": "rules", "error": f"'{c}' should look like '29 CFR 1910.147' or '8 CCR 3314'."})

@@ -937,9 +937,23 @@ async def research_chat(request: Request):
         print(f"Research failed: {e.__class__.__name__}: {e}")
         return JSONResponse({"error": f"Claude couldn't finish that ({e.__class__.__name__}). Try again in a minute."}, status_code=502)
     if result.get("lesson"):
-        result["checks"] = await run_in_threadpool(_verify, result["lesson"]["citations"])
-        if await run_in_threadpool(_settle_pictures, result["lesson"]):
-            result["reply"] = (result.get("reply") or "") + "\n\n(A picture Claude picked couldn't be checked as free to use, so it's left off.)"
+        lesson, notes = result["lesson"], []
+        result["checks"] = await run_in_threadpool(_verify, lesson["citations"])
+        wrong = [c["ref"] for c in result["checks"] if c["found"] is False]
+        if wrong:          # the source says there's no such section: keep it out of the lesson
+            lesson["citations"] = [c for c in lesson["citations"] if content.parse_citation(c)["ref"] not in wrong]
+            notes.append(f"Took out {', '.join(wrong)}: {'it is' if len(wrong) == 1 else 'they are'} not at eCFR / DIR.")
+        if not lesson["citations"]:
+            notes.append("This draft has no confirmed rule citation yet. Ask Claude to find the rule before saving.")
+        if await run_in_threadpool(_settle_pictures, lesson):
+            notes.append("A picture Claude picked couldn't be checked as free to use, so it's left off.")
+        found = await run_in_threadpool(_find_pictures, lesson)
+        if found:
+            notes.append(f"Added {found} matching photo{'' if found == 1 else 's'} from Wikimedia Commons (credited in sources).")
+        for sl in lesson.get("slides", []):
+            sl.pop("picture_search", None)
+        if notes:
+            result["reply"] = ((result.get("reply") or "") + "\n\n" + " ".join(f"({n})" for n in notes)).strip()
     return result
 
 
@@ -1002,6 +1016,90 @@ def _settle_pictures(lesson, get=None):
             s["image"] = ""
             dropped += 1
     return dropped
+
+
+PICTURE_CHOICES = 4        # candidate photos Claude looks at per slide
+PICTURE_SLIDES = 8         # most slides searched per draft
+
+
+def _commons_search(terms, get=None):
+    """Free-to-use Commons photos for a few words: [{page, thumb, title}], best first."""
+    import requests
+    get = get or requests.get
+    r = get(COMMONS_API, params={"action": "query", "generator": "search", "gsrsearch": f"{terms} filetype:bitmap",
+                                 "gsrnamespace": 6, "gsrlimit": 12, "prop": "imageinfo", "iiprop": "url|mime|extmetadata",
+                                 "iiurlwidth": 480, "format": "json", "formatversion": 2}, headers=WEB_HEADERS, timeout=20)
+    pages = sorted(r.json().get("query", {}).get("pages", []), key=lambda pg: pg.get("index", 0))
+    out = []
+    for pg in pages:
+        info = (pg.get("imageinfo") or [None])[0] or {}
+        lic = info.get("extmetadata", {}).get("LicenseShortName", {}).get("value", "").strip()
+        if info.get("mime") in ("image/jpeg", "image/png", "image/webp") and FREE_LICENSE.match(lic) \
+                and not re.search(r"\b(nc|nd)\b", lic, re.I) and info.get("thumburl"):
+            out.append({"page": info.get("descriptionurl") or "https://commons.wikimedia.org/wiki/" + pg["title"].replace(" ", "_"),
+                        "thumb": info["thumburl"], "title": pg["title"].removeprefix("File:").rsplit(".", 1)[0]})
+    return out[:PICTURE_CHOICES]
+
+
+def _find_pictures(lesson, get=None, matcher=None):
+    """Pictures that match the slides: for each reading slide Claude described
+    (picture_search), the app finds free photos on Wikimedia Commons, Claude looks at
+    them next to the slide's words and picks the one that shows it (or none), and the
+    app saves the pick with its credit. Returns how many slides got a photo."""
+    import tempfile
+
+    import requests
+    get = get or requests.get
+    matcher = matcher or research.match_pictures
+    wanted = [(i, s) for i, s in enumerate(lesson.get("slides", []))
+              if s.get("type") == "reading" and not s.get("image") and s.get("picture_search")][:PICTURE_SLIDES]
+    if not wanted:
+        return 0
+    with tempfile.TemporaryDirectory() as tmp:
+        asks = []
+        for i, s in wanted:
+            try:
+                found = _commons_search(s["picture_search"], get)
+            except Exception as e:  # Commons unreachable: the slide just has no photo
+                print(f"Picture search failed for {s['picture_search']!r}: {e.__class__.__name__}")
+                continue
+            cands = []
+            for k, c in enumerate(found):
+                try:
+                    img = get(c["thumb"], headers=WEB_HEADERS, timeout=20)
+                except Exception:
+                    continue
+                if img.status_code == 200 and 0 < len(img.content) <= MAX_IMAGE_BYTES:
+                    path = os.path.join(tmp, f"slide{i}-{k}{os.path.splitext(c['thumb'].split('?')[0])[1].lower() or '.jpg'}")
+                    with open(path, "wb") as f:
+                        f.write(img.content)
+                    cands.append({**c, "path": path})
+            if cands:
+                asks.append({"slide": i, "heading": s.get("heading", ""), "text": s.get("text", ""),
+                             "search": s["picture_search"], "candidates": cands})
+        if not asks:
+            return 0
+        try:
+            picks = matcher(asks)
+        except Exception as e:
+            print(f"Picture matching failed: {e.__class__.__name__}: {e}")
+            return 0
+        added, used = 0, set()
+        for a in asks:
+            k = picks.get(a["slide"], -1)
+            if not isinstance(k, int) or not 0 <= k < len(a["candidates"]) or a["candidates"][k]["page"] in used:
+                continue
+            page = a["candidates"][k]["page"]
+            try:
+                saved = _commons_picture(page, get)     # re-checks the license and keeps a full copy
+            except Exception:
+                saved = None
+            if saved:
+                lesson["slides"][a["slide"]]["image"], source = saved
+                lesson["sources"] = lesson.get("sources", []) + [source]
+                used.add(page)
+                added += 1
+        return added
 
 
 @app.get("/media/{name}")

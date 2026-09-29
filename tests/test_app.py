@@ -791,3 +791,83 @@ def test_manager_stays_signed_in(client):
     assert client.get(f"/me/{wid}", follow_redirects=False).status_code == 200    # managers see everyone's page
     client.post("/signout", data={"kind": "m"})
     assert client.get("/manage/dashboard", follow_redirects=False).headers["location"].startswith("/manage/signin")
+
+
+def test_drafts_must_cite_a_rule(env, client, monkeypatch):
+    uncited = {**DRAFT, "citations": ["OSHA forklift rule"]}
+    fake = _FakeClient([
+        _Block(stop_reason="tool_use", content=[_Block(type="tool_use", id="t1", name="propose_lesson", input=uncited)]),
+        _Block(stop_reason="tool_use", content=[_Block(type="text", text="Added the rule."),
+                                                _Block(type="tool_use", id="t2", name="propose_lesson", input=DRAFT)]),
+    ])
+    out = research.run([{"role": "user", "text": "Forklifts"}], None, client=fake)
+    sent_back = fake.calls[1]["messages"][-1]["content"][0]
+    assert sent_back["is_error"] and "at least one" in sent_back["content"]
+    assert out["lesson"]["citations"] == ["29 CFR 1910.178"]
+
+    # Claude Code: sent back once with the reason, and the retry is used.
+    inputs = []
+
+    def runner(cmd, input, **kw):
+        inputs.append(input)
+        return _Done(json.dumps({"structured_output": {"reply": "ok", "has_lesson": True,
+                                                       "lesson": uncited if len(inputs) == 1 else DRAFT}}))
+    out = research.run_cli([{"role": "user", "text": "Forklifts"}], None, command="claude", runner=runner)
+    assert len(inputs) == 2 and "<app_note>" in inputs[1] and out["lesson"]["citations"] == ["29 CFR 1910.178"]
+
+    # A section the source says doesn't exist is taken out of the draft.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    monkeypatch.setattr(research, "run", lambda h, d: {"reply": "Drafted.", "searched": [],
+                        "lesson": {"citations": ["29 CFR 1910.178", "29 CFR 1910.9999"], "slides": [], "sources": []}})
+    monkeypatch.setattr(rules, "check_rule", lambda c, old, get=None: {"found": c["ref"] != "29 CFR 1910.9999"})
+    r = client.post("/api/manage/research", json={"history": [{"role": "user", "text": "x"}]}).json()
+    assert r["lesson"]["citations"] == ["29 CFR 1910.178"] and "Took out 29 CFR 1910.9999" in r["reply"]
+    # Saving a lesson needs at least one citation.
+    assert any("at least one rule citation" in e["error"] for e in editor.check_meta({"title": "x", "citations": []}))
+    assert not editor.check_meta({"title": "x", "citations": ["8 CCR 3314"]})
+
+
+def test_photos_are_found_and_matched_to_slides(client):
+    from trainer import app as app_module
+
+    class R:
+        def __init__(self, data=None, content=b""):
+            self.status_code, self._data, self.content = 200, data, content
+
+        def json(self):
+            return self._data
+
+    def photo(n, lic="CC BY 4.0"):
+        return {"title": f"File:Mixer {n}.jpg", "index": n, "imageinfo": [{
+            "mime": "image/jpeg", "url": f"https://upload.wikimedia.org/{n}.jpg", "thumburl": f"https://upload.wikimedia.org/t{n}.jpg",
+            "descriptionurl": f"https://commons.wikimedia.org/wiki/File:Mixer_{n}.jpg",
+            "extmetadata": {"LicenseShortName": {"value": lic}, "Artist": {"value": "A. Baker"}}}]}
+
+    searches = []
+
+    def get(url, params=None, **k):
+        if params and params.get("generator") == "search":
+            searches.append(params["gsrsearch"])
+            return R({"query": {"pages": [photo(2), photo(1), photo(3, "CC BY-NC 4.0")]}})
+        if params:                               # the license re-check when a pick is saved
+            n = params["titles"].split()[-1].split(".")[0]
+            return R({"query": {"pages": [photo(int(n))]}})
+        return R(content=b"\xff\xd8" + url.encode())
+
+    seen = {}
+
+    def matcher(asks):
+        seen["asks"] = asks
+        return {0: 1, 2: -1}                    # slide 0 gets its second photo; slide 2 none fit
+
+    lesson = {"slides": [{"type": "reading", "heading": "The mixer", "text": "t", "image": "", "picture_search": "industrial dough mixer"},
+                         {"type": "question", "q": "?"},
+                         {"type": "reading", "heading": "Rules", "text": "t", "image": "", "picture_search": "rule book"},
+                         {"type": "reading", "heading": "Own", "text": "t", "image": "/media/x.jpg", "picture_search": "x"}],
+              "sources": []}
+    assert app_module._find_pictures(lesson, get=get, matcher=matcher) == 1
+    assert searches == ["industrial dough mixer filetype:bitmap", "rule book filetype:bitmap"]   # slides that already have one are skipped
+    first = seen["asks"][0]
+    assert [c["title"] for c in first["candidates"]] == ["Mixer 1", "Mixer 2"]                  # the NC photo never reaches Claude
+    assert lesson["slides"][0]["image"].startswith("/media/commons-") and lesson["slides"][2]["image"] == ""
+    assert lesson["sources"][0]["url"] == "https://commons.wikimedia.org/wiki/File:Mixer_2.jpg" and "CC BY 4.0" in lesson["sources"][0]["title"]
