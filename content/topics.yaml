@@ -1,15 +1,16 @@
 # Lesson folders, in the order workers and managers see them. Managers edit this on
 # Manager > Topics. A lesson in no folder shows under "Other lessons".
-- id: getting-started
-  name: Getting started
-  lessons:
-  - safety-basics
+# in_order: true means workers take that folder's lessons one after another.
 - id: machines
   name: Machines and equipment
   lessons:
   - lockout-tagout
   - bakery-equipment
   - forklifts
+- id: getting-started
+  name: Getting started
+  lessons:
+  - safety-basics
 - id: food-safety
   name: Food safety
   lessons:
