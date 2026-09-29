@@ -626,7 +626,7 @@ body.cert-page { background: var(--soft); padding: 16px; }
 .folder-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .folder-bar h2 { margin: 0; }
 .folder-ico { font-size: 1.3rem; }
-.folder-bar .rename { display: flex; gap: 6px; align-items: center; flex: 1 1 260px; }
+.folder-bar .rename { display: flex; gap: 6px; align-items: center; flex: 1 1 180px; }
 .folder-bar .as-title { font: 600 1.1rem var(--font-head); color: var(--heading); border: 1px solid transparent; background: transparent; padding: 4px 8px; min-width: 0; flex: 1; }
 .folder-bar .as-title:hover, .folder-bar .as-title:focus { border-color: var(--line); background: var(--bg); }
 .folder-lessons { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid var(--line); }
@@ -637,3 +637,47 @@ body.cert-page { background: var(--soft); padding: 16px; }
 .path .topic-head { list-style: none; width: 100%; text-align: center; font: 600 1.05rem var(--font-head); color: var(--heading);
                     margin: 18px 0 6px; padding-top: 12px; border-top: 1px dashed var(--line); }
 .path .topic-head:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+
+/* Topics: drag handles, "Do in order" switch, search */
+.topic-tools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 8px 0 16px; }
+.topic-tools .add-folder { margin: 0; flex: 1 1 320px; }
+.search-box { display: flex; align-items: center; gap: 8px; flex: 1 1 240px; background: var(--panel); border: 1px solid var(--line);
+              border-radius: 12px; padding: 0 12px; color: var(--muted); }
+.search-box svg { width: 20px; height: 20px; flex: none; }
+.search-box input { border: 0; background: transparent; box-shadow: none; flex: 1; min-width: 0; padding: 10px 0; }
+.search-box input:focus { outline: none; }
+.search-box:focus-within { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(200, 145, 31, .25); }
+.grip { display: inline-grid; place-items: center; width: 34px; height: 36px; padding: 0; border: 0; border-radius: 8px;
+        background: transparent; color: var(--muted); cursor: grab; touch-action: none; box-shadow: none; flex: none; }
+.grip svg { width: 20px; height: 20px; }
+.grip:hover, .grip:focus-visible { background: var(--bg); color: var(--heading); }
+.grip-inline svg { width: 16px; height: 16px; vertical-align: -3px; }
+.dragging { opacity: .85; box-shadow: 0 8px 24px rgba(67, 39, 11, .22); background: var(--panel); position: relative; z-index: 5; }
+.dragging .grip { cursor: grabbing; }
+.searching .grip { visibility: hidden; }
+.folder-lessons { counter-reset: step; min-height: 8px; }
+.folder-lessons li { counter-increment: step; }
+.folder-lessons .num { display: none; }
+.folder.ordered .folder-lessons .num { display: inline-grid; place-items: center; min-width: 26px; height: 26px; border-radius: 50%;
+        background: var(--gold); color: #fff; font-weight: 700; font-size: 0.8rem; }
+.folder.ordered .folder-lessons .num::before { content: counter(step); }
+.empty-note { display: none; margin: 10px 0 0; }
+.folder-lessons:empty + .empty-note { display: block; }
+.switch { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.9rem; color: var(--heading);
+          cursor: pointer; white-space: nowrap; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch .track { width: 40px; height: 24px; border-radius: 999px; background: var(--grey-node); position: relative; transition: background .15s; }
+.switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+                        background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s; }
+.switch input:checked + .track { background: var(--gold); }
+.switch input:checked + .track::after { transform: translateX(16px); }
+.switch input:focus-visible + .track { outline: 3px solid var(--gold); outline-offset: 2px; }
+[dir="rtl"] .switch input:checked + .track::after { transform: translateX(-16px); }
+.save-note { margin-left: auto; font-weight: 600; }
+/* Worker path: a locked lesson in an "in order" folder */
+.node.locked { background: var(--grey-node); color: var(--muted); box-shadow: 0 7px 0 var(--grey-edge); cursor: not-allowed; }
+.node.locked:active { transform: none; box-shadow: 0 7px 0 var(--grey-edge); }
+.stop.locked .label { color: var(--muted); }
+/* Dashboard search */
+.filters .search-box { flex: 2 1 260px; align-self: end; min-height: 44px; }
+.matrix .hide { display: none; }

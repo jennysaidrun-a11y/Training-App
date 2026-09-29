@@ -19,14 +19,18 @@
 <ol class="path">
   {% for r in rows %}
   {% if loop.first or r.topic.id != rows[loop.index0 - 1].topic.id %}<li class="topic-head">{{ t("other_lessons") if r.topic.id == "other" else r.topic.name }}</li>{% endif %}
-  {% set is_next = ns.first and r.state != "done" %}{% if is_next %}{% set ns.first = false %}{% endif %}
-  <li class="stop{{ ' next' if is_next else '' }}">
+  {% set is_next = ns.first and r.state != "done" and not r.locked %}{% if is_next %}{% set ns.first = false %}{% endif %}
+  <li class="stop{{ ' next' if is_next else '' }}{{ ' locked' if r.locked else '' }}">
     {% if is_next %}<span class="bubble">{{ t("start") }}</span>{% endif %}
+    {% if r.locked %}
+    <span class="node locked" role="img" aria-label="{{ r.lesson.title }}: {{ t('locked') }}">{{ icon("lock") }}</span>
+    {% else %}
     <a class="node {{ r.state }}" href="/lesson/{{ r.lesson.id }}" aria-label="{{ r.lesson.title }}: {{ r.label }}">
       {% if r.state == "done" %}{{ icon("star") }}{% elif r.state in ("updated", "refresh") %}{{ icon("redo") }}{% else %}{{ icon("play") }}{% endif %}
     </a>
+    {% endif %}
     <span class="label">{{ r.lesson.title }}</span>
-    <span class="sub">{% if r.state == "done" %}{{ t("done_on", date=r.last.completed_at[:10]) }}{% else %}{{ t("state_" ~ r.state) }}{% endif %}</span>
+    <span class="sub">{% if r.locked %}{{ t("locked") }}{% elif r.state == "done" %}{{ t("done_on", date=r.last.completed_at[:10]) }}{% else %}{{ t("state_" ~ r.state) }}{% endif %}</span>
     {% if r.last %}<a class="cert-link" href="/certificate/{{ r.last.id }}">{{ t("certificate") }}</a>{% endif %}
   </li>
   {% endfor %}

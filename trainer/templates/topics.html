@@ -1,42 +1,47 @@
 {% extends "base.html" %}
+{% from "icons.html" import icon %}
 {% block title %}Topics · Training · United Bakery{% endblock %}
 {% block body %}
 {% include "_manager_nav.html" %}
-<div class="page-head"><h1>Topics</h1></div>
-<p class="muted">Folders that group the lessons. Workers see their lessons in this order, under these headings.</p>
-<form method="post" class="row add-folder">
-  <input type="hidden" name="action" value="add">
-  <input name="name" placeholder="New folder name, e.g. Ovens" required maxlength="80" aria-label="New folder name">
-  <button class="small">+ Add folder</button>
-</form>
-<div class="folders">
+<div class="page-head"><h1>Topics</h1><span class="save-note muted" id="save-note" role="status" aria-live="polite"></span></div>
+<p class="muted">Folders that group the lessons. Workers see their lessons in this order, under these headings.
+  Drag the <span class="grip-inline">{{ icon("grip") }}</span> handle to reorder folders and lessons, or to move a lesson into another folder.
+  Turn on <b>Do in order</b> for a folder when its lessons must be taken one after another; otherwise workers can take them in any order.</p>
+<div class="row topic-tools">
+  <label class="search-box">{{ icon("search") }}<input type="search" id="lesson-search" placeholder="Find a lesson" aria-label="Find a lesson" autocomplete="off"></label>
+  <form method="post" class="row add-folder">
+    <input type="hidden" name="action" value="add">
+    <input name="name" placeholder="New folder name, e.g. Ovens" required maxlength="80" aria-label="New folder name">
+    <button class="small">+ Add folder</button>
+  </form>
+</div>
+<p class="muted" id="no-match" hidden>No lesson matches that search.</p>
+<div class="folders" id="folders">
 {% for topic, members in groups %}
-  <section class="folder card" id="t-{{ topic.id }}">
+  <section class="folder card{{ ' fixed' if topic.id == 'other' else '' }}{{ ' ordered' if topic.in_order else '' }}" id="t-{{ topic.id }}" data-topic="{{ topic.id }}">
     <div class="folder-bar">
-      <span class="folder-ico" aria-hidden="true">📁</span>
       {% if topic.id == "other" %}
+        <span class="folder-ico" aria-hidden="true">📁</span>
         <h2>{{ topic.name }}</h2><span class="muted">Lessons in no folder</span>
       {% else %}
+        <button type="button" class="grip" aria-label="Move folder {{ topic.name }}: drag, or use the arrow keys" title="Drag to reorder">{{ icon("grip") }}</button>
+        <span class="folder-ico" aria-hidden="true">📁</span>
         <form method="post" class="rename">
           <input type="hidden" name="action" value="rename"><input type="hidden" name="topic" value="{{ topic.id }}">
           <input name="name" value="{{ topic.name }}" maxlength="80" aria-label="Folder name" class="as-title">
           <button class="ghost small">Rename</button>
         </form>
-        <span class="grow"></span>
-        <form method="post"><input type="hidden" name="topic" value="{{ topic.id }}"><button name="action" value="up" class="ghost small" aria-label="Move folder up" {{ 'disabled' if loop.first }}>↑</button></form>
-        <form method="post"><input type="hidden" name="topic" value="{{ topic.id }}"><button name="action" value="down" class="ghost small" aria-label="Move folder down" {{ 'disabled' if loop.index == topics | length }}>↓</button></form>
+        <label class="switch" title="Workers must take these lessons one after another">
+          <input type="checkbox" class="in-order" {{ 'checked' if topic.in_order }}><span class="track" aria-hidden="true"></span>Do in order</label>
         <form method="post" onsubmit="return confirm('Delete the folder {{ topic.name }}? Its lessons move to Other lessons; nothing is deleted.')"><input type="hidden" name="topic" value="{{ topic.id }}"><button name="action" value="delete" class="ghost small danger">Delete</button></form>
       {% endif %}
     </div>
-    {% if members %}
-    <ul class="folder-lessons">
+    <ol class="folder-lessons" data-topic="{{ topic.id }}">
       {% for l in members %}
-      <li>
+      <li data-lesson="{{ l.id }}" data-title="{{ l.title | lower }}">
+        <button type="button" class="grip" aria-label="Move {{ l.title }}: drag, or use the arrow keys" title="Drag to reorder">{{ icon("grip") }}</button>
+        <span class="num" aria-hidden="true"></span>
         <a href="/manage/lesson/{{ l.id }}" class="grow">{{ l.title }}</a>
-        {% if topic.id != "other" %}
-        <form method="post"><input type="hidden" name="topic" value="{{ topic.id }}"><input type="hidden" name="lesson" value="{{ l.id }}"><button name="action" value="lesson-up" class="ghost small" aria-label="Move up" {{ 'disabled' if loop.first }}>↑</button></form>
-        <form method="post"><input type="hidden" name="topic" value="{{ topic.id }}"><input type="hidden" name="lesson" value="{{ l.id }}"><button name="action" value="lesson-down" class="ghost small" aria-label="Move down" {{ 'disabled' if loop.last }}>↓</button></form>
-        {% endif %}
         <form method="post" class="move">
           <input type="hidden" name="action" value="put"><input type="hidden" name="lesson" value="{{ l.id }}">
           <select name="topic" onchange="this.form.submit()" aria-label="Move {{ l.title }} to folder">
@@ -47,9 +52,113 @@
         </form>
       </li>
       {% endfor %}
-    </ul>
-    {% else %}<p class="muted">Empty. Move lessons here with the folder menu next to each lesson.</p>{% endif %}
+    </ol>
+    <p class="muted empty-note">Empty. Drag lessons here.</p>
   </section>
 {% endfor %}
 </div>
+<script>
+(() => {
+  const root = document.getElementById("folders"), note = document.getElementById("save-note");
+  let timer;
+
+  function state() {
+    return [...root.querySelectorAll("section.folder:not(.fixed)")].map((s) => ({
+      id: s.dataset.topic,
+      in_order: s.querySelector(".in-order").checked,
+      lessons: [...s.querySelectorAll("li[data-lesson]")].map((li) => li.dataset.lesson),
+    }));
+  }
+  function syncSelects() {        // keep each lesson's folder menu in step with where it was dropped
+    root.querySelectorAll("li[data-lesson]").forEach((li) => {
+      const t = li.closest("section").dataset.topic;
+      li.querySelector("select").value = t === "other" ? "" : t;
+    });
+  }
+  async function save() {
+    syncSelects();
+    note.textContent = "Saving…";
+    try {
+      const res = await fetch("/api/manage/topics", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                       body: JSON.stringify({ topics: state() }) });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.error || "Couldn't save");
+      note.textContent = "Saved";
+      clearTimeout(timer); timer = setTimeout(() => (note.textContent = ""), 2000);
+    } catch (e) { note.textContent = e.message; }
+  }
+
+  root.querySelectorAll(".in-order").forEach((c) => c.addEventListener("change", () => {
+    c.closest("section").classList.toggle("ordered", c.checked); save();
+  }));
+
+  // Drag and drop with pointer events, so it works with a mouse and on a phone or tablet.
+  function spot(item, x, y) {
+    if (item.tagName === "LI") {
+      const folder = [...root.querySelectorAll("section.folder")].find((s) => {
+        const r = s.getBoundingClientRect(); return y >= r.top && y <= r.bottom;
+      });
+      if (!folder) return null;
+      const list = folder.querySelector(".folder-lessons");
+      const before = [...list.children].find((li) => li !== item && y < li.getBoundingClientRect().top + li.offsetHeight / 2);
+      return { list, before: before || null };
+    }
+    const fixed = root.querySelector("section.fixed");
+    const before = [...root.querySelectorAll("section.folder:not(.fixed)")]
+      .find((s) => s !== item && y < s.getBoundingClientRect().top + s.offsetHeight / 2);
+    return { list: root, before: before || fixed };
+  }
+  root.addEventListener("pointerdown", (e) => {
+    const grip = e.target.closest(".grip");
+    if (!grip || e.button > 0) return;
+    const item = grip.closest("li[data-lesson]") || grip.closest("section.folder");
+    e.preventDefault();
+    item.classList.add("dragging");
+    let moved = false;
+    const move = (ev) => {
+      const s = spot(item, ev.clientX, ev.clientY);
+      if (s && s.before !== item && (item.nextElementSibling !== s.before || item.parentNode !== s.list)) {
+        s.list.insertBefore(item, s.before); moved = true;
+      }
+      if (ev.clientY < 60) window.scrollBy(0, -12); else if (ev.clientY > innerHeight - 60) window.scrollBy(0, 12);
+    };
+    // Listen on the window: moving the row in the page would drop a pointer capture on the handle.
+    const up = () => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      item.classList.remove("dragging");
+      if (moved) save();
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up);
+  });
+  // Keyboard: focus a handle and press the up or down arrow.
+  root.addEventListener("keydown", (e) => {
+    const grip = e.target.closest(".grip");
+    if (!grip || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    e.preventDefault();
+    const item = grip.closest("li[data-lesson]") || grip.closest("section.folder");
+    if (item.closest("section.fixed")) return;   // Other lessons stay alphabetical
+    if (e.key === "ArrowUp" && item.previousElementSibling) item.parentNode.insertBefore(item, item.previousElementSibling);
+    else if (e.key === "ArrowDown" && item.nextElementSibling && !item.nextElementSibling.classList.contains("fixed"))
+      item.parentNode.insertBefore(item.nextElementSibling, item);
+    else return;
+    grip.focus(); save();
+  });
+
+  const search = document.getElementById("lesson-search"), none = document.getElementById("no-match");
+  search.addEventListener("input", () => {
+    const q = search.value.trim().toLowerCase();
+    let any = false;
+    root.querySelectorAll("section.folder").forEach((s) => {
+      let hits = 0;
+      s.querySelectorAll("li[data-lesson]").forEach((li) => {
+        const hit = !q || li.dataset.title.includes(q); li.hidden = !hit; hits += hit;
+      });
+      s.hidden = !!q && !hits; any = any || hits > 0;
+    });
+    root.classList.toggle("searching", !!q);
+    none.hidden = !q || any;
+  });
+})();
+</script>
 {% endblock %}

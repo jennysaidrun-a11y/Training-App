@@ -58,13 +58,16 @@ def load_topics():
     except yaml.YAMLError:
         topics = []   # a broken file never takes the app down; everything shows under Other
     return [{"id": str(t.get("id") or slugify(t.get("name", "topic"))), "name": str(t.get("name") or "Untitled"),
-             "lessons": [str(x) for x in t.get("lessons") or []]} for t in topics if isinstance(t, dict)]
+             "lessons": [str(x) for x in t.get("lessons") or []], "in_order": bool(t.get("in_order"))}
+            for t in topics if isinstance(t, dict)]
 
 
 def save_topics(topics):
-    data = [{"id": t["id"], "name": t["name"], "lessons": list(t["lessons"])} for t in topics]
+    data = [{"id": t["id"], "name": t["name"], **({"in_order": True} if t.get("in_order") else {}),
+             "lessons": list(t["lessons"])} for t in topics]
     header = "# Lesson folders, in the order workers and managers see them. Managers edit this on\n" \
-             "# Manager > Topics. A lesson in no folder shows under \"Other lessons\".\n"
+             "# Manager > Topics. A lesson in no folder shows under \"Other lessons\".\n" \
+             "# in_order: true means workers take that folder's lessons one after another.\n"
     (CONTENT / "topics.yaml").write_text(header + yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100))
 
 

@@ -146,13 +146,22 @@ def home(request: Request):
 
 
 def _my_lessons(con, person, lessons):
-    """A person's lessons in folder order, each tagged with its folder."""
+    """A person's lessons in folder order, each tagged with its folder. In a folder
+    set to "in order", a lesson stays locked until the ones before it are passed."""
     rows = []
     for topic, members in content.group_by_topic(content.lessons_for_role(lessons, person["role"])):
+        blocked = False
         for lesson in members:
             state, last = db.lesson_state(con, person["id"], lesson)
-            rows.append({"lesson": lesson, "state": state, "label": STATE_LABELS[state], "last": last, "topic": topic})
+            locked = bool(topic.get("in_order")) and blocked and state == "due"
+            rows.append({"lesson": lesson, "state": state, "label": STATE_LABELS[state], "last": last, "topic": topic,
+                         "locked": locked})
+            blocked = blocked or state == "due"
     return rows
+
+
+def _locked_for(con, person, lesson_id):
+    return any(r["locked"] for r in _my_lessons(con, person, content.load_lessons()) if r["lesson"]["id"] == lesson_id)
 
 
 def _safe_next(url, default):
@@ -281,6 +290,10 @@ def lesson_page(request: Request, lesson_id: str):
     lang = lang if lang in i18n.CODES else i18n.pick(request, who)
     lesson, translated = localize(_get_lesson(lesson_id), lang)
     person = who if who and who["kind"] == "w" else None
+    if person:
+        with db.connect() as con:
+            if _locked_for(con, person, lesson_id):
+                return RedirectResponse(f"/me/{person['id']}", status_code=303)
     status = rules.load_status()
     return render(request, "lesson.html", lesson=lesson, person=person, data=_public_lesson(lesson),
                   rule_status=status.get("rules", {}), survey=_survey_for(lang), who=who, lang=lang,
@@ -315,6 +328,8 @@ async def finish(lesson_id: str, request: Request):
     who = auth.current(request)
     if who and who["kind"] == "w":   # only the signed-in worker's own result is saved
         with db.connect() as con:
+            if _locked_for(con, who, lesson_id):
+                raise HTTPException(403, "Finish the lessons before this one first.")
             passed, cid = db.record(con, who["id"], lesson, score)
             out["saved"] = True
             if passed:
@@ -564,6 +579,26 @@ async def edit_topics(request: Request):
             ls[i], ls[j] = ls[j], ls[i]
     content.save_topics(topics)
     return RedirectResponse("/manage/topics" + (f"#t-{tid}" if tid else ""), status_code=303)
+
+
+@app.post("/api/manage/topics")
+async def order_topics(request: Request):
+    """Saves the Topics page after a drag or a toggle: folder order, each folder's
+    lessons in order, and whether workers must take them in order. Lessons left out
+    of every folder go to Other lessons; folder names stay as they are."""
+    body = await request.json()
+    known = {t["id"]: t for t in content.load_topics()}
+    lessons = content.load_lessons()
+    sent = [t for t in body.get("topics") or [] if isinstance(t, dict) and t.get("id") in known]
+    if {t["id"] for t in sent} != set(known) or len(sent) != len(known):
+        return JSONResponse({"error": "The folders changed in another window. Reload the page."}, status_code=409)
+    seen, out = set(), []
+    for t in sent:
+        ids = [str(x) for x in t.get("lessons") or [] if str(x) in lessons and str(x) not in seen]
+        seen.update(ids)
+        out.append({**known[t["id"]], "lessons": ids, "in_order": bool(t.get("in_order"))})
+    content.save_topics(out)
+    return {"ok": True}
 
 
 @app.get("/manage/translations", response_class=HTMLResponse)

@@ -17,6 +17,7 @@
       <option value="">All lessons</option>
       {% for l in lessons %}<option value="{{ l.id }}" {{ 'selected' if focus and l.id == focus.id else '' }}>{{ l.title }}</option>{% endfor %}
     </select></label>
+  <label class="search-box">{{ icon("search") }}<input type="search" id="dash-search" placeholder="Search lessons or people" aria-label="Search lessons or people" autocomplete="off"></label>
   <noscript><button class="small">Show</button></noscript>
 </form>
 
@@ -56,10 +57,10 @@
   {% if matrix and columns %}
   <div class="table-wrap"><table class="grid matrix">
     <thead><tr><th class="sticky">Person</th><th>Done</th>
-      {% for l in columns %}<th class="col"><a href="?role={{ role }}&lesson={{ l.id }}" title="{{ l.title }}">{{ l.title }}</a></th>{% endfor %}</tr></thead>
+      {% for l in columns %}<th class="col" data-find="{{ l.title | lower }}"><a href="?role={{ role }}&lesson={{ l.id }}" title="{{ l.title }}">{{ l.title }}</a></th>{% endfor %}</tr></thead>
     <tbody>
     {% for row in matrix %}
-      <tr>
+      <tr data-find="{{ row.person.name | lower }}">
         <td class="sticky"><a href="/me/{{ row.person.id }}">{{ row.person.name }}</a><div class="meta">{{ role_names.get(row.person.role, row.person.role) }}</div></td>
         <td>{{ row.done }}/{{ row.required }}</td>
         {% for c in row.cells %}
@@ -75,6 +76,29 @@
     {% endfor %}
     </tbody>
   </table></div>
+  <p class="muted" id="dash-none" hidden>No lesson or person matches that search.</p>
+  <script>
+  (() => {
+    const box = document.getElementById("dash-search"), table = document.querySelector(".matrix");
+    if (!box || !table) return;
+    const cols = [...table.querySelectorAll("thead th.col")], rows = [...table.querySelectorAll("tbody tr")];
+    box.addEventListener("input", () => {
+      const q = box.value.trim().toLowerCase();
+      const colHit = cols.map((th) => !q || th.dataset.find.includes(q));
+      const rowHit = rows.map((tr) => !q || tr.dataset.find.includes(q));
+      // A search that names lessons narrows the columns; one that names people narrows the rows.
+      const showCol = colHit.some((h, i) => h && q) ? colHit : cols.map(() => true);
+      const showRow = rowHit.some((h) => h && q) ? rowHit : rows.map(() => true);
+      const none = q && !colHit.some(Boolean) && !rowHit.some(Boolean);
+      cols.forEach((th, i) => th.classList.toggle("hide", !showCol[i] || none));
+      rows.forEach((tr, r) => {
+        tr.classList.toggle("hide", !showRow[r] || none);
+        [...tr.querySelectorAll("td.m")].forEach((td, i) => td.classList.toggle("hide", !showCol[i]));
+      });
+      document.getElementById("dash-none").hidden = !none;
+    });
+  })();
+  </script>
   <p class="legend"><span class="cell-pill s-done">✓ Done</span> <span class="cell-pill s-updated">↻ Retake due</span> <span class="cell-pill s-failed">✗ Failed, retake</span> <span class="cell-pill s-due">• Not started</span> <span class="cell-pill s-na">– Not required</span></p>
   {% else %}
   <div class="empty"><h2>Nothing to show</h2><p>Add people on the People &amp; lessons page, and set what each position needs on Requirements.</p></div>

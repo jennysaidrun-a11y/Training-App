@@ -713,7 +713,7 @@ def test_translation_shape_is_checked(monkeypatch):
 def test_topic_folders(client):
     client.post("/manage/topics", data={"action": "add", "name": "Ovens"})
     topics = content.load_topics()
-    assert topics[-1] == {"id": "ovens", "name": "Ovens", "lessons": []}
+    assert topics[-1] == {"id": "ovens", "name": "Ovens", "lessons": [], "in_order": False}
     client.post("/manage/topics", data={"action": "put", "lesson": "indoor-heat", "topic": "ovens"})
     topics = {t["id"]: t for t in content.load_topics()}
     assert topics["ovens"]["lessons"] == ["indoor-heat"] and "indoor-heat" not in topics["health"]["lessons"]
@@ -733,3 +733,34 @@ def test_topic_folders(client):
         wid = db.add_worker(con, "Tess", "baking")
     page = client.get(f"/me/{wid}").text
     assert 'class="topic-head"' in page and "Machines and equipment" in page
+
+
+def test_drag_order_and_in_order_folders(client, anon):
+    topics = content.load_topics()
+    order = [{"id": t["id"], "lessons": t["lessons"], "in_order": False} for t in reversed(topics)]
+    machines = next(t for t in order if t["id"] == "machines")
+    machines["lessons"] = ["forklifts", "lockout-tagout"]          # bakery-equipment dragged out to Other
+    machines["in_order"] = True
+    assert client.post("/api/manage/topics", json={"topics": order}).json()["ok"]
+    saved = content.load_topics()
+    assert [t["id"] for t in saved] == [t["id"] for t in reversed(topics)]
+    m = next(t for t in saved if t["id"] == "machines")
+    assert m["lessons"] == ["forklifts", "lockout-tagout"] and m["in_order"] and m["name"] == "Machines and equipment"
+    assert "in_order: true" in (content.CONTENT / "topics.yaml").read_text()
+    # A folder missing from what was sent means the page is stale: nothing is saved.
+    assert client.post("/api/manage/topics", json={"topics": order[1:]}).status_code == 409
+    assert anon.post("/api/manage/topics", json={"topics": order}).status_code == 401
+    # Workers: the second lesson in an in-order folder stays locked until the first is passed.
+    from trainer import auth
+    with db.connect() as con:
+        wid = db.add_worker(con, "Lou Park", "packaging", auth.hash_pin("2468"))
+    anon.post(f"/signin/{wid}", data={"pin": "2468"})
+    page = anon.get(f"/me/{wid}").text
+    assert page.count('class="node locked"') == 1 and 'href="/lesson/lockout-tagout"' not in page
+    assert anon.get("/lesson/lockout-tagout", follow_redirects=False).headers["location"] == f"/me/{wid}"
+    assert anon.post("/api/lesson/lockout-tagout/finish", json={"answers": {}}).status_code == 403
+    with db.connect() as con:
+        db.record(con, wid, content.load_lessons()["forklifts"], 1.0)
+    page = anon.get(f"/me/{wid}").text
+    assert 'class="node locked"' not in page and 'href="/lesson/lockout-tagout"' in page
+    assert anon.get("/lesson/lockout-tagout", follow_redirects=False).status_code == 200
