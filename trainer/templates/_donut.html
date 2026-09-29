@@ -1,0 +1,20 @@
+{# A ring chart like a banking app's spending circle. ring = app._donut(...).
+   big: the number in the middle; small: the words under it. #}
+{% macro donut(ring, big, small, size="lg", label="") -%}
+<figure class="donut donut-{{ size }}" role="img" aria-label="{{ label }}{% for s in ring.segs %} {{ s.name }} {{ s.n }} ({{ s.pct }}%){{ ',' if not loop.last }}{% endfor %}">
+  <svg viewBox="0 0 120 120" aria-hidden="true">
+    <circle class="ring-track" cx="60" cy="60" r="48"/>
+    {% for s in ring.segs if s.show %}
+    <circle class="ring-seg r-{{ s.cls }}" cx="60" cy="60" r="48" stroke-dasharray="{{ s.dash }}" stroke-dashoffset="{{ s.offset }}"
+            transform="rotate(-90 60 60)" tabindex="-1"><title>{{ s.name }}: {{ s.n }} ({{ s.pct }}%)</title></circle>
+    {% endfor %}
+  </svg>
+  <figcaption class="donut-mid"><b>{{ big }}</b><span>{{ small }}</span></figcaption>
+</figure>
+{%- endmacro %}
+
+{% macro legend(ring, unit="") -%}
+<ul class="ring-legend">
+  {% for s in ring.segs %}<li><span class="key r-{{ s.cls }}" aria-hidden="true"></span>{{ s.name }}<b>{{ s.n }}{{ unit }}</b><span class="muted">{{ s.pct }}%</span></li>{% endfor %}
+</ul>
+{%- endmacro %}

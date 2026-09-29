@@ -454,6 +454,12 @@ def _cell(con, person, lesson, last_try):
                       "failed": "Failed, retake", "na": "Not required"}[state]}
 
 
+def _survey_ring(scale, counts):
+    """Agree first (its share goes in the middle), then neutral, then disagree."""
+    order = list(range(len(scale)))[::-1]
+    return _donut([(scale[k], f"seg{k}", counts[k]) for k in order])
+
+
 def _survey_summary(con, lesson_id, lessons):
     """Per statement: how many disagreed / were neutral / agreed, and the average
     score out of the form's total (0-1-2 per statement, like the paper form)."""
@@ -471,13 +477,68 @@ def _survey_summary(con, lesson_id, lessons):
         counts = [sum(1 for v in vals if v == k) for k in range(top + 1)]
         out["bars"].append({"text": i18n.localized(text, "en"), "counts": counts,
                             "pcts": [round(100 * c / len(vals)) if vals else 0 for c in counts],
-                            "avg": round(sum(vals) / len(vals), 1) if vals else 0})
+                            "avg": round(sum(vals) / len(vals), 1) if vals else 0,
+                            "ring": _survey_ring(out["scale"], counts)})
+    out["all_ring"] = _survey_ring(out["scale"], [sum(b["counts"][k] for b in out["bars"]) for k in range(top + 1)])
     totals = [sum(r["answers"]) for r in rows]
     out["avg_score"] = round(sum(totals) / n, 1)
     title = lambda lid: lessons.get(lid, {}).get("title", lid)
     out["topics"] = [{"text": r["next_topic"], "lesson": title(r["lesson_id"]), "month": r["month"]} for r in rows if r["next_topic"]][:60]
     out["comments"] = [{"text": r["comments"], "lesson": title(r["lesson_id"]), "month": r["month"]} for r in rows if r["comments"]][:60]
     return out
+
+
+DONUT_R = 48
+DONUT_C = 2 * 3.14159265 * DONUT_R
+COMPLETION_PARTS = [("Done", "done", ("done",)), ("Retake due", "retake", ("updated", "refresh")),
+                    ("Failed, retake", "failed", ("failed",)), ("Not started", "due", ("due",))]
+
+
+def _donut(parts, headline=0):
+    """parts: [(name, css class, count)] -> ring segments for an SVG circle (dash
+    length and offset along the ring, with a small gap between segments).
+    headline: which part's share goes in the middle."""
+    total = sum(n for _, _, n in parts)
+    live = sum(1 for _, _, n in parts if n)
+    gap = 2 if live > 1 else 0
+    segs, at = [], 0.0
+    for name, cls, n in parts:
+        length = DONUT_C * n / total if total else 0
+        segs.append({"name": name, "cls": cls, "n": n, "pct": round(100 * n / total) if total else 0,
+                     "dash": f"{max(length - gap, 0):.2f} {DONUT_C:.2f}", "offset": f"{-at:.2f}", "show": n > 0})
+        at += length
+    return {"total": total, "segs": segs, "pct": segs[headline]["pct"] if total else 0}
+
+
+def _completion(cells):
+    """A completion ring over the required person-by-lesson cells."""
+    req = [c for c in cells if c["required"]]
+    return _donut([(name, cls, sum(1 for c in req if c["state"] in states)) for name, cls, states in COMPLETION_PARTS])
+
+
+def _dashboard_charts(role, focus, columns, matrix, who_did, roles):
+    """The main completion ring plus smaller rings that fit the question asked:
+    one lesson picked -> that lesson by position; a position picked -> each of its
+    lessons; neither -> each position."""
+    names = {r["id"]: r["name"] for r in roles}
+    by_role = lambda rows: [(r["id"], [c for row in rows if row[0] == r["id"] for c in row[1]]) for r in roles]
+    if focus:
+        main = _completion(who_did or [])
+        title, by = f"“{focus['title']}”" + (f", {names[role]}" if role else ""), "By position"
+        split = [{"label": names[rid], "ring": _completion(cells), "href": f"?role={rid}&lesson={focus['id']}"}
+                 for rid, cells in by_role([(r["person"]["role"], [r]) for r in who_did or []])]
+    else:
+        main = _completion([c for row in matrix for c in row["cells"]])
+        title = names[role] if role else "Everyone"
+        if role:
+            by = "By lesson"
+            split = [{"label": l["title"], "ring": _completion([row["cells"][i] for row in matrix]), "href": f"?role={role}&lesson={l['id']}"}
+                     for i, l in enumerate(columns)]
+        else:
+            by = "By position"
+            split = [{"label": names[rid], "ring": _completion(cells), "href": f"?role={rid}"}
+                     for rid, cells in by_role([(row["person"]["role"], row["cells"]) for row in matrix])]
+    return {"main": main, "title": title, "by": by, "split": [x for x in split if x["ring"]["total"]]}
 
 
 @app.get("/manage/dashboard", response_class=HTMLResponse)
@@ -509,8 +570,9 @@ def dashboard(request: Request, role: str = "", lesson: str = ""):
                              key=lambda r: ({"done": 0, "updated": 1, "refresh": 1, "failed": 2, "due": 3, "na": 4}[r["state"]], r["person"]["name"]))
         survey = _survey_summary(con, focus["id"] if focus else "", lessons)
     totals["pct"] = round(100 * totals["done"] / totals["required"]) if totals["required"] else 100
+    charts = _dashboard_charts(role, focus, columns, matrix, who_did, roles)
     return render(request, "dashboard.html", roles=roles, role=role, lessons=sorted(lessons.values(), key=lambda l: l["title"]),
-                  focus=focus, columns=columns, matrix=matrix, totals=totals, who_did=who_did, survey=survey)
+                  focus=focus, columns=columns, matrix=matrix, totals=totals, who_did=who_did, survey=survey, charts=charts)
 
 
 @app.get("/manage/requirements", response_class=HTMLResponse)

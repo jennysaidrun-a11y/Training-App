@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "icons.html" import icon %}
+{% from "_donut.html" import donut, legend %}
 {% block title %}Dashboard · Training · United Bakery{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block body %}
@@ -27,6 +28,31 @@
   <div class="stat"><span class="ico" style="background:var(--ok)">{{ icon("check") }}</span><div><b>{{ totals.done }}</b><span>Done</span></div></div>
   <div class="stat"><span class="ico" style="background:{{ 'var(--orange)' if totals.behind else 'var(--ok)' }}">{{ icon("alert" if totals.behind else "check") }}</span><div><b>{{ totals.behind }}</b><span>Still to do</span></div></div>
 </div>
+
+<section class="section charts">
+  <div class="section-head"><h2>Completion: {{ charts.title }}</h2><span class="muted">Required lessons only. Change Position or Lesson above and the charts follow.</span></div>
+  {% if charts.main.total %}
+  <div class="chart-main card">
+    {{ donut(charts.main, charts.main.pct ~ "%", "done", "lg", "Completion, " ~ charts.title ~ ":") }}
+    <div>
+      {{ legend(charts.main) }}
+      <p class="muted small">Counted per person per required lesson ({{ charts.main.total }} in all).</p>
+    </div>
+  </div>
+  {% if charts.split | length > 1 or (charts.split and focus) %}
+  <h3>{{ charts.by }}</h3>
+  <div class="ring-grid">
+    {% for x in charts.split %}
+    <a class="ring-card card" href="{{ x.href }}" title="Show {{ x.label }}">
+      {{ donut(x.ring, x.ring.pct ~ "%", "done", "sm", x.label ~ ":") }}
+      <span class="ring-name">{{ x.label }}</span>
+      <span class="muted small">{{ x.ring.segs[0].n }} of {{ x.ring.total }} done</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% else %}<p class="muted">Nothing required yet for this choice. Set what each position needs on Requirements.</p>{% endif %}
+</section>
 
 {% if focus %}
 <section class="section">
@@ -108,21 +134,25 @@
 <section class="section" id="survey">
   <div class="section-head"><h2>Anonymous feedback{% if focus %}: {{ focus.title }}{% endif %}</h2><span class="muted">{{ survey.n }} answer{{ '' if survey.n == 1 else 's' }}</span></div>
   {% if not survey.enough %}
-    <p class="muted">Results show once there are at least {{ survey.min }} answers, so no one's answers can be picked out.</p>
+    <div class="waiting card"><b>{{ survey.n }} of {{ survey.min }} answers so far.</b> The charts appear once at least {{ survey.min }} people have answered{% if focus %} after this lesson{% endif %}, so no one's answers can be picked out.</div>
   {% else %}
     <div class="survey-score"><b>{{ survey.avg_score }}</b><span> / {{ survey.max_score }} average score</span> <span class="muted">(form {{ survey.form }}: disagree 0, neutral 1, agree 2)</span></div>
-    <div class="bars">
+    <div class="chart-main card">
+      {{ donut(survey.all_ring, survey.all_ring.pct ~ "%", "agree", "lg", "All statements:") }}
+      <div>
+        <p class="ring-title">All statements together</p>
+        {{ legend(survey.all_ring) }}
+      </div>
+    </div>
+    <div class="ring-grid wide">
     {% for b in survey.bars %}
-      <div class="bar-row">
-        <span class="bar-label">{{ b.text }}</span>
-        <span class="bar-track stacked" role="img" aria-label="{% for c in b.counts %}{{ survey.scale[loop.index0] }} {{ c }}{% if not loop.last %}, {% endif %}{% endfor %}">
-          {% for p in b.pcts %}{% if p %}<span class="seg seg{{ loop.index0 }}" style="width: {{ p }}%">{{ p }}%</span>{% endif %}{% endfor %}
-        </span>
-        <span class="bar-value">{{ b.avg }}<small> / 2</small></span>
+      <div class="ring-card card">
+        {{ donut(b.ring, b.ring.pct ~ "%", "agree", "sm", b.text) }}
+        <span class="ring-text">{{ loop.index }}. {{ b.text }}</span>
+        <span class="muted small">{% for s in b.ring.segs %}{{ s.name }} {{ s.n }}{{ " · " if not loop.last }}{% endfor %}</span>
       </div>
     {% endfor %}
     </div>
-    <p class="legend"><span class="cell-pill seg-key seg0">{{ survey.scale[0] }}</span> <span class="cell-pill seg-key seg1">{{ survey.scale[1] }}</span> <span class="cell-pill seg-key seg2">{{ survey.scale[2] }}</span></p>
     <h3>{{ survey.next_topic }}</h3>
     {% if survey.topics %}
     <ul class="topics">{% for t in survey.topics %}<li>“{{ t.text }}” <span class="muted">· after {{ t.lesson }} · {{ t.month }}</span></li>{% endfor %}</ul>

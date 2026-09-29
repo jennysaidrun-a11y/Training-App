@@ -639,6 +639,11 @@ def test_dashboard_requirements_and_survey_chart(client, anon):
     page = client.get("/manage/dashboard?lesson=lockout-tagout").text
     assert "Who has done" in page and "/certificate/" in page
     assert "Failed, retake" in client.get("/manage/dashboard?role=baking&lesson=allergens").text
+    page = client.get("/manage/dashboard").text
+    assert "Completion: Everyone" in page and 'class="ring-seg r-done"' in page and "By position" in page
+    page = client.get("/manage/dashboard?role=baking").text
+    assert "Completion: Baking" in page and "By lesson" in page and 'href="?role=baking&amp;lesson=allergens"' in page
+    assert "By position" in client.get("/manage/dashboard?lesson=allergens").text
 
     # Requirements: untick everything for Sanitation on the forklift lesson.
     form = [("req", f"{l['id']}|{r['id']}") for l in content.load_lessons().values() for r in content.load_roles()
@@ -648,7 +653,8 @@ def test_dashboard_requirements_and_survey_chart(client, anon):
     assert "packaging" not in content.load_lessons()["forklifts"]["roles"]
 
     # Survey bars show only with enough answers.
-    assert "at least 3 answers" in client.get("/manage/dashboard").text
+    page = client.get("/manage/dashboard").text
+    assert "of 3 answers so far" in page
     with db.connect() as con:
         form = content.load_survey()["form"]
         for a in ([2, 2, 2, 2], [2, 1, 2, 2], [0, 2, 2, 1]):
