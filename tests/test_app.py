@@ -722,7 +722,8 @@ def test_topic_folders(client):
     names = [t["name"] for t in content.load_topics()]
     assert names.index("Ovens and heat") < names.index("Health")
     client.post("/manage/topics", data={"action": "lesson-down", "topic": "machines", "lesson": "lockout-tagout"})
-    assert content.load_topics()[1]["lessons"][:2] == ["bakery-equipment", "lockout-tagout"]
+    machines = next(t for t in content.load_topics() if t["id"] == "machines")
+    assert machines["lessons"].index("bakery-equipment") < machines["lessons"].index("lockout-tagout")
     client.post("/manage/topics", data={"action": "delete", "topic": "ovens"})
     groups = content.group_by_topic(list(content.load_lessons().values()))
     assert groups[-1][0]["id"] == "other" and [l["id"] for l in groups[-1][1]] == ["indoor-heat"]
@@ -764,3 +765,23 @@ def test_drag_order_and_in_order_folders(client, anon):
     page = anon.get(f"/me/{wid}").text
     assert 'class="node locked"' not in page and 'href="/lesson/lockout-tagout"' in page
     assert anon.get("/lesson/lockout-tagout", follow_redirects=False).status_code == 200
+
+
+def test_manager_stays_signed_in(client):
+    from trainer import auth
+    # A long session, renewed on each manager page.
+    r = client.get("/manage/dashboard")
+    assert r.status_code == 200 and "Max-Age=2592000" in r.headers.get("set-cookie", "")
+    # Opening the sign-in page while signed in goes straight on.
+    assert client.get("/manage/signin?next=/manage/topics", follow_redirects=False).headers["location"] == "/manage/topics"
+    # A worker signing in and out on the same device doesn't sign the manager out.
+    with db.connect() as con:
+        wid = db.add_worker(con, "Ivy Stone", "baking", auth.hash_pin("1357"))
+    client.post(f"/signin/{wid}", data={"pin": "1357"})
+    assert client.get("/manage/dashboard", follow_redirects=False).status_code == 200
+    assert "Ivy" in client.get(f"/me/{wid}").text
+    client.post("/signout", data={"kind": "w"})
+    assert client.get("/manage/dashboard", follow_redirects=False).status_code == 200
+    assert client.get(f"/me/{wid}", follow_redirects=False).status_code == 200    # managers see everyone's page
+    client.post("/signout", data={"kind": "m"})
+    assert client.get("/manage/dashboard", follow_redirects=False).headers["location"].startswith("/manage/signin")

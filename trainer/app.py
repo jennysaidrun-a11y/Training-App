@@ -59,7 +59,7 @@ STATE_LABELS = {
 
 def render(request, name, **ctx):
     ctx.setdefault("role_names", content.role_names())
-    ctx.setdefault("who", auth.current(request))
+    ctx.setdefault("who", auth.manager(request) if request.url.path.startswith("/manage") else auth.current(request))
     lang = ctx.setdefault("lang", i18n.pick(request, ctx["who"]))
     ctx.update(langs=i18n.LANGS, rtl=lang in i18n.RTL, t=lambda key, **kw: i18n.t(key, lang, **kw))
     return templates.TemplateResponse(request, name, ctx)
@@ -118,11 +118,15 @@ async def managers_only(request: Request, call_next):
     """Everything under /manage and /api/manage needs a signed-in manager."""
     path = request.url.path
     if (path.startswith("/manage") or path.startswith("/api/manage")) and not path.startswith(OPEN_MANAGER_PATHS):
-        who = auth.current(request)
-        if not who or who["kind"] != "m":
+        who = auth.manager(request)
+        if not who:
             if path.startswith("/api/"):
                 return JSONResponse({"error": "Sign in as a manager first."}, status_code=401)
             return RedirectResponse("/manage/signin?next=" + path, status_code=303)
+        response = await call_next(request)
+        if request.method == "GET" and not path.startswith("/api/"):
+            auth.set_session(response, request, "m", who["id"])   # 30 days from the last visit
+        return response
     return await call_next(request)
 
 
@@ -204,20 +208,22 @@ def set_language(request: Request, lang: str = Form("en"), back: str = Form("/")
 
 
 @app.post("/signout")
-def signout():
+def signout(request: Request, kind: str = Form("")):
     response = RedirectResponse("/", status_code=303)
-    auth.clear_session(response)
+    auth.clear_session(response, request, kind if kind in ("w", "m") else None)
     return response
 
 
-def _can_see(who, wid):
-    return bool(who) and (who["kind"] == "m" or who["id"] == wid)
+def _can_see(request, wid):
+    """A worker sees their own page and certificates; a manager sees everyone's."""
+    w = auth.worker(request)
+    return bool(auth.manager(request)) or bool(w and w["id"] == wid)
 
 
 @app.get("/me/{wid}", response_class=HTMLResponse)
 def my_page(request: Request, wid: int):
     who = auth.current(request)
-    if not _can_see(who, wid):
+    if not _can_see(request, wid):
         return RedirectResponse(f"/signin/{wid}", status_code=303)
     with db.connect() as con:
         person = db.worker(con, wid)
@@ -227,6 +233,7 @@ def my_page(request: Request, wid: int):
         rows = _my_lessons(con, person, lessons)
         history = db.attempts(con, wid)
     return render(request, "me.html", person=person, rows=rows, history=history, who=who,
+                  manager_view=bool(auth.manager(request)),
                   titles={lid: l["title"] for lid, l in lessons.items()})
 
 
@@ -359,12 +366,11 @@ async def survey(request: Request):
 
 @app.get("/certificate/{cid}", response_class=HTMLResponse)
 def certificate(request: Request, cid: int):
-    who = auth.current(request)
     with db.connect() as con:
         c = db.completion(con, cid)
     if not c or not c["passed"]:
         raise HTTPException(404, "No such certificate")
-    if not _can_see(who, c["worker_id"]):
+    if not _can_see(request, c["worker_id"]):
         return RedirectResponse(f"/signin/{c['worker_id']}", status_code=303)
     lesson = content.load_lessons().get(c["lesson_id"]) or {"title": c["lesson_id"], "citations_parsed": []}
     return render(request, "certificate.html", c=c, lesson=lesson, number=_certificate_number(c), provider=PROVIDER)
@@ -663,6 +669,8 @@ def setup(request: Request, name: str = Form(""), pin: str = Form(""), pin2: str
 
 @app.get("/manage/signin", response_class=HTMLResponse)
 def manager_signin_page(request: Request, next: str = "", wrong: int = 0):
+    if auth.manager(request):         # already signed in: go straight on
+        return RedirectResponse(_safe_next(next, "/manage/dashboard"), status_code=303)
     with db.connect() as con:
         people = db.managers(con)
     if not people:

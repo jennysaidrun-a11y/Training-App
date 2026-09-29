@@ -21,7 +21,7 @@
       <a class="tab {{ 'on' if here.startswith('/manage') else '' }}" href="/manage">{{ icon("manage") }}<span>{{ t("manager") }}</span></a>
       <a class="tab {{ 'on' if here.startswith('/rules') else '' }}" href="/rules">{{ icon("rules") }}<span>{{ t("rules") }}</span></a>
     </nav>
-    {% if who %}<form method="post" action="/signout" class="signout"><button class="ghost small" title="Signed in as {{ who.name }}">{{ who.name.split(' ')[0] }} · {{ t('sign_out') }}</button></form>{% endif %}
+    {% if who %}<form method="post" action="/signout" class="signout"><input type="hidden" name="kind" value="{{ who.kind }}"><button class="ghost small" title="Signed in as {{ who.name }}">{{ who.name.split(' ')[0] }} · {{ t('sign_out') }}</button></form>{% endif %}
   </div>
 </header>
 <main class="{% block main_class %}{% endblock %}">

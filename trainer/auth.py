@@ -2,9 +2,12 @@
 with their name and a 6-digit PIN. The manager pages need a manager; a worker
 only sees their own lessons and certificates.
 
-PINs are stored as salted PBKDF2 hashes. The session is a signed cookie
+PINs are stored as salted PBKDF2 hashes. Sessions are signed cookies
 ("w:<id>" or "m:<id>" plus an expiry), signed with a key kept in data/ (never in
-git). Five wrong PINs in a row lock that account for five minutes."""
+git). Workers and managers have separate cookies, so a worker signing in on the
+same device never signs the manager out. A manager stays signed in for 30 days
+from their last visit to a manager page, until they sign out. Five wrong PINs in
+a row lock that account for five minutes."""
 import hashlib
 import hmac
 import os
@@ -16,11 +19,12 @@ from fastapi import HTTPException, Request
 
 from . import db
 
-COOKIE = "ub_session"
+COOKIE = "ub_session"       # worker
+MANAGER_COOKIE = "ub_manager"
 WORKER_PIN = re.compile(r"^\d{4}$")
 MANAGER_PIN = re.compile(r"^\d{6}$")
 WORKER_MINUTES = 30        # a shared tablet on the floor: sign out soon after
-MANAGER_HOURS = 12
+MANAGER_DAYS = 30          # renewed on every manager page, so it only runs out after 30 days away
 MAX_TRIES = 5
 LOCK_SECONDS = 300
 _fails = {}                # (kind, id) -> (count, locked_until)
@@ -56,7 +60,7 @@ def _sign(text):
 
 
 def make_cookie(kind, account_id):
-    ttl = WORKER_MINUTES * 60 if kind == "w" else MANAGER_HOURS * 3600
+    ttl = WORKER_MINUTES * 60 if kind == "w" else MANAGER_DAYS * 86400
     text = f"{kind}:{account_id}:{int(time.time()) + ttl}"
     return f"{text}:{_sign(text)}", ttl
 
@@ -90,38 +94,45 @@ def check_pin(kind, account_id, pin, stored):
     return False
 
 
-def current(request: Request):
-    """{"kind": "w"|"m", "id", "name", ...} for whoever is signed in, else None."""
-    found = read_cookie(request.cookies.get(COOKIE))
-    if not found:
+def _account(request, cookie, kind):
+    found = read_cookie(request.cookies.get(cookie))
+    if not found or found[0] != kind:
         return None
-    kind, account_id = found
     with db.connect() as con:
-        who = db.worker(con, account_id) if kind == "w" else db.manager(con, account_id)
+        who = db.worker(con, found[1]) if kind == "w" else db.manager(con, found[1])
     if not who or not who.get("active", 1):
         return None
     return {**who, "kind": kind}
 
 
+def worker(request: Request):
+    return _account(request, COOKIE, "w")
+
+
+def manager(request: Request):
+    """The signed-in manager (older sign-ins kept theirs in the worker cookie)."""
+    return _account(request, MANAGER_COOKIE, "m") or _account(request, COOKIE, "m")
+
+
+def current(request: Request):
+    """{"kind": "w"|"m", "id", "name", ...}: the signed-in worker, else the manager, else None."""
+    return worker(request) or manager(request)
+
+
 def set_session(response, request, kind, account_id):
     value, ttl = make_cookie(kind, account_id)
     secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
-    response.set_cookie(COOKIE, value, max_age=ttl, httponly=True, samesite="lax", secure=secure, path="/")
+    response.set_cookie(COOKIE if kind == "w" else MANAGER_COOKIE, value, max_age=ttl, httponly=True,
+                        samesite="lax", secure=secure, path="/")
+    old = read_cookie(request.cookies.get(COOKIE))
+    if kind == "m" and old and old[0] == "m":
+        response.delete_cookie(COOKIE, path="/")     # move an older manager sign-in to its own cookie
 
 
-def clear_session(response):
-    response.delete_cookie(COOKIE, path="/")
-
-
-class NeedsSignIn(Exception):
-    def __init__(self, to):
-        self.to = to
-
-
-def require_manager(request: Request):
-    who = current(request)
-    if who and who["kind"] == "m":
-        return who
-    if request.url.path.startswith("/api/"):
-        raise HTTPException(401, "Sign in as a manager first.")
-    raise NeedsSignIn("/manage/signin?next=" + request.url.path)
+def clear_session(response, request, kind=None):
+    """Signs out the worker ("w"), the manager ("m") or both."""
+    old = read_cookie(request.cookies.get(COOKIE))
+    if kind in (None, "m"):
+        response.delete_cookie(MANAGER_COOKIE, path="/")
+    if kind is None or (old and old[0] == kind):
+        response.delete_cookie(COOKIE, path="/")
