@@ -996,25 +996,26 @@ def _settle_pictures(lesson, get=None):
     else is taken off the slide. Returns how many were taken off."""
     dropped = 0
     for s in lesson.get("slides", []):
-        link = s.get("image")
-        if not link:
-            continue
-        if link.startswith("/media/"):
-            name = link.rsplit("/", 1)[1]
-            ok = bool(MEDIA_NAME.match(name)) and (media_dir() / name).is_file()
-        else:
-            try:
-                found = _commons_picture(link, get)
-            except Exception as e:  # Commons unreachable or an odd answer
-                print(f"Picture check failed for {link}: {e.__class__.__name__}")
-                found = None
-            ok = bool(found)
-            if found:
-                s["image"], source = found
-                lesson["sources"] = [x for x in lesson.get("sources", []) if x.get("url") != link] + [source]
-        if not ok:
-            s["image"] = ""
+        kept = []
+        for link in s.get("images") or []:
+            if link.startswith("/media/"):
+                name = link.rsplit("/", 1)[1]
+                if MEDIA_NAME.match(name) and (media_dir() / name).is_file():
+                    kept.append(link)
+                    continue
+            else:
+                try:
+                    found = _commons_picture(link, get)
+                except Exception as e:  # Commons unreachable or an odd answer
+                    print(f"Picture check failed for {link}: {e.__class__.__name__}")
+                    found = None
+                if found:
+                    kept.append(found[0])
+                    lesson["sources"] = [x for x in lesson.get("sources", []) if x.get("url") != link] + [found[1]]
+                    continue
             dropped += 1
+        if "images" in s:
+            s["images"] = kept
     return dropped
 
 
@@ -1052,7 +1053,7 @@ def _find_pictures(lesson, get=None, matcher=None):
     get = get or requests.get
     matcher = matcher or research.match_pictures
     wanted = [(i, s) for i, s in enumerate(lesson.get("slides", []))
-              if s.get("type") == "reading" and not s.get("image") and s.get("picture_search")][:PICTURE_SLIDES]
+              if s.get("type") == "reading" and not s.get("images") and s.get("picture_search")][:PICTURE_SLIDES]
     if not wanted:
         return 0
     with tempfile.TemporaryDirectory() as tmp:
@@ -1095,7 +1096,8 @@ def _find_pictures(lesson, get=None, matcher=None):
             except Exception:
                 saved = None
             if saved:
-                lesson["slides"][a["slide"]]["image"], source = saved
+                link, source = saved
+                lesson["slides"][a["slide"]]["images"] = [link]
                 lesson["sources"] = lesson.get("sources", []) + [source]
                 used.add(page)
                 added += 1
@@ -1114,7 +1116,7 @@ def media(name: str):
 
 def _save_upload(upload, lesson_id):
     ext = os.path.splitext(upload.filename)[1].lower()
-    name = f"{content.slugify(lesson_id)}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
+    name = f"{content.slugify(lesson_id)}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}{ext}"
     with open(media_dir() / name, "wb") as out:
         shutil.copyfileobj(upload.file, out, 1024 * 1024)
     return f"/media/{name}"
@@ -1138,7 +1140,7 @@ def _remove_unused_upload(video, lessons):
 def _sweep_media(lessons, older_than_hours=24):
     """Deletes uploads nobody saved into a lesson (an editor closed without saving)."""
     used = {l.get("video") for l in lessons.values()}
-    used |= {s.get("image") for l in lessons.values() for s in l.get("sections", [])}
+    used |= {p for l in lessons.values() for s in l.get("sections", []) for p in s.get("images") or []}
     cutoff = time.time() - older_than_hours * 3600
     for path in media_dir().iterdir():
         if MEDIA_NAME.match(path.name) and f"/media/{path.name}" not in used and path.stat().st_mtime < cutoff:

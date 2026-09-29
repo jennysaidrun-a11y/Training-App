@@ -513,12 +513,23 @@ def test_pictures_on_reading_slides(client, env):
     assert got.status_code == 200 and got.headers["content-type"] == "image/png"
 
     deck = _deck()
-    deck["slides"][1]["image"] = image
+    deck["slides"][1]["images"] = [image]
     assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 200
     lesson = content.load_lessons()["allergens"]
-    assert lesson["sections"][0]["image"] == image and "image" not in lesson["sections"][1]
-    assert editor.to_slides(lesson)[1]["image"] == image
+    assert lesson["sections"][0]["images"] == [image] and "images" not in lesson["sections"][1]
+    assert editor.to_slides(lesson)[1]["images"] == [image]
     assert image in client.get("/lesson/allergens").text              # the player gets it
+
+    # Several pictures on one slide keep their order; an old single `image` still loads.
+    second = client.post("/api/manage/image", data={"lesson": "allergens"}, files={"image_file": ("b.png", png, "image/png")}).json()["image"]
+    deck["slides"][1]["images"] = [second, image, second]
+    assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 200
+    assert content.load_lessons()["allergens"]["sections"][0]["images"] == [second, image]
+    old = {"id": "x", "title": "X", "sections": [{"heading": "h", "text": "t", "image": image}]}
+    content._normalize(old, content.Path("x.yaml"))
+    assert old["sections"][0]["images"] == [image] and "image" not in old["sections"][0]
+    deck["slides"][1]["images"] = [image]
+    assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 200
 
     # Kept by the upload sweep while a lesson uses it, even when old.
     from trainer import app as app_module
@@ -528,7 +539,7 @@ def test_pictures_on_reading_slides(client, env):
 
     bad = client.post("/api/manage/image", files={"image_file": ("IMG_1.HEIC", b"x", "image/heic")})
     assert bad.status_code == 400 and "JPEG" in bad.json()["error"]
-    deck["slides"][1]["image"] = "javascript:alert(1)"
+    deck["slides"][1]["images"] = ["javascript:alert(1)"]
     assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 400
 
 
@@ -560,15 +571,15 @@ def test_attached_pictures_go_to_claude_and_onto_slides(client, monkeypatch):
 
     # Claude's draft keeps real picture links and loses made-up or broken ones.
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
-    slides = [{"type": "reading", "heading": "Guards", "text": "Keep guards on.", "image": link},
-              {"type": "reading", "heading": "Other", "text": "x", "image": "https://evil.example/a.png"},
-              {"type": "reading", "heading": "Gone", "text": "x", "image": "/media/attached-nope.png"}]
+    slides = [{"type": "reading", "heading": "Guards", "text": "Keep guards on.", "images": [link]},
+              {"type": "reading", "heading": "Other", "text": "x", "images": ["https://evil.example/a.png"]},
+              {"type": "reading", "heading": "Gone", "text": "x", "images": ["/media/attached-nope.png"]}]
     lesson = research._finish({"title": "T", "summary": "S", "roles": ["all"], "slides": slides, "citations": [], "sources": []}, [])
-    assert [s["image"] for s in lesson["slides"]] == [link, "", "/media/attached-nope.png"]
+    assert [s["images"] for s in lesson["slides"]] == [[link], [], ["/media/attached-nope.png"]]
     monkeypatch.setattr(research, "run", lambda history, draft: {"reply": "Done.", "lesson": lesson, "searched": []})
     out = client.post("/api/manage/research", json={"history": [{"role": "user", "text": "go"}]}).json()
-    assert [s["image"] for s in out["lesson"]["slides"]] == [link, "", ""] and "left off" in out["reply"]
-    assert "image" in research.lesson_tool([])["input_schema"]["properties"]["slides"]["items"]["required"]
+    assert [s["images"] for s in out["lesson"]["slides"]] == [[link], [], []] and "left off" in out["reply"]
+    assert "images" in research.lesson_tool([])["input_schema"]["properties"]["slides"]["items"]["required"]
 
 
 def test_commons_photo_license_is_checked_by_the_app(client):
@@ -595,14 +606,14 @@ def test_commons_photo_license_is_checked_by_the_app(client):
             return R(content=b"\xff\xd8jpeg")
         return get
 
-    lesson = {"slides": [{"type": "reading", "image": page}], "sources": [{"title": "tires", "url": page}]}
+    lesson = {"slides": [{"type": "reading", "images": [page]}], "sources": [{"title": "tires", "url": page}]}
     assert app_module._settle_pictures(lesson, get=commons("CC BY-SA 3.0")) == 0
-    link = lesson["slides"][0]["image"]
+    link = lesson["slides"][0]["images"][0]
     assert re.fullmatch(r"/media/commons-[a-z0-9-]+\.jpg", link) and client.get(link).content == b"\xff\xd8jpeg"
     assert lesson["sources"] == [{"title": "Photo: Forklift tires, by S. John, CC BY-SA 3.0", "url": page}]
     for bad in ("CC BY-NC-SA 4.0", "All rights reserved", "CC BY-ND 4.0"):
-        lesson = {"slides": [{"type": "reading", "image": page}], "sources": []}
-        assert app_module._settle_pictures(lesson, get=commons(bad)) == 1 and lesson["slides"][0]["image"] == "", bad
+        lesson = {"slides": [{"type": "reading", "images": [page]}], "sources": []}
+        assert app_module._settle_pictures(lesson, get=commons(bad)) == 1 and lesson["slides"][0]["images"] == [], bad
 
 
 def test_manager_setup_and_sign_in(anon):
@@ -860,14 +871,14 @@ def test_photos_are_found_and_matched_to_slides(client):
         seen["asks"] = asks
         return {0: 1, 2: -1}                    # slide 0 gets its second photo; slide 2 none fit
 
-    lesson = {"slides": [{"type": "reading", "heading": "The mixer", "text": "t", "image": "", "picture_search": "industrial dough mixer"},
+    lesson = {"slides": [{"type": "reading", "heading": "The mixer", "text": "t", "images": [], "picture_search": "industrial dough mixer"},
                          {"type": "question", "q": "?"},
-                         {"type": "reading", "heading": "Rules", "text": "t", "image": "", "picture_search": "rule book"},
-                         {"type": "reading", "heading": "Own", "text": "t", "image": "/media/x.jpg", "picture_search": "x"}],
+                         {"type": "reading", "heading": "Rules", "text": "t", "images": [], "picture_search": "rule book"},
+                         {"type": "reading", "heading": "Own", "text": "t", "images": ["/media/x.jpg"], "picture_search": "x"}],
               "sources": []}
     assert app_module._find_pictures(lesson, get=get, matcher=matcher) == 1
     assert searches == ["industrial dough mixer filetype:bitmap", "rule book filetype:bitmap"]   # slides that already have one are skipped
     first = seen["asks"][0]
     assert [c["title"] for c in first["candidates"]] == ["Mixer 1", "Mixer 2"]                  # the NC photo never reaches Claude
-    assert lesson["slides"][0]["image"].startswith("/media/commons-") and lesson["slides"][2]["image"] == ""
+    assert lesson["slides"][0]["images"][0].startswith("/media/commons-") and lesson["slides"][2]["images"] == []
     assert lesson["sources"][0]["url"] == "https://commons.wikimedia.org/wiki/File:Mixer_2.jpg" and "CC BY 4.0" in lesson["sources"][0]["title"]

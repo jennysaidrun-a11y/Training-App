@@ -104,6 +104,11 @@ def _normalize(data, path):
     data.setdefault("sources", [])
     data.setdefault("video", "")
     data.setdefault("summary", "")
+    for s in data["sections"]:        # older files hold one "image"; a slide can now have several
+        pics = list(s.get("images") or []) + ([s["image"]] if s.get("image") else [])
+        s.pop("image", None)
+        if pics:
+            s["images"] = list(dict.fromkeys(str(p) for p in pics))
     rev = data.get("reviewed_on")
     if isinstance(rev, dt.datetime):
         data["reviewed_on"] = rev.isoformat(timespec="minutes")

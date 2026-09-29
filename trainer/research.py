@@ -43,15 +43,16 @@ point, but write the lesson in your own words (don't copy it) and list the link 
 order and the plant-specific details (machines, steps, names of areas), fix anything the rules \
 don't support, and rewrite it as slides in the app's format. Mention in your reply anything you \
 dropped or changed and why.
-- Pictures: a reading slide can show one picture ("image"). The attached file's pictures appear \
-where they were as "[Picture: /media/...]" lines; put each useful one on the slide that covers the \
-same thing, using that exact link. Skip logos, decorations and pictures that repeat on every slide.
+- Pictures: a reading slide can show one or more pictures ("images"). The attached file's pictures \
+appear where they were as "[Picture: /media/...]" lines; put each useful one on the slide that covers \
+the same thing, using that exact link. Skip logos, decorations and pictures that repeat on every \
+slide. When editing the manager's draft, keep the pictures already on its slides.
 - Every reading slide without a picture from the file gets a "picture_search": 2-5 plain words \
 naming a real, photographable thing that shows the slide's point (for example "lockout padlock \
 on valve", "industrial dough mixer", "forklift pallet", "hand washing sink"). Name the object, not \
 the idea ("hard hat", not "safety"). The app searches Wikimedia Commons for free-to-use photos, \
 shows Claude the candidates, and puts one on the slide only if it really matches; it credits the \
-photo in sources. Don't put web links in "image" yourself; use '' when the file gave none.
+photo in sources. Don't put web links in "images" yourself; use [] when the file gave none.
 - Keep it to what the rule actually says; don't add requirements that aren't there.
 
 When you have a lesson (or an updated one), call propose_lesson with the whole lesson, then reply \
@@ -82,13 +83,14 @@ def lesson_tool(role_ids):
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["type", "heading", "text", "image", "picture_search", "q", "choices", "answer", "why"],
+                        "required": ["type", "heading", "text", "images", "picture_search", "q", "choices", "answer", "why"],
                         "properties": {
                             "type": {"type": "string", "enum": ["reading", "question"]},
                             "heading": {"type": "string", "description": "Reading slides only; '' for questions."},
                             "text": {"type": "string", "description": "Reading slides only; '' for questions."},
-                            "image": {"type": "string", "description": "Reading slides only: a /media/ picture link from "
-                                      "the attached file; '' for none."},
+                            "images": {"type": "array", "items": {"type": "string"},
+                                       "description": "Reading slides only: /media/ picture links from the attached file "
+                                       "or already on the draft's slide; [] for none."},
                             "picture_search": {"type": "string", "description": "Reading slides without an image: 2-5 words "
                                                "naming a photographable object that shows this slide's point; '' otherwise."},
                             "q": {"type": "string", "description": "Question slides only; '' for readings."},
@@ -149,9 +151,9 @@ def _clean_slides(slides):
     out = []
     for s in slides:
         if s.get("type") == "reading":
-            image = str(s.get("image") or "").strip()
+            pics = [str(p).strip() for p in list(s.get("images") or []) + [s.get("image") or ""]]
             out.append({"type": "reading", "heading": s.get("heading", "").strip(), "text": s.get("text", "").strip(),
-                        "image": image if PICTURE_LINK.match(image) else "",
+                        "images": list(dict.fromkeys(p for p in pics if PICTURE_LINK.match(p))),
                         "picture_search": re.sub(r"\s+", " ", str(s.get("picture_search") or "")).strip()[:80]})
         elif s.get("type") == "question":
             choices = [c for c in s.get("choices", []) if c.strip()]

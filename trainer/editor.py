@@ -4,7 +4,7 @@ A lesson is stored as sections plus questions (each question either follows a
 section, pauses the video at a time, or comes at the end). The editor shows the
 same thing as an ordered deck of slides, the way workers go through it:
 
-    {"type": "reading",  "heading": ..., "text": ..., "image": "/media/x.jpg" | ""}
+    {"type": "reading",  "heading": ..., "text": ..., "images": ["/media/x.jpg", ...]}
     {"type": "question", "q": ..., "choices": [...], "answer": 0, "why": ..., "at": 90 | None}
 
 A question belongs to the reading slide before it. Questions before the first
@@ -29,7 +29,7 @@ def to_slides(lesson):
             placed.add(i)
     for si, s in enumerate(lesson.get("sections", [])):
         slides.append({"type": "reading", "heading": s.get("heading", ""), "text": s.get("text", "").strip(),
-                       "image": s.get("image") or ""})
+                       "images": list(s.get("images") or [])})
         for i, q in enumerate(questions):
             if i not in placed and q.get("after_section") == si:
                 slides.append(q_slide(q))
@@ -52,12 +52,12 @@ def from_slides(slides):
             if not text:
                 errors.append({"slide": n, "error": "This reading slide needs some text."})
             section = {"heading": heading, "text": text + "\n"}
-            image = (s.get("image") or "").strip()
-            if image:
-                if image.startswith("/media/") or image.startswith("https://"):
-                    section["image"] = image
-                else:
-                    errors.append({"slide": n, "error": "The picture link should start with https://"})
+            pics = [str(p).strip() for p in list(s.get("images") or []) + [s.get("image") or ""] if str(p or "").strip()]
+            good = [p for p in pics if p.startswith("/media/") or p.startswith("https://")]
+            if len(good) < len(pics):
+                errors.append({"slide": n, "error": "A picture link should start with https://"})
+            if good:
+                section["images"] = list(dict.fromkeys(good))
             sections.append(section)
         elif kind == "question":
             choices = [c.strip() for c in s.get("choices") or [] if c and c.strip()]

@@ -77,10 +77,17 @@
     return box;
   }
 
+  // One picture fills the width; two or more sit side by side (tap any to zoom).
+  function pictures(list) {
+    if (!list || !list.length) return null;
+    if (list.length === 1) return el("img", { class: "slide-img", src: list[0], alt: "" });
+    return el("div", { class: "slide-gallery n" + Math.min(list.length, 4) }, ...list.map((src) => el("img", { class: "slide-img", src, alt: "" })));
+  }
+
   function showSection(si, next) {
     const s = L.sections[si];
     stage.replaceChildren(...[el("p", { class: "eyebrow" }, tr("part_of", { a: si + 1, b: L.sections.length })), el("h1", {}, s.heading),
-      s.image ? el("img", { class: "slide-img", src: s.image, alt: "" }) : null, reading(s.text)].filter(Boolean));
+      pictures(s.images), reading(s.text)].filter(Boolean));
     setFooter({ buttons: [button(tr("continue"), next)] });
     onKey = (e) => { if (e.key === "Enter") next(); };
   }

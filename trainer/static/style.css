@@ -747,3 +747,15 @@ body.zoom-open { overflow: hidden; }
 .zoom-btn { width: 48px; height: 48px; border-radius: 50%; border: 0; background: rgba(255, 253, 248, .92); color: var(--crust);
             font-size: 1.5rem; font-weight: 700; display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.3); padding: 0; }
 .zoom-btn:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+/* Several pictures on one slide: side by side, tap one to zoom */
+.slide-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 6px 0 14px; }
+.slide-gallery .slide-img { margin: 0; height: 170px; max-height: none; object-fit: cover; }
+.slide-gallery.n3 .slide-img:first-child { grid-column: 1 / -1; height: 220px; }
+@media (min-width: 700px) { .slide-gallery.n3 { grid-template-columns: repeat(3, 1fr); } .slide-gallery.n3 .slide-img:first-child { grid-column: auto; height: 170px; } }
+.pic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.pic-tile { position: relative; margin: 0; border: 2px solid var(--line); border-radius: var(--radius); background: var(--soft); overflow: hidden; }
+.pic-tile .slide-img { margin: 0; border: 0; border-radius: 0; height: 120px; max-height: none; object-fit: cover; }
+.pic-tools { display: flex; gap: 4px; justify-content: space-between; padding: 6px; flex-wrap: wrap; }
+.pic-tools button { padding: 4px 8px; }
+.pic-drop.slim { min-height: 0; padding: 12px 14px; flex-direction: row; }

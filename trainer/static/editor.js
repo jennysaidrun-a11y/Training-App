@@ -63,8 +63,8 @@
       if (!hasFiles(e)) return;
       e.preventDefault(); e.stopPropagation();
       target.classList.remove("drop-on");
-      const f = [...e.dataTransfer.files].find((x) => x.type.startsWith(kind + "/"));
-      if (f) onFile(f); else if (onWrong) onWrong();
+      const fs = [...e.dataTransfer.files].filter((x) => x.type.startsWith(kind + "/"));
+      if (fs.length) onFile(kind === "image" ? fs : fs[0]); else if (onWrong) onWrong();
     });
   }
   async function uploadPicture(slide, f) {
@@ -74,7 +74,7 @@
     const res = await fetch("/api/manage/image", { method: "POST", body: form });
     const r = await res.json();
     if (!res.ok) throw new Error(r.error || r.detail || "That picture couldn't be added.");
-    slide.image = r.image;
+    slide.images = [...(slide.images || []), r.image];
     touch();
   }
 
@@ -89,10 +89,12 @@
       b.addEventListener("dragend", () => b.classList.remove("dragging"));
       b.addEventListener("dragover", (e) => { e.preventDefault(); b.classList.add("drop"); });
       b.addEventListener("dragleave", () => b.classList.remove("drop"));
-      if (kind === "reading") dropZone(b, "image", async (f) => {
+      if (kind === "reading") dropZone(b, "image", async (files) => {
         b.classList.add("busy");
-        try { await uploadPicture(D.slides[index - 1], f); saveNote.textContent = "Picture added. Save the lesson to keep it."; }
-        catch (err) { saveNote.textContent = err.message; }
+        try {
+          for (const f of files) await uploadPicture(D.slides[index - 1], f);
+          saveNote.textContent = `${files.length === 1 ? "Picture" : files.length + " pictures"} added. Save the lesson to keep ${files.length === 1 ? "it" : "them"}.`;
+        } catch (err) { saveNote.textContent = err.message; }
         show(index);
       }, () => { saveNote.textContent = "Drop a picture (JPG, PNG, WebP or GIF)."; });
       b.addEventListener("drop", (e) => {
@@ -107,7 +109,7 @@
   function drawRail() {
     const items = [thumb(0, "cover", D.title || "Untitled lesson", "Cover")];
     D.slides.forEach((s, i) => {
-      if (s.type === "reading") items.push(thumb(i + 1, "reading", s.heading, `Part ${partNumber(i)}${s.image ? " · picture" : ""}`));
+      if (s.type === "reading") items.push(thumb(i + 1, "reading", s.heading, `Part ${partNumber(i)}${(s.images || []).length ? ` · ${s.images.length === 1 ? "picture" : s.images.length + " pictures"}` : ""}`));
       else items.push(thumb(i + 1, "question", s.q, s.at != null && s.at !== "" ? `Question · video ${fmtTime(s.at)}` : "Question"));
     });
     items.push(thumb(rulesIndex(), "rules", `${D.citations.length} rule${D.citations.length === 1 ? "" : "s"}`, "Rules & sources"));
@@ -121,7 +123,7 @@
   }
 
   function add(type) {
-    const slide = type === "reading" ? { type, heading: "", text: "", image: "" }
+    const slide = type === "reading" ? { type, heading: "", text: "", images: [] }
       : { type, q: "", choices: ["", ""], answer: 0, why: "", at: null };
     // New slides go right after the one being edited (or at the end from the cover/rules).
     const at = current >= 1 && current <= D.slides.length ? current : D.slides.length;
@@ -252,30 +254,45 @@
     return slide;
   }
 
-  // A picture on a reading slide: shown above the text, the way the worker sees it.
-  // Drag a picture onto it (or anywhere on the slide, or onto its thumbnail), or tap to choose.
+  function galleryOf(list) {
+    if (!list || !list.length) return null;
+    if (list.length === 1) return el("img", { class: "slide-img", src: list[0], alt: "" });
+    return el("div", { class: "slide-gallery n" + Math.min(list.length, 4) }, ...list.map((src) => el("img", { class: "slide-img", src, alt: "" })));
+  }
+
+  // Pictures on a reading slide, shown above the text the way the worker sees them.
+  // Drag pictures onto it (or anywhere on the slide, or onto its thumbnail), or tap to choose.
   function pictureField(s) {
     const box = el("div", { class: "field picture-field" });
+    s.images = s.images || [];
     const draw = (msg) => {
-      const file = el("input", { type: "file", accept: "image/jpeg,image/png,image/webp,image/gif" });
-      file.addEventListener("change", () => file.files[0] && upload(file.files[0]));
+      const file = el("input", { type: "file", multiple: true, accept: "image/jpeg,image/png,image/webp,image/gif" });
+      file.addEventListener("change", () => file.files.length && upload([...file.files]));
+      const n = s.images.length;
+      const tiles = s.images.map((src, i) => el("figure", { class: "pic-tile" },
+        el("img", { class: "slide-img", src, alt: "" }),
+        el("div", { class: "pic-tools" },
+          n > 1 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move picture earlier", disabled: i === 0 ? true : null,
+                                onclick: () => { [s.images[i - 1], s.images[i]] = [s.images[i], s.images[i - 1]]; touch(); draw(); } }, "←") : null,
+          n > 1 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move picture later", disabled: i === n - 1 ? true : null,
+                                onclick: () => { [s.images[i + 1], s.images[i]] = [s.images[i], s.images[i + 1]]; touch(); draw(); } }, "→") : null,
+          el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove this picture",
+                        onclick: () => { s.images.splice(i, 1); touch(); draw(); drawRail(); } }, "Remove"))));
       box.replaceChildren(...[
-        s.image
-          ? el("div", { class: "pic-drop has-pic" }, el("img", { class: "slide-img", src: s.image, alt: "" }),
-              el("span", { class: "drop-hint" }, "Drop to replace the picture"))
-          : el("label", { class: "pic-drop upload" }, file,
-              el("span", { class: "drop-ico", "aria-hidden": "true" }, "🖼️"),
-              el("span", {}, el("b", {}, "Drag a picture here"), el("br"), "or tap to choose one"),
-              el("span", { class: "help" }, "JPG, PNG, WebP or GIF")),
-        s.image ? el("div", { class: "row" },
-          el("label", { class: "upload" }, file, el("span", { class: "btn ghost small" }, "Change picture")),
-          el("button", { type: "button", class: "ghost small danger", onclick: () => { s.image = ""; touch(); draw(); drawRail(); } }, "Remove picture")) : null,
+        n ? el("div", { class: "pic-grid n" + Math.min(n, 4) }, ...tiles) : null,
+        el("label", { class: "pic-drop upload" + (n ? " slim" : "") }, file,
+          n ? null : el("span", { class: "drop-ico", "aria-hidden": "true" }, "🖼️"),
+          el("span", {}, el("b", {}, n ? "+ Add more pictures" : "Drag pictures here"), ...(n ? [" (drag them here or tap)"] : [el("br"), "or tap to choose. You can add several."])),
+          n ? null : el("span", { class: "help" }, "JPG, PNG, WebP or GIF")),
         msg ? el("p", { class: "muted" }, msg) : null].filter(Boolean));
     };
-    async function upload(f) {
-      draw(`Uploading ${f.name}…`);
+    async function upload(files) {
+      files = [].concat(files);
       try {
-        await uploadPicture(s, f);
+        for (const [i, f] of files.entries()) {
+          draw(`Uploading ${files.length > 1 ? `${i + 1} of ${files.length}: ` : ""}${f.name}…`);
+          await uploadPicture(s, f);
+        }
         draw();
         drawRail();
       } catch (e) {
@@ -532,7 +549,7 @@
       for (const c of resultChecks || []) checks[c.ref] = c;
       const reads = lesson.slides.filter((s) => s.type === "reading").length;
       const qs = lesson.slides.length - reads;
-      const pics = lesson.slides.filter((s) => s.image).length;
+      const pics = lesson.slides.reduce((n, s) => n + (s.images || []).length, 0);
       const use = el("button", { type: "button", class: "small" }, "Use this draft");
       use.addEventListener("click", () => {
         if (hasContent() && !confirm("Replace the slides in the editor with Claude's draft? (The video stays.)")) return;
@@ -612,7 +629,7 @@
         } else if (pg.kind === "reading") {
           const part = lesson.slides.slice(0, lesson.slides.indexOf(pg.sl) + 1).filter((x) => x.type === "reading").length;
           body.replaceChildren(...[el("p", { class: "eyebrow" }, `Part ${part} of ${reads}`), el("h1", {}, pg.sl.heading),
-            pg.sl.image ? el("img", { class: "slide-img", src: pg.sl.image, alt: "" }) : null, readingBox(pg.sl.text)].filter(Boolean));
+            galleryOf(pg.sl.images), readingBox(pg.sl.text)].filter(Boolean));
         } else if (pg.kind === "question") {
           const sl = pg.sl;
           const verdict = el("div", { class: "pv-verdict", hidden: true });
