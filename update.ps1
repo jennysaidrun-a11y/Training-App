@@ -6,6 +6,8 @@
 param([int]$Replaces = 0)   # set when an updated updater takes over from the old one
 $ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
+# Started hidden at sign-in, so pick up git/python from the saved PATH.
+$env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
 if (-not $env:PORT) { $env:PORT = "8001" }
 if (-not $env:HOST) { $env:HOST = "127.0.0.1" }   # this PC only
 $Branch = (git rev-parse --abbrev-ref HEAD).Trim()
