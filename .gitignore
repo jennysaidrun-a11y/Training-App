@@ -5,3 +5,4 @@ __pycache__/
 .pytest_cache/
 app.log
 update.log
+app.err.log
