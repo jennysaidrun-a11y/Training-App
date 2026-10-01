@@ -908,3 +908,14 @@ def test_photos_are_found_and_matched_to_slides(client):
     assert [c["title"] for c in first["candidates"]] == ["Mixer 1", "Mixer 2"]                  # the NC photo never reaches Claude
     assert lesson["slides"][0]["images"][0].startswith("/media/commons-") and lesson["slides"][2]["images"] == []
     assert lesson["sources"][0]["url"] == "https://commons.wikimedia.org/wiki/File:Mixer_2.jpg" and "CC BY 4.0" in lesson["sources"][0]["title"]
+
+
+def test_manager_tab_only_for_managers(client, anon):
+    with db.connect() as con:
+        wid = db.add_worker(con, "Ivy Stone", "baking", __import__("trainer.auth", fromlist=["x"]).hash_pin("1357"))
+    tab = 'href="/manage">'
+    assert tab not in anon.get("/").text and 'href="/manage/signin"' in anon.get("/").text   # just a small sign-in link
+    worker = TestClient(app)
+    worker.post(f"/signin/{wid}", data={"pin": "1357"})
+    assert tab not in worker.get(f"/me/{wid}").text and tab not in worker.get("/rules").text
+    assert tab in client.get("/").text and tab in client.get("/rules").text                   # a signed-in manager

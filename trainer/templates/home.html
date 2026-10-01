@@ -23,4 +23,5 @@
   <a class="btn" href="/manage#people">Add people</a>
 </div>
 {% endif %}
+{% if not is_manager %}<p class="staff-link"><a href="/manage/signin">{{ t("manager_signin") }}</a></p>{% endif %}
 {% endblock %}

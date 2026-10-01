@@ -759,3 +759,7 @@ body.zoom-open { overflow: hidden; }
 .pic-tools { display: flex; gap: 4px; justify-content: space-between; padding: 6px; flex-wrap: wrap; }
 .pic-tools button { padding: 4px 8px; }
 .pic-drop.slim { min-height: 0; padding: 12px 14px; flex-direction: row; }
+
+/* Small link for managers on the worker home page (the Manager tab shows only once signed in) */
+.staff-link { text-align: center; margin: 28px 0 8px; font-size: .85rem; }
+.staff-link a { color: var(--muted); }

@@ -18,7 +18,7 @@
     {% set here = request.url.path %}
     <nav class="tabs" aria-label="Main">
       <a class="tab {{ 'on' if here == '/' or here.startswith('/me') or here.startswith('/signin') else '' }}" href="/">{{ icon("learn") }}<span>{{ t("learn") }}</span></a>
-      <a class="tab {{ 'on' if here.startswith('/manage') else '' }}" href="/manage">{{ icon("manage") }}<span>{{ t("manager") }}</span></a>
+      {% if is_manager or here.startswith('/manage') %}<a class="tab {{ 'on' if here.startswith('/manage') else '' }}" href="/manage">{{ icon("manage") }}<span>{{ t("manager") }}</span></a>{% endif %}
       <a class="tab {{ 'on' if here.startswith('/rules') else '' }}" href="/rules">{{ icon("rules") }}<span>{{ t("rules") }}</span></a>
     </nav>
     {% if who %}<form method="post" action="/signout" class="signout"><input type="hidden" name="kind" value="{{ who.kind }}"><button class="ghost small" title="Signed in as {{ who.name }}">{{ who.name.split(' ')[0] }} · {{ t('sign_out') }}</button></form>{% endif %}

@@ -60,6 +60,7 @@ STATE_LABELS = {
 def render(request, name, **ctx):
     ctx.setdefault("role_names", content.role_names())
     ctx.setdefault("who", auth.manager(request) if request.url.path.startswith("/manage") else auth.current(request))
+    ctx.setdefault("is_manager", bool(auth.manager(request)))   # only managers see the Manager tab
     lang = ctx.setdefault("lang", i18n.pick(request, ctx["who"]))
     ctx.update(langs=i18n.LANGS, rtl=lang in i18n.RTL, t=lambda key, **kw: i18n.t(key, lang, **kw))
     return templates.TemplateResponse(request, name, ctx)

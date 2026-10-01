@@ -13,6 +13,8 @@ COOKIE = "ub_lang"
 S = {
     # nav and home
     "learn": {"en": "Learn", "es": "Aprender", "zh": "学习", "vi": "Học", "ar": "تعلّم"},
+    "manager_signin": {"en": "Manager sign-in", "es": "Acceso de gerentes", "zh": "经理登录", "vi": "Quản lý đăng nhập",
+                       "ar": "دخول المديرين"},
     "manager": {"en": "Manager", "es": "Gerente", "zh": "经理", "vi": "Quản lý", "ar": "المدير"},
     "rules": {"en": "Rules", "es": "Reglas", "zh": "法规", "vi": "Quy định", "ar": "القواعد"},
     "sign_out": {"en": "Sign out", "es": "Salir", "zh": "退出", "vi": "Đăng xuất", "ar": "خروج"},
