@@ -60,7 +60,8 @@ function Sync {
   Save-Work
   git fetch -q origin $Branch
   if ($LASTEXITCODE -ne 0) { return }
-  if ((git rev-parse HEAD) -ne (git rev-parse "origin/$Branch")) {
+  # Only when GitHub has something new (our own saved edits alone are not an update).
+  if (git rev-list -1 "HEAD..origin/$Branch") {
     $req = Hash "requirements.txt"; $script = Hash "update.ps1"
     # Your edits win if the same lesson changed on both sides.
     git merge -q --no-edit -X ours "origin/$Branch"

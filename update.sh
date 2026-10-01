@@ -48,7 +48,8 @@ save_work() {
 sync() {
   save_work
   timeout 120 git fetch -q origin "$BRANCH" || return
-  if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$BRANCH")" ]; then
+  # Only when GitHub has something new (our own saved edits alone are not an update).
+  if [ -n "$(git rev-list -1 "HEAD..origin/$BRANCH")" ]; then
     local before_req before_script
     before_req=$(req_hash); before_script=$(script_hash)
     # Your edits win if the same lesson changed on both sides.
