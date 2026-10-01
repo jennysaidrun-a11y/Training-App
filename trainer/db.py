@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS survey_tickets (
 );
 """
 ADDED_COLUMNS = [("workers", "pin_hash", "TEXT"), ("workers", "lang", "TEXT"),
-                 ("survey_answers", "comments", "TEXT NOT NULL DEFAULT ''"), ("survey_answers", "form", "TEXT NOT NULL DEFAULT ''")]
+                 ("survey_answers", "comments", "TEXT NOT NULL DEFAULT ''"), ("survey_answers", "form", "TEXT NOT NULL DEFAULT ''"),
+                 ("managers", "email", "TEXT")]
 
 
 def db_path():
@@ -110,10 +111,26 @@ def manager(con, mid):
     return dict(r) if r else None
 
 
-def add_manager(con, name, pin_hash):
-    cur = con.execute("INSERT INTO managers (name, pin_hash) VALUES (?, ?)", (name.strip(), pin_hash))
+def add_manager(con, name, pin_hash, email=None):
+    cur = con.execute("INSERT INTO managers (name, pin_hash, email) VALUES (?, ?, ?)",
+                      (name.strip(), pin_hash, email.strip().lower() if email else None))
     con.commit()
     return cur.lastrowid
+
+
+def manager_by_email(con, email):
+    r = con.execute("SELECT * FROM managers WHERE active = 1 AND lower(email) = ?", (email.strip().lower(),)).fetchone()
+    return dict(r) if r else None
+
+
+def set_manager_email(con, mid, email):
+    con.execute("UPDATE managers SET email = ? WHERE id = ?", (email.strip().lower(), mid))
+    con.commit()
+
+
+def set_manager_pin(con, mid, pin_hash):
+    con.execute("UPDATE managers SET pin_hash = ? WHERE id = ?", (pin_hash, mid))
+    con.commit()
 
 
 def set_worker_active(con, wid, active):

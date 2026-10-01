@@ -36,7 +36,7 @@ def anon(env):
 def client(env):
     """Signed in as a manager (the first manager is made on the setup page)."""
     c = TestClient(app)
-    c.post("/manage/setup", data={"name": "Pat Manager", "pin": "246810", "pin2": "246810"})
+    c.post("/manage/setup", data={"name": "Pat Manager", "email": "pat@bakery.example", "pin": "246810", "pin2": "246810"})
     return c
 
 
@@ -617,24 +617,50 @@ def test_commons_photo_license_is_checked_by_the_app(client):
 
 
 def test_manager_setup_and_sign_in(anon):
+    from trainer import auth
     assert anon.get("/manage", follow_redirects=False).headers["location"] == "/manage/signin?next=/manage"
     assert anon.get("/manage/signin", follow_redirects=False).headers["location"] == "/manage/setup"
-    assert "bad=pin" in anon.post("/manage/setup", data={"name": "Pat", "pin": "1234", "pin2": "1234"}, follow_redirects=False).headers["location"]
-    anon.post("/manage/setup", data={"name": "Pat", "pin": "135790", "pin2": "135790"})
+    pat_form = {"name": "Pat", "email": "Pat@Bakery.example", "pin": "135790", "pin2": "135790"}
+    assert "bad=pin" in anon.post("/manage/setup", data={**pat_form, "pin": "1234", "pin2": "1234"}, follow_redirects=False).headers["location"]
+    assert "bad=email" in anon.post("/manage/setup", data={**pat_form, "email": "pat"}, follow_redirects=False).headers["location"]
+    anon.post("/manage/setup", data=pat_form)
     assert anon.get("/manage/dashboard").status_code == 200
     anon.post("/signout")
     assert anon.get("/manage/setup", follow_redirects=False).headers["location"] == "/manage/signin"   # only once
     with db.connect() as con:
         pat = db.managers(con)[0]
-        assert "135790" not in pat["pin_hash"]
-    r = anon.post("/manage/signin", data={"manager": pat["id"], "pin": "135790", "next": "//evil.example"}, follow_redirects=False)
+        assert "135790" not in pat["pin_hash"] and pat["email"] == "pat@bakery.example"
+    page = anon.get("/manage/signin").text
+    assert 'name="email"' in page and "Pat" not in page                         # no list of manager names
+    r = anon.post("/manage/signin", data={"email": "PAT@bakery.example ", "pin": "135790", "next": "//evil.example"}, follow_redirects=False)
     assert r.headers["location"] == "/manage/dashboard"
+    assert "wrong=1" in anon.post("/manage/signin", data={"email": "nobody@bakery.example", "pin": "135790"}, follow_redirects=False).headers["location"]
+    assert "wrong=1" in anon.post("/manage/signin", data={"manager": pat["id"], "pin": "135790"}, follow_redirects=False).headers["location"]  # has an email: use it
+
+    # Another manager: email required and unique; any manager can reset a forgotten PIN.
+    assert "manager_bad=taken" in anon.post("/manage/managers", data={"name": "Kim", "email": "pat@bakery.example", "pin": "112233"}, follow_redirects=False).headers["location"]
+    anon.post("/manage/managers", data={"name": "Kim", "email": "kim@bakery.example", "pin": "112233"})
+    with db.connect() as con:
+        kim = db.manager_by_email(con, "kim@bakery.example")
+    anon.post(f"/manage/managers/{kim['id']}/pin", data={"pin": "445566"})
+    other = TestClient(app)
+    assert other.post("/manage/signin", data={"email": "kim@bakery.example", "pin": "445566"}, follow_redirects=False).headers["location"] == "/manage/dashboard"
+
+    # A manager made before emails were asked for picks their name, then adds an email.
+    with db.connect() as con:
+        old = db.add_manager(con, "Lee", auth.hash_pin("778899"))
+    legacy = TestClient(app)
+    assert "Lee" in legacy.get("/manage/signin").text
+    legacy.post("/manage/signin", data={"manager": old, "pin": "778899"})
+    assert "Add your work email" in legacy.get("/manage").text
+    legacy.post(f"/manage/managers/{old}/email", data={"email": "lee@bakery.example"})
+    assert "Lee" not in TestClient(app).get("/manage/signin").text
+
     for _ in range(5):
-        anon.post("/manage/signin", data={"manager": pat["id"], "pin": "000000"})
+        anon.post("/manage/signin", data={"email": "pat@bakery.example", "pin": "000000"})
     fresh = TestClient(app)
-    r = fresh.post("/manage/signin", data={"manager": pat["id"], "pin": "135790"}, follow_redirects=False)
+    r = fresh.post("/manage/signin", data={"email": "pat@bakery.example", "pin": "135790"}, follow_redirects=False)
     assert "wrong=1" in r.headers["location"]                                   # locked after 5 wrong tries
-    from trainer import auth
     auth._fails.clear()
 
 

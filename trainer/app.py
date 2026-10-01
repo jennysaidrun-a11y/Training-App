@@ -401,6 +401,7 @@ def manage(request: Request):
         managers = db.managers(con)
     return render(request, "manage.html", lessons=lessons, flagged=flagged, progress=progress, inactive=inactive,
                   roles=content.load_roles(), status=status, broken=content.broken_lesson_files(), managers=managers,
+                  current_manager=auth.manager(request),
                   groups=content.group_by_topic(list(lessons.values())))
 
 
@@ -711,19 +712,32 @@ def setup_page(request: Request, bad: str = ""):
     with db.connect() as con:
         if db.managers(con):
             return RedirectResponse("/manage/signin", status_code=303)
-    return render(request, "manager_signin.html", setup=True, bad=bad, managers=[])
+    return render(request, "manager_signin.html", setup=True, bad=bad, legacy=[])
+
+
+def _manager_form_problem(con, name, email, pin, pin2=None, mid=None):
+    """What's wrong with a new manager's details, or '' if they're fine."""
+    if not name.strip():
+        return "name"
+    if not auth.EMAIL.match(email.strip()):
+        return "email"
+    other = db.manager_by_email(con, email)
+    if other and other["id"] != mid:
+        return "taken"
+    if not auth.MANAGER_PIN.match(pin.strip()) or (pin2 is not None and pin.strip() != pin2.strip()):
+        return "pin"
+    return ""
 
 
 @app.post("/manage/setup")
-def setup(request: Request, name: str = Form(""), pin: str = Form(""), pin2: str = Form("")):
+def setup(request: Request, name: str = Form(""), email: str = Form(""), pin: str = Form(""), pin2: str = Form("")):
     with db.connect() as con:
         if db.managers(con):
             return RedirectResponse("/manage/signin", status_code=303)
-        if not name.strip():
-            return RedirectResponse("/manage/setup?bad=name", status_code=303)
-        if not auth.MANAGER_PIN.match(pin.strip()) or pin.strip() != pin2.strip():
-            return RedirectResponse("/manage/setup?bad=pin", status_code=303)
-        mid = db.add_manager(con, name, auth.hash_pin(pin.strip()))
+        bad = _manager_form_problem(con, name, email, pin, pin2)
+        if bad:
+            return RedirectResponse(f"/manage/setup?bad={bad}", status_code=303)
+        mid = db.add_manager(con, name, auth.hash_pin(pin.strip()), email)
     response = RedirectResponse("/manage/dashboard", status_code=303)
     auth.set_session(response, request, "m", mid)
     return response
@@ -737,27 +751,60 @@ def manager_signin_page(request: Request, next: str = "", wrong: int = 0):
         people = db.managers(con)
     if not people:
         return RedirectResponse("/manage/setup", status_code=303)
-    return render(request, "manager_signin.html", setup=False, managers=people, wrong=wrong, next=next)
+    # Managers made before work emails were asked for pick their name until they add one.
+    legacy = [m for m in people if not m.get("email")]
+    return render(request, "manager_signin.html", setup=False, legacy=legacy, wrong=wrong, next=next)
 
 
 @app.post("/manage/signin")
-def manager_signin(request: Request, manager: int = Form(0), pin: str = Form(""), next: str = Form("")):
+def manager_signin(request: Request, email: str = Form(""), manager: int = Form(0), pin: str = Form(""), next: str = Form("")):
     with db.connect() as con:
-        m = db.manager(con, manager)
-    if not m or not m["active"] or not auth.check_pin("m", manager, pin.strip(), m["pin_hash"]):
+        if email.strip():
+            m = db.manager_by_email(con, email)
+        else:
+            m = db.manager(con, manager)
+            m = m if m and not m.get("email") else None
+    if not m or not m["active"] or not auth.check_pin("m", m["id"], pin.strip(), m["pin_hash"]):
         return RedirectResponse(f"/manage/signin?wrong=1&next={next if _safe_next(next, '') else ''}", status_code=303)
     response = RedirectResponse(_safe_next(next, "/manage/dashboard"), status_code=303)
-    auth.set_session(response, request, "m", manager)
+    auth.set_session(response, request, "m", m["id"])
     return response
 
 
 @app.post("/manage/managers")
-def add_manager(name: str = Form(""), pin: str = Form("")):
-    if not name.strip() or not auth.MANAGER_PIN.match(pin.strip()):
-        return RedirectResponse("/manage?manager_bad=1#managers", status_code=303)
+def add_manager(name: str = Form(""), email: str = Form(""), pin: str = Form("")):
     with db.connect() as con:
-        db.add_manager(con, name, auth.hash_pin(pin.strip()))
+        bad = _manager_form_problem(con, name, email, pin)
+        if bad:
+            return RedirectResponse(f"/manage?manager_bad={bad}#managers", status_code=303)
+        db.add_manager(con, name, auth.hash_pin(pin.strip()), email)
     return RedirectResponse("/manage?manager_added=1#managers", status_code=303)
+
+
+@app.post("/manage/managers/{mid}/email")
+def manager_email(mid: int, email: str = Form("")):
+    with db.connect() as con:
+        m = db.manager(con, mid)
+        if not m:
+            raise HTTPException(404)
+        bad = _manager_form_problem(con, m["name"], email, "000000", mid=mid)
+        if bad:
+            return RedirectResponse(f"/manage?manager_bad={bad}#managers", status_code=303)
+        db.set_manager_email(con, mid, email)
+    return RedirectResponse("/manage?manager_saved=1#managers", status_code=303)
+
+
+@app.post("/manage/managers/{mid}/pin")
+def manager_pin(mid: int, pin: str = Form("")):
+    """Any manager can reset a manager's PIN (their own, or a colleague who forgot theirs)."""
+    if not auth.MANAGER_PIN.match(pin.strip()):
+        return RedirectResponse("/manage?manager_bad=pin#managers", status_code=303)
+    with db.connect() as con:
+        if not db.manager(con, mid):
+            raise HTTPException(404)
+        db.set_manager_pin(con, mid, auth.hash_pin(pin.strip()))
+    auth._fails.pop(("m", mid), None)
+    return RedirectResponse("/manage?manager_saved=1#managers", status_code=303)
 
 
 @app.post("/manage/check")

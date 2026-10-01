@@ -12,7 +12,8 @@
 {% if request.query_params.get('saved') %}<p class="note">Saved. Everyone sees the new version now.</p>{% endif %}
 {% if request.query_params.get('pin_bad') %}<p class="note bad">A worker PIN must be exactly 4 digits.</p>{% endif %}
 {% if request.query_params.get('pin_set') %}<p class="note">PIN saved. Tell the person their new PIN.</p>{% endif %}
-{% if request.query_params.get('manager_bad') %}<p class="note bad">A manager needs a name and a 6-digit PIN.</p>{% endif %}
+{% set mbad = request.query_params.get('manager_bad') %}{% if mbad == 'email' %}<p class="note bad">Type a work email, like name@unitedbakery.com.</p>{% elif mbad == 'taken' %}<p class="note bad">Another manager already uses that email.</p>{% elif mbad %}<p class="note bad">A manager needs a name, a work email and a 6-digit PIN.</p>{% endif %}
+{% if request.query_params.get('manager_saved') %}<p class="note">Saved.</p>{% endif %}
 {% if request.query_params.get('manager_added') %}<p class="note">Manager added.</p>{% endif %}
 {% if request.query_params.get('checking') %}<p class="note">Checking the rules now. Refresh in a minute to see the results.</p>{% endif %}
 {% for name, err in broken %}<p class="note bad">The lesson file {{ name }} can't be read ({{ err }}). It's hidden until it's fixed.</p>{% endfor %}
@@ -88,9 +89,37 @@
 
 <section class="section" id="managers">
   <div class="section-head"><h2>Managers</h2></div>
-  <p class="muted">{% for m in managers %}{{ m.name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+  <p class="muted">Managers sign in with their work email and a 6-digit PIN. If one forgets their PIN, any manager can set a new one here.</p>
+  {% if current_manager and not current_manager.email %}
+  <form method="post" action="/manage/managers/{{ current_manager.id }}/email" class="note row">
+    <b>Add your work email</b> so you can sign in with it:
+    <input name="email" type="email" required placeholder="name@unitedbakery.com" autocomplete="email" aria-label="Your work email">
+    <button class="small">Save</button>
+  </form>
+  {% endif %}
+  <div class="list">
+    {% for m in managers %}
+    <div class="item">
+      <div class="grow"><span class="title">{{ m.name }}</span>
+        <div class="meta">{% if m.email %}{{ m.email }}{% else %}<b class="warn-text">no work email yet</b>{% endif %}</div></div>
+      {% if not m.email %}
+      <details class="pin-set"><summary class="btn ghost small">Add email</summary>
+        <form method="post" action="/manage/managers/{{ m.id }}/email" class="row">
+          <input name="email" type="email" required placeholder="Work email" autocomplete="off" aria-label="Work email for {{ m.name }}">
+          <button class="small">Save</button>
+        </form></details>
+      {% endif %}
+      <details class="pin-set"><summary class="btn ghost small">Reset PIN</summary>
+        <form method="post" action="/manage/managers/{{ m.id }}/pin" class="row">
+          <input name="pin" type="password" placeholder="6 digits" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="new-password" aria-label="New PIN for {{ m.name }}" class="pin-in">
+          <button class="small">Save</button>
+        </form></details>
+    </div>
+    {% endfor %}
+  </div>
   <form method="post" action="/manage/managers" class="row">
     <input name="name" placeholder="Name" required aria-label="Manager name">
+    <input name="email" type="email" placeholder="Work email" required autocomplete="off" aria-label="Manager work email">
     <input name="pin" type="password" placeholder="6-digit PIN" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="new-password" aria-label="Manager PIN">
     <button class="blue small">Add manager</button>
   </form>

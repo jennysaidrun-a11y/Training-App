@@ -9,11 +9,11 @@
     <p class="note bad">{{ t("no_pin") }}</p>
     <a class="btn ghost" href="/">{{ t("back") }}</a>
   {% elif locked %}
-    <p class="note bad">{{ t("pin_locked", m=(locked // 60) + 1) }}</p>
+    <p class="note bad">{{ t("pin_locked", m=(locked // 60) + 1) }} {{ t("forgot_pin") }}</p>
     <a class="btn ghost" href="/">{{ t("back") }}</a>
   {% else %}
     <p class="muted">{{ t("type_pin") }}</p>
-    {% if wrong %}<p class="note bad">{{ t("pin_wrong") }}</p>{% endif %}
+    {% if wrong %}<p class="note bad">{{ t("pin_wrong") }} {{ t("forgot_pin") }}</p>{% endif %}
     <form method="post" id="pin-form" class="pin-form">
       <input name="pin" id="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" required autofocus aria-label="PIN">
       <div class="pin-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>

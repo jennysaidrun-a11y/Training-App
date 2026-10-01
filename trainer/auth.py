@@ -23,6 +23,7 @@ COOKIE = "ub_session"       # worker
 MANAGER_COOKIE = "ub_manager"
 WORKER_PIN = re.compile(r"^\d{4}$")
 MANAGER_PIN = re.compile(r"^\d{6}$")
+EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 WORKER_MINUTES = 30        # a shared tablet on the floor: sign out soon after
 MANAGER_DAYS = 30          # renewed on every manager page, so it only runs out after 30 days away
 MAX_TRIES = 5
