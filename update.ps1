@@ -10,6 +10,7 @@ Set-Location $PSScriptRoot
 $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
 if (-not $env:PORT) { $env:PORT = "8001" }
 if (-not $env:HOST) { $env:HOST = "127.0.0.1" }   # this PC only
+$env:PYTHONUTF8 = "1"   # read and write files as UTF-8 (Windows defaults to cp1252)
 $Branch = (git rev-parse --abbrev-ref HEAD).Trim()
 $Py = if (Test-Path ".venv\Scripts\python.exe") { ".venv\Scripts\python.exe" } else { "python" }
 $Pid_File = Join-Path $PSScriptRoot "data\app.pid"

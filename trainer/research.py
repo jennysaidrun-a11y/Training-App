@@ -271,7 +271,7 @@ def _run_cli_once(history, draft, command=None, runner=subprocess.run):
            "--allowedTools", "WebSearch", "WebFetch", "--model", CLI_MODEL, "--no-session-persistence"]
     with tempfile.TemporaryDirectory() as empty:   # no project files for it to read
         try:
-            r = runner(cmd, input=prompt, capture_output=True, text=True, timeout=CLI_TIMEOUT, cwd=empty)
+            r = runner(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=CLI_TIMEOUT, cwd=empty)
         except subprocess.TimeoutExpired:
             raise RuntimeError("Claude took too long. Try a narrower topic.")
     try:
@@ -406,7 +406,7 @@ def translate(lesson, lang, client=None, runner=subprocess.run):
         cmd = [claude_command(), "-p", "--output-format", "json", "--json-schema", json.dumps(schema),
                "--system-prompt", system, "--tools", "", "--model", CLI_MODEL, "--no-session-persistence"]
         with tempfile.TemporaryDirectory() as empty:
-            r = runner(cmd, input=prompt, capture_output=True, text=True, timeout=CLI_TIMEOUT, cwd=empty)
+            r = runner(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=CLI_TIMEOUT, cwd=empty)
         try:
             out = json.loads(r.stdout)
         except ValueError:
@@ -466,7 +466,7 @@ def match_pictures(asks, client=None, runner=subprocess.run):
         cmd = [claude_command(), "-p", "--output-format", "json", "--json-schema", json.dumps(schema),
                "--system-prompt", MATCH_SYSTEM, "--tools", "Read", "--allowedTools", "Read",
                "--model", CLI_MODEL, "--no-session-persistence"]
-        r = runner(cmd, input="\n".join(lines), capture_output=True, text=True, timeout=CLI_TIMEOUT, cwd=folder)
+        r = runner(cmd, input="\n".join(lines), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=CLI_TIMEOUT, cwd=folder)
         try:
             out = json.loads(r.stdout)
             result = out.get("structured_output") or json.loads(out.get("result") or "{}")

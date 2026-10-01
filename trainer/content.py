@@ -45,7 +45,7 @@ def now_stamp():
 
 
 def load_roles():
-    return yaml.safe_load((CONTENT / "roles.yaml").read_text()) or []
+    return yaml.safe_load((CONTENT / "roles.yaml").read_text(encoding="utf-8")) or []
 
 
 OTHER_TOPIC = {"id": "other", "name": "Other lessons"}
@@ -54,7 +54,7 @@ OTHER_TOPIC = {"id": "other", "name": "Other lessons"}
 def load_topics():
     path = CONTENT / "topics.yaml"
     try:
-        topics = yaml.safe_load(path.read_text()) or [] if path.exists() else []
+        topics = yaml.safe_load(path.read_text(encoding="utf-8")) or [] if path.exists() else []
     except yaml.YAMLError:
         topics = []   # a broken file never takes the app down; everything shows under Other
     return [{"id": str(t.get("id") or slugify(t.get("name", "topic"))), "name": str(t.get("name") or "Untitled"),
@@ -68,7 +68,7 @@ def save_topics(topics):
     header = "# Lesson folders, in the order workers and managers see them. Managers edit this on\n" \
              "# Manager > Topics. A lesson in no folder shows under \"Other lessons\".\n" \
              "# in_order: true means workers take that folder's lessons one after another.\n"
-    (CONTENT / "topics.yaml").write_text(header + yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100))
+    (CONTENT / "topics.yaml").write_text(header + yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100), encoding="utf-8")
 
 
 def group_by_topic(lessons, topics=None):
@@ -87,7 +87,7 @@ def group_by_topic(lessons, topics=None):
 
 
 def load_survey():
-    with open(CONTENT / "survey.yaml") as f:
+    with open(CONTENT / "survey.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -124,7 +124,7 @@ def load_lessons():
     lessons = {}
     for path in sorted(LESSONS.glob("*.yaml")):
         try:
-            data = yaml.safe_load(path.read_text()) or {}
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError:
             continue  # a broken file never takes the app down; the manager page lists it
         lessons[data.get("id", path.stem)] = _normalize(data, path)
@@ -135,7 +135,7 @@ def broken_lesson_files():
     bad = []
     for path in sorted(LESSONS.glob("*.yaml")):
         try:
-            yaml.safe_load(path.read_text())
+            yaml.safe_load(path.read_text(encoding="utf-8"))
         except yaml.YAMLError as e:
             bad.append((path.name, str(e).splitlines()[0]))
     return bad
@@ -171,7 +171,7 @@ def save_lesson(lesson):
         if lesson.get(k):
             data[k] = lesson[k]
     path = LESSONS / f"{data['id']}.yaml"
-    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100))
+    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100), encoding="utf-8")
     return path
 
 

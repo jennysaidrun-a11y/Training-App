@@ -37,14 +37,14 @@ def today():
 def load_status(path=None):
     path = path or STATUS_PATH
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {"checked_at": None, "rules": {}, "federal_register": {}}
 
 
 def save_status(status, path=None):
     path = path or STATUS_PATH
-    path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n")
+    path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 # ---- Sources ----------------------------------------------------------------

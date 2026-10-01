@@ -50,9 +50,9 @@ def _key():
     path = db.db_path().parent / "session.key"
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(secrets.token_hex(32))
+        path.write_text(secrets.token_hex(32), encoding="utf-8")
         os.chmod(path, 0o600)
-    return path.read_text().strip().encode()
+    return path.read_text(encoding="utf-8").strip().encode()
 
 
 def _sign(text):
