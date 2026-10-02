@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ t("join_title") }} · Training · United Bakery{% endblock %}
+{% block main_class %}narrow{% endblock %}
+{% block body %}
+<div class="signin">
+  <h1>{{ t("join_title") }}</h1>
+  {% if done %}
+    <p class="note">{{ t("join_done") }}</p>
+    <a class="btn" href="/">{{ t("back") }}</a>
+  {% else %}
+    <p class="muted">{{ t("join_intro") }}</p>
+    {% include "_lang_picker.html" %}
+    {% if bad %}<p class="note bad">{{ t("join_bad_" ~ bad) }}</p>{% endif %}
+    <form method="post" action="/join" class="card stack-form">
+      <label class="field"><span class="lbl">{{ t("your_name") }}</span><input name="name" required maxlength="80" autocomplete="name"></label>
+      <label class="field"><span class="lbl">{{ t("your_job") }}</span>
+        <select name="role" required><option value="" disabled selected></option>{% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}</select></label>
+      <label class="field"><span class="lbl">{{ t("pick_pin") }}</span><input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required autocomplete="new-password"></label>
+      <label class="field"><span class="lbl">{{ t("pin_again") }}</span><input name="pin2" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required autocomplete="new-password"></label>
+      <button>{{ t("join_send") }}</button>
+    </form>
+    <a class="muted" href="/">{{ t("back") }}</a>
+  {% endif %}
+</div>
+{% endblock %}

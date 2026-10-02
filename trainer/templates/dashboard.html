@@ -5,6 +5,7 @@
 {% block main_class %}wide{% endblock %}
 {% block body %}
 {% include "_manager_nav.html" %}
+{% if pending_count %}<p class="note">{{ pending_count }} {{ "person is" if pending_count == 1 else "people are" }} waiting for you to approve their account. <a href="/manage/approvals">Review</a></p>{% endif %}
 <div class="page-head"><h1>Dashboard</h1></div>
 
 <form method="get" class="filters card" id="filters">

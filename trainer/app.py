@@ -61,6 +61,9 @@ def render(request, name, **ctx):
     ctx.setdefault("role_names", content.role_names())
     ctx.setdefault("who", auth.manager(request) if request.url.path.startswith("/manage") else auth.current(request))
     ctx.setdefault("is_manager", bool(auth.manager(request)))   # only managers see the Manager tab
+    if ctx["is_manager"] and request.url.path.startswith("/manage"):
+        with db.connect() as con:
+            ctx.setdefault("pending_count", len(db.pending_workers(con)))
     lang = ctx.setdefault("lang", i18n.pick(request, ctx["who"]))
     ctx.update(langs=i18n.LANGS, rtl=lang in i18n.RTL, t=lambda key, **kw: i18n.t(key, lang, **kw))
     return templates.TemplateResponse(request, name, ctx)
@@ -177,7 +180,7 @@ def _safe_next(url, default):
 def signin_page(request: Request, wid: int, wrong: int = 0):
     with db.connect() as con:
         person = db.worker(con, wid)
-    if not person or not person["active"]:
+    if not person or not person["active"] or not person.get("approved", 1):
         raise HTTPException(404, "No one with that id")
     return render(request, "signin.html", person=person, wrong=wrong, locked=auth.locked_for("w", wid),
                   has_pin=bool(person.get("pin_hash")))
@@ -187,13 +190,34 @@ def signin_page(request: Request, wid: int, wrong: int = 0):
 def signin(request: Request, wid: int, pin: str = Form("")):
     with db.connect() as con:
         person = db.worker(con, wid)
-    if not person or not person["active"]:
+    if not person or not person["active"] or not person.get("approved", 1):
         raise HTTPException(404, "No one with that id")
     if not auth.check_pin("w", wid, pin.strip(), person.get("pin_hash")):
         return RedirectResponse(f"/signin/{wid}?wrong=1", status_code=303)
     response = RedirectResponse(f"/me/{wid}", status_code=303)
     auth.set_session(response, request, "w", wid)
     return response
+
+
+@app.get("/join", response_class=HTMLResponse)
+def join_page(request: Request, bad: str = "", done: int = 0):
+    """A new worker makes their own account; a manager approves it."""
+    return render(request, "join.html", roles=content.load_roles(), bad=bad, done=done)
+
+
+@app.post("/join")
+def join(request: Request, name: str = Form(""), role: str = Form(""), pin: str = Form(""), pin2: str = Form("")):
+    name = " ".join(name.split())[:80]
+    if not name:
+        return RedirectResponse("/join?bad=name", status_code=303)
+    if role not in {r["id"] for r in content.load_roles()}:
+        return RedirectResponse("/join?bad=role", status_code=303)
+    if not auth.WORKER_PIN.match(pin.strip()) or pin.strip() != pin2.strip():
+        return RedirectResponse("/join?bad=pin", status_code=303)
+    with db.connect() as con:
+        if not db.request_account(con, name, role, auth.hash_pin(pin.strip())):
+            return RedirectResponse("/join?bad=full", status_code=303)
+    return RedirectResponse("/join?done=1", status_code=303)
 
 
 @app.post("/lang")
@@ -415,6 +439,23 @@ def add_worker(name: str = Form(...), role: str = Form(...), pin: str = Form("")
         with db.connect() as con:
             db.add_worker(con, name, role, auth.hash_pin(pin) if pin else None)
     return RedirectResponse("/manage#people", status_code=303)
+
+
+@app.get("/manage/approvals", response_class=HTMLResponse)
+def approvals_page(request: Request):
+    with db.connect() as con:
+        waiting = db.pending_workers(con)
+    return render(request, "approvals.html", waiting=waiting, roles=content.load_roles())
+
+
+@app.post("/manage/approvals/{wid}")
+def approval(wid: int, action: str = Form(""), role: str = Form("")):
+    with db.connect() as con:
+        if action == "approve" and role in {r["id"] for r in content.load_roles()}:
+            db.approve_worker(con, wid, role)
+        elif action == "decline":
+            db.decline_worker(con, wid)
+    return RedirectResponse(f"/manage/approvals?done={action}", status_code=303)
 
 
 @app.post("/manage/workers/{wid}/pin")

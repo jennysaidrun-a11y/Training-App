@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Approvals · Training · United Bakery{% endblock %}
+{% block body %}
+{% include "_manager_nav.html" %}
+<div class="page-head"><h1>Approvals</h1></div>
+<p class="muted">People who made their own account. Check the name and job, then approve them so they can sign in. Declining removes the request.</p>
+{% set done = request.query_params.get('done') %}
+{% if done == 'approve' %}<p class="note">Approved. They can now tap their name on the first page.</p>{% elif done == 'decline' %}<p class="note">Request removed.</p>{% endif %}
+{% if waiting %}
+<div class="list">
+  {% for w in waiting %}
+  <div class="item approval">
+    <span class="avatar c{{ w.id % 6 }}">{{ w.name[:1] }}</span>
+    <div class="grow"><span class="title">{{ w.name }}</span>
+      <div class="meta">Asked {{ w.requested_on.replace('T', ' at ') if w.requested_on else '' }}</div></div>
+    <form method="post" action="/manage/approvals/{{ w.id }}" class="row">
+      <select name="role" aria-label="Job for {{ w.name }}">{% for r in roles %}<option value="{{ r.id }}" {{ 'selected' if r.id == w.role }}>{{ r.name }}</option>{% endfor %}</select>
+      <button name="action" value="approve" class="small">Approve</button>
+      <button name="action" value="decline" class="ghost small danger" formnovalidate onclick="return confirm('Decline {{ w.name }}?')">Decline</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty"><h2>No one is waiting</h2><p>When someone makes an account on the first page, they show up here.</p></div>
+{% endif %}
+{% endblock %}

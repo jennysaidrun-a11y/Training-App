@@ -52,7 +52,9 @@ CREATE TABLE IF NOT EXISTS survey_tickets (
 """
 ADDED_COLUMNS = [("workers", "pin_hash", "TEXT"), ("workers", "lang", "TEXT"),
                  ("survey_answers", "comments", "TEXT NOT NULL DEFAULT ''"), ("survey_answers", "form", "TEXT NOT NULL DEFAULT ''"),
-                 ("managers", "email", "TEXT")]
+                 ("managers", "email", "TEXT"),
+                 # Self sign-ups wait for a manager (approved = 0); everyone added before this is approved.
+                 ("workers", "approved", "INTEGER NOT NULL DEFAULT 1"), ("workers", "requested_on", "TEXT")]
 
 
 def db_path():
@@ -72,7 +74,7 @@ def connect():
 
 
 def workers(con, active_only=True):
-    q = "SELECT * FROM workers" + (" WHERE active = 1" if active_only else "") + " ORDER BY name"
+    q = "SELECT * FROM workers WHERE approved = 1" + (" AND active = 1" if active_only else "") + " ORDER BY name"
     return [dict(r) for r in con.execute(q)]
 
 
@@ -85,6 +87,34 @@ def add_worker(con, name, role, pin_hash=None):
     cur = con.execute("INSERT INTO workers (name, role, pin_hash) VALUES (?, ?, ?)", (name.strip(), role, pin_hash))
     con.commit()
     return cur.lastrowid
+
+
+MAX_PENDING = 50   # a cap on waiting sign-ups, so a flood of them can't fill the list
+
+
+def request_account(con, name, role, pin_hash):
+    """A worker signs themselves up; they can't sign in until a manager approves."""
+    if len(pending_workers(con)) >= MAX_PENDING:
+        return None
+    cur = con.execute("INSERT INTO workers (name, role, pin_hash, approved, requested_on) VALUES (?, ?, ?, 0, ?)",
+                      (name.strip(), role, pin_hash, dt.datetime.now().isoformat(timespec="minutes")))
+    con.commit()
+    return cur.lastrowid
+
+
+def pending_workers(con):
+    return [dict(r) for r in con.execute("SELECT * FROM workers WHERE approved = 0 ORDER BY requested_on, id")]
+
+
+def approve_worker(con, wid, role):
+    con.execute("UPDATE workers SET approved = 1, active = 1, role = ? WHERE id = ? AND approved = 0", (role, wid))
+    con.commit()
+
+
+def decline_worker(con, wid):
+    """Only a sign-up still waiting can be declined, so no training record is ever lost."""
+    con.execute("DELETE FROM workers WHERE id = ? AND approved = 0", (wid,))
+    con.commit()
 
 
 def set_worker_pin(con, wid, pin_hash):

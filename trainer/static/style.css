@@ -763,3 +763,9 @@ body.zoom-open { overflow: hidden; }
 /* Small link for managers on the worker home page (the Manager tab shows only once signed in) */
 .staff-link { text-align: center; margin: 28px 0 8px; font-size: .85rem; }
 .staff-link a { color: var(--muted); }
+
+/* Self sign-up: link on the home page, count of waiting requests on the Approvals tab */
+.join-link { text-align: center; margin: 22px 0 0; }
+.count-badge { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 10px; background: var(--gold); color: #fff;
+               font-size: .75rem; text-align: center; margin-left: 4px; }
+.item.approval .row { gap: 8px; flex-wrap: wrap; }

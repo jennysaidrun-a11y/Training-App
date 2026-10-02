@@ -919,3 +919,30 @@ def test_manager_tab_only_for_managers(client, anon):
     worker.post(f"/signin/{wid}", data={"pin": "1357"})
     assert tab not in worker.get(f"/me/{wid}").text and tab not in worker.get("/rules").text
     assert tab in client.get("/").text and tab in client.get("/rules").text                   # a signed-in manager
+
+
+def test_workers_sign_up_and_wait_for_approval(client, anon):
+    assert 'href="/join"' in anon.get("/").text
+    assert "bad=pin" in anon.post("/join", data={"name": "Rosa Diaz", "role": "baking", "pin": "1234", "pin2": "4321"}, follow_redirects=False).headers["location"]
+    assert "bad=role" in anon.post("/join", data={"name": "Rosa Diaz", "role": "boss", "pin": "1234", "pin2": "1234"}, follow_redirects=False).headers["location"]
+    assert "done=1" in anon.post("/join", data={"name": " Rosa  Diaz ", "role": "baking", "pin": "2468", "pin2": "2468"}, follow_redirects=False).headers["location"]
+    anon.post("/join", data={"name": "Spam Bot", "role": "mixing", "pin": "1111", "pin2": "1111"})
+    with db.connect() as con:
+        rosa, spam = db.pending_workers(con)
+    assert rosa["name"] == "Rosa Diaz" and "Rosa" not in anon.get("/").text                  # not on the sign-in list yet
+    assert anon.get(f"/signin/{rosa['id']}").status_code == 404
+    assert anon.post(f"/signin/{rosa['id']}", data={"pin": "2468"}).status_code == 404
+    assert anon.post(f"/manage/approvals/{rosa['id']}", data={"action": "approve", "role": "mixing"}, follow_redirects=False).headers["location"].startswith("/manage/signin")
+
+    page = client.get("/manage/approvals").text
+    assert "Rosa Diaz" in page and 'count-badge">2<' in page
+    client.post(f"/manage/approvals/{rosa['id']}", data={"action": "approve", "role": "mixing"})
+    client.post(f"/manage/approvals/{spam['id']}", data={"action": "decline"})
+    with db.connect() as con:
+        assert db.pending_workers(con) == [] and db.worker(con, spam["id"]) is None
+        assert db.worker(con, rosa["id"])["role"] == "mixing"
+        client.post(f"/manage/approvals/{rosa['id']}", data={"action": "decline"})       # approved people can't be declined
+        assert db.worker(con, rosa["id"])
+    assert "Rosa Diaz" in anon.get("/").text
+    worker = TestClient(app)
+    assert worker.post(f"/signin/{rosa['id']}", data={"pin": "2468"}, follow_redirects=False).headers["location"] == f"/me/{rosa['id']}"
