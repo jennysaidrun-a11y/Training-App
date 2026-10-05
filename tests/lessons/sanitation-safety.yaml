@@ -1,0 +1,56 @@
+id: sanitation-safety
+title: Sanitation crew safety (chemicals, PPE, confined spaces)
+roles: [sanitation, sanitation-supervisor]
+version: 2026-09-25   # bump when the content changes enough that everyone must retake it
+reviewed_on: 2026-09-25   # last time a manager checked it against the cited rules
+summary: Safe use of cleaners and sanitizers, the gear to wear, and why tanks and silos need a permit.
+video: ""
+sections:
+  - heading: Cleaners and sanitizers
+    text: |
+      FDA rules require cleaning compounds and sanitizers to be safe and
+      adequate for the job, clearly labeled, and stored so they can't
+      contaminate food, food-contact surfaces or packaging. Mix and dilute only
+      as the label and procedure say. Never mix chemicals (bleach and acid or
+      ammonia make toxic gas).
+  - heading: Protective equipment
+    text: |
+      The company assesses the hazards of each job and provides the right
+      gear. Wear the goggles, face shield, gloves, apron and boots the job
+      calls for, and report gear that is damaged.
+  - heading: Confined spaces
+    text: |
+      Flour silos, tanks, large mixers and pits can be permit-required
+      confined spaces: hard to get out of and able to trap or suffocate you
+      (flour can engulf a person). Never enter one without the entry permit,
+      atmosphere testing, and an attendant outside.
+questions:
+  - after_section: 0
+    q: Can you mix two cleaners to make them stronger?
+    choices:
+      - "Yes, if they are both for floors"
+      - "No. Mix and dilute only as the label and procedure say"
+    answer: 1
+    why: Mixing chemicals can release toxic gas.
+  - after_section: 2
+    q: You need to clear a bridge of flour inside a silo. What do you do?
+    choices:
+      - Climb in quickly with a shovel
+      - Don't enter without the permit, testing and an attendant
+    answer: 1
+    why: Silos can be permit-required confined spaces with engulfment hazards.
+  - q: Who decides which protective gear the job needs?
+    choices:
+      - The company, based on a hazard assessment for that job
+      - Each worker for themselves
+    answer: 0
+    why: 29 CFR 1910.132 requires the employer to assess hazards and provide the gear.
+citations:
+  - 21 CFR 117.35
+  - 29 CFR 1910.132
+  - 8 CCR 3380
+  - 29 CFR 1910.146
+  - 8 CCR 5157
+sources:
+  - title: OSHA Confined Spaces
+    url: https://www.osha.gov/confined-spaces

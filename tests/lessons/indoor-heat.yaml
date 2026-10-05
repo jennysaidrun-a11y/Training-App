@@ -1,0 +1,43 @@
+id: indoor-heat
+title: Heat illness prevention indoors
+roles: [all]
+version: 2026-09-25   # bump when the content changes enough that everyone must retake it
+reviewed_on: 2026-09-25   # last time a manager checked it against the cited rules
+summary: California's indoor heat rule for hot work areas like ovens and proofers.
+video: ""
+sections:
+  - heading: When the rule applies
+    text: |
+      California's indoor heat rule applies when the temperature where people
+      work indoors reaches 82°F or more. Areas near ovens, fryers and proofers
+      can reach that.
+  - heading: Water, rest and shade
+    text: |
+      Fresh, cool drinking water is free and close by. Drink often: about a
+      quart an hour in the heat. You can take a cool-down rest in a cooler area
+      whenever you need to protect yourself from overheating.
+  - heading: Know the signs
+    text: |
+      Headache, dizziness, heavy sweating, cramps, nausea or confusion can be
+      signs of heat illness. Tell your supervisor right away if you or a
+      coworker has them. Confusion or fainting is an emergency.
+questions:
+  - after_section: 0
+    q: At what indoor temperature does California's indoor heat rule start to apply?
+    choices:
+      - 70°F
+      - 82°F
+      - 100°F
+    answer: 1
+    why: 8 CCR 3396 applies when the indoor temperature is 82°F or higher.
+  - q: A coworker by the oven is confused and stops sweating. What do you do?
+    choices:
+      - Tell them to take a break after the run
+      - Get your supervisor and emergency help right away
+    answer: 1
+    why: Confusion is a sign of heat stroke, a medical emergency.
+citations:
+  - 8 CCR 3396
+sources:
+  - title: Cal/OSHA indoor heat illness prevention
+    url: https://www.dir.ca.gov/dosh/heatillnessinfo.html

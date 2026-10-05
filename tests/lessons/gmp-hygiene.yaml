@@ -1,0 +1,59 @@
+id: gmp-hygiene
+title: Personal hygiene in a food plant (GMPs)
+roles: [all]
+version: 2026-09-25   # bump when the content changes enough that everyone must retake it
+reviewed_on: 2026-09-25   # last time a manager checked it against the cited rules
+summary: Handwashing, illness, jewelry, hair restraints and eating rules from the FDA food plant rules.
+video: ""
+sections:
+  - heading: Why it matters
+    text: |
+      FDA's Current Good Manufacturing Practice rules for human food say that
+      everyone who handles food or food-contact surfaces must be trained in
+      food hygiene and food safety, including why employee health and personal
+      hygiene matter.
+  - heading: Washing hands
+    text: |
+      Wash your hands thoroughly (and sanitize if required) before starting
+      work, after each time you leave your workstation, and any time your hands
+      may have become soiled or contaminated.
+  - heading: If you're sick
+    text: |
+      Anyone who has, or appears to have, an illness, open sore, infected wound
+      or other source of contamination must be kept away from work where food
+      or food-contact surfaces could be contaminated. Tell your supervisor
+      before your shift if you are sick.
+  - heading: What you wear and what you don't do
+    text: |
+      Wear clean outer garments, and hair nets, headbands, caps or beard
+      covers where required. Remove jewelry and other objects that could fall
+      into food or equipment. Don't eat, chew gum, drink or use tobacco where
+      food is exposed or where equipment and utensils are washed.
+questions:
+  - after_section: 1
+    q: When do you have to wash your hands?
+    choices:
+      - Only at the start of the shift
+      - Before starting work, after every absence from your station, and whenever they may be soiled
+      - Only after using the restroom
+    answer: 1
+    why: 21 CFR 117.10 lists all three moments.
+  - after_section: 2
+    q: You wake up with vomiting and diarrhea. What do you do?
+    choices:
+      - Come in and wear gloves
+      - Tell your supervisor before your shift so you are kept away from food
+    answer: 1
+    why: People with an illness that could contaminate food must be kept away from food operations.
+  - q: Where can you chew gum?
+    choices:
+      - Anywhere if your mouth is closed
+      - Not where food is exposed or where equipment is washed
+    answer: 1
+    why: Eating, gum, drinks and tobacco are kept out of areas with exposed food or washing.
+citations:
+  - 21 CFR 117.4
+  - 21 CFR 117.10
+sources:
+  - title: FDA Employees FIRST (food defense awareness for front-line workers)
+    url: https://www.fda.gov/food/food-defense-tools/employees-first-videos

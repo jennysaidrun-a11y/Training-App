@@ -170,6 +170,7 @@ def save_lesson(lesson):
     for k in ("topic", "translations"):     # optional; left out of the file when empty
         if lesson.get(k):
             data[k] = lesson[k]
+    LESSONS.mkdir(parents=True, exist_ok=True)   # git drops the folder once every lesson is deleted
     path = LESSONS / f"{data['id']}.yaml"
     path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100), encoding="utf-8")
     return path

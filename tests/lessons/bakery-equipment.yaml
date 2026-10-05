@@ -1,0 +1,44 @@
+id: bakery-equipment
+title: Mixers, sheeters, ovens and machine guards
+roles: [baking, mixing, sanitation, sanitation-supervisor]
+version: 2026-09-25   # bump when the content changes enough that everyone must retake it
+reviewed_on: 2026-09-25   # last time a manager checked it against the cited rules
+summary: Guards, safe reach and what to do before reaching into bakery machines.
+video: ""
+sections:
+  - heading: Guards stay on
+    text: |
+      OSHA has a standard just for bakery equipment, plus general machine
+      guarding rules. Guards protect you from the point of operation, nip
+      points (where rollers and belts meet) and rotating parts. Never run a
+      machine with a guard off or bypassed.
+  - heading: Never reach into a running machine
+    text: |
+      Don't reach into a mixer bowl, divider, sheeter or conveyor while it can
+      move. Stop it. If you have to put a hand or body part in to clear, clean
+      or adjust, lock it out first (see the lockout lesson).
+  - heading: Ovens and heat
+    text: |
+      Use the right gloves for hot pans and racks, keep the oven area clear,
+      and report any damaged burner, door or control right away.
+questions:
+  - after_section: 0
+    q: A guard on the sheeter is loose. What do you do?
+    choices:
+      - Keep running and hold it in place
+      - Stop the machine and report it
+    answer: 1
+    why: Machines don't run with a guard missing or bypassed.
+  - q: Dough is stuck in the mixer. What comes first?
+    choices:
+      - Reach in quickly while it's slowing down
+      - Stop it and lock it out before reaching in
+    answer: 1
+    why: Reaching in requires the machine to be locked out.
+citations:
+  - 29 CFR 1910.263
+  - 29 CFR 1910.212
+  - 8 CCR 4184
+sources:
+  - title: OSHA Machine Guarding
+    url: https://www.osha.gov/machine-guarding

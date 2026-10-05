@@ -16,13 +16,18 @@ from trainer import content, db, editor, research, rules  # noqa: E402
 from trainer.app import app  # noqa: E402
 
 
+SAMPLE_LESSONS = Path(__file__).parent / "lessons"
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """A private copy of content/ and a fresh database for each test."""
     shutil.copytree(content.CONTENT, tmp_path / "content")
     (tmp_path / "content" / "rules_status.json").unlink(missing_ok=True)
     shutil.rmtree(tmp_path / "content" / "trash", ignore_errors=True)
-    # Folders as shipped, so tests don't depend on how managers have arranged the live ones.
+    # Lessons and folders as shipped, so tests don't depend on what managers have changed in the live ones.
+    shutil.rmtree(tmp_path / "content" / "lessons", ignore_errors=True)
+    shutil.copytree(SAMPLE_LESSONS, tmp_path / "content" / "lessons")
     shutil.copy(Path(__file__).parent / "topics.yaml", tmp_path / "content" / "topics.yaml")
     monkeypatch.setattr(content, "CONTENT", tmp_path / "content")
     monkeypatch.setattr(content, "LESSONS", tmp_path / "content" / "lessons")
@@ -44,9 +49,16 @@ def client(env):
     return c
 
 
-def test_every_lesson_is_valid():
+@pytest.fixture(params=["live", "sample"])
+def any_lessons(request, monkeypatch):
+    """Runs a test on the live lessons (whatever managers have made) and on the sample set."""
+    if request.param == "sample":
+        monkeypatch.setattr(content, "LESSONS", SAMPLE_LESSONS)
+        assert len(content.load_lessons()) >= 9
+
+
+def test_every_lesson_is_valid(any_lessons):
     lessons = content.load_lessons()
-    assert len(lessons) >= 9
     assert not content.broken_lesson_files()
     roles = {r["id"] for r in content.load_roles()} | {"all"}
     for lid, l in lessons.items():
@@ -67,7 +79,7 @@ def test_citation_parsing():
     assert content.parse_citation("OSHA lockout") is None
 
 
-def test_questions_text_round_trip():
+def test_questions_text_round_trip(env):
     qs = content.load_lessons()["lockout-tagout"]["questions"]
     back, errors = content.questions_from_text(content.questions_to_text(qs))
     assert not errors
@@ -236,7 +248,7 @@ def test_manager_edits_a_lesson(client):
     assert r.json()["id"] == "brand-new-lesson" and "brand-new-lesson" in content.load_lessons()
 
 
-def test_slides_round_trip_every_lesson():
+def test_slides_round_trip_every_lesson(any_lessons):
     for lid, lesson in content.load_lessons().items():
         slides = editor.to_slides(lesson)
         sections, questions, errors = editor.from_slides(slides)
@@ -748,7 +760,7 @@ def test_translate_lesson(client, monkeypatch):
     assert client.post("/api/manage/lesson/forklifts/translate", json={"lang": "en"}).status_code == 400
 
 
-def test_translation_shape_is_checked(monkeypatch):
+def test_translation_shape_is_checked(env, monkeypatch):
     lesson = content.load_lessons()["forklifts"]
     short = json.dumps({"structured_output": {"title": "x", "summary": "", "sections": [], "questions": []}})
     monkeypatch.setattr(research, "mode", lambda: "cli")
@@ -982,3 +994,12 @@ def test_delete_lesson_goes_to_trash_and_comes_back(client, anon, env):
     client.post(f"/manage/trash/{content.trashed_lessons()[0]['file']}/purge")
     assert not content.trashed_lessons() and "forklifts" not in content.load_lessons()
     assert "allergens" in content.load_lessons()
+
+
+def test_new_lesson_after_every_lesson_was_deleted(client, env):
+    for lid in list(content.load_lessons()):
+        client.post(f"/manage/lesson/{lid}/delete")
+    shutil.rmtree(env / "content" / "lessons")                  # git drops the empty folder
+    assert client.get("/manage").status_code == 200
+    r = client.post("/api/manage/lesson/new", json=_deck(title="Fresh start"))
+    assert r.json()["id"] == "fresh-start" and list(content.load_lessons()) == ["fresh-start"]
