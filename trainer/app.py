@@ -398,6 +398,9 @@ def certificate(request: Request, cid: int):
     if not _can_see(request, c["worker_id"]):
         return RedirectResponse(f"/signin/{c['worker_id']}", status_code=303)
     lesson = content.load_lessons().get(c["lesson_id"]) or {"title": c["lesson_id"], "citations_parsed": []}
+    if c.get("lesson_title"):   # as it was when they passed it
+        lesson = {"title": c["lesson_title"],
+                  "citations_parsed": [{"ref": r.strip()} for r in (c.get("lesson_citations") or "").split(",") if r.strip()]}
     return render(request, "certificate.html", c=c, lesson=lesson, number=_certificate_number(c), provider=PROVIDER)
 
 

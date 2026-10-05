@@ -54,7 +54,10 @@ ADDED_COLUMNS = [("workers", "pin_hash", "TEXT"), ("workers", "lang", "TEXT"),
                  ("survey_answers", "comments", "TEXT NOT NULL DEFAULT ''"), ("survey_answers", "form", "TEXT NOT NULL DEFAULT ''"),
                  ("managers", "email", "TEXT"),
                  # Self sign-ups wait for a manager (approved = 0); everyone added before this is approved.
-                 ("workers", "approved", "INTEGER NOT NULL DEFAULT 1"), ("workers", "requested_on", "TEXT")]
+                 ("workers", "approved", "INTEGER NOT NULL DEFAULT 1"), ("workers", "requested_on", "TEXT"),
+                 # What the lesson was called and cited when it was taken, so the record stands
+                 # even after the lesson is renamed or deleted. Records are kept forever.
+                 ("completions", "lesson_title", "TEXT"), ("completions", "lesson_citations", "TEXT")]
 
 
 def db_path():
@@ -172,8 +175,10 @@ def record(con, wid, lesson, score):
     """Saves an attempt; returns (passed, completion id)."""
     passed = score >= PASS_MARK
     cur = con.execute(
-        "INSERT INTO completions (worker_id, lesson_id, score, passed, lesson_version, completed_at) VALUES (?,?,?,?,?,?)",
-        (wid, lesson["id"], score, int(passed), lesson.get("version"), dt.datetime.now().isoformat(timespec="seconds")),
+        "INSERT INTO completions (worker_id, lesson_id, score, passed, lesson_version, completed_at, lesson_title, lesson_citations)"
+        " VALUES (?,?,?,?,?,?,?,?)",
+        (wid, lesson["id"], score, int(passed), lesson.get("version"), dt.datetime.now().isoformat(timespec="seconds"),
+         lesson.get("title"), ", ".join(lesson.get("citations") or [])),
     )
     con.commit()
     return passed, cur.lastrowid

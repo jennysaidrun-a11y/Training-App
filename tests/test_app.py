@@ -1003,3 +1003,18 @@ def test_new_lesson_after_every_lesson_was_deleted(client, env):
     assert client.get("/manage").status_code == 200
     r = client.post("/api/manage/lesson/new", json=_deck(title="Fresh start"))
     assert r.json()["id"] == "fresh-start" and list(content.load_lessons()) == ["fresh-start"]
+
+
+def test_records_outlive_their_lesson(client, anon):
+    client.post("/manage/workers", data={"name": "Sam", "role": "packaging", "pin": "1234"})
+    with db.connect() as con:
+        sam = db.workers(con)[0]
+    anon.post(f"/signin/{sam['id']}", data={"pin": "1234"})
+    lesson = content.load_lessons()["forklifts"]
+    right = {i: q["answer"] for i, q in enumerate(lesson["questions"])}
+    cert = anon.post("/api/lesson/forklifts/finish", json={"answers": right}).json()["certificate"]
+    client.post("/manage/lesson/forklifts/delete")
+    client.post(f"/manage/trash/{content.trashed_lessons()[0]['file']}/purge")
+    page = anon.get(cert).text
+    assert lesson["title"] in page and lesson["citations"][0] in page
+    assert lesson["title"] in client.get(f"/me/{sam['id']}").text      # manager's view of the record
