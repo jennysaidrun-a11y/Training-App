@@ -426,7 +426,7 @@ def manage(request: Request):
         managers = db.managers(con)
     return render(request, "manage.html", lessons=lessons, flagged=flagged, progress=progress, inactive=inactive,
                   roles=content.load_roles(), status=status, broken=content.broken_lesson_files(), managers=managers,
-                  current_manager=auth.manager(request),
+                  current_manager=auth.manager(request), trash=content.trashed_lessons(),
                   groups=content.group_by_topic(list(lessons.values())))
 
 
@@ -874,6 +874,29 @@ def mark_reviewed(lesson_id: str):
     return RedirectResponse("/manage#lessons", status_code=303)
 
 
+@app.post("/manage/lesson/{lesson_id}/delete")
+def delete_lesson(lesson_id: str):
+    _get_lesson(lesson_id)
+    content.trash_lesson(lesson_id)
+    return RedirectResponse("/manage?trashed=1#trash", status_code=303)
+
+
+@app.post("/manage/trash/{name}/restore")
+def restore_lesson(name: str):
+    new_id = content.restore_lesson(name)
+    if not new_id:
+        raise HTTPException(404, "Not in the trash")
+    return RedirectResponse("/manage#lessons", status_code=303)
+
+
+@app.post("/manage/trash/{name}/purge")
+def purge_lesson(name: str):
+    if not content.purge_lesson(name):
+        raise HTTPException(404, "Not in the trash")
+    _sweep_media(content.load_lessons())
+    return RedirectResponse("/manage#trash", status_code=303)
+
+
 def _editor(request, lesson, is_new=False):
     status = rules.load_status().get("rules", {})
     return render(request, "edit.html", lesson=lesson, is_new=is_new, roles=content.load_roles(),
@@ -1219,7 +1242,8 @@ def _save_picture(ext, data):
 
 def _remove_unused_upload(video, lessons):
     """Deletes an old uploaded video once no lesson points to it."""
-    if not video.startswith("/media/") or any(l.get("video") == video for l in lessons.values()):
+    kept = list(lessons.values()) + [t["data"] for t in content.trashed_lessons()]
+    if not video.startswith("/media/") or any(l.get("video") == video for l in kept):
         return
     name = video.rsplit("/", 1)[1]
     if MEDIA_NAME.match(name):
@@ -1228,8 +1252,9 @@ def _remove_unused_upload(video, lessons):
 
 def _sweep_media(lessons, older_than_hours=24):
     """Deletes uploads nobody saved into a lesson (an editor closed without saving)."""
-    used = {l.get("video") for l in lessons.values()}
-    used |= {p for l in lessons.values() for s in l.get("sections", []) for p in s.get("images") or []}
+    kept = list(lessons.values()) + [t["data"] for t in content.trashed_lessons()]  # trash keeps its media
+    used = {l.get("video") for l in kept}
+    used |= {p for l in kept for s in l.get("sections") or [] for p in s.get("images") or s.get("image") and [s["image"]] or []}
     cutoff = time.time() - older_than_hours * 3600
     for path in media_dir().iterdir():
         if MEDIA_NAME.match(path.name) and f"/media/{path.name}" not in used and path.stat().st_mtime < cutoff:

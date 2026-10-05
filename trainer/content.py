@@ -175,6 +175,76 @@ def save_lesson(lesson):
     return path
 
 
+# ---- Trash: a deleted lesson's file moves to content/trash/ until it's restored
+# or deleted for good. Workers' past results stay in the database either way.
+
+def trash_dir():
+    return LESSONS.parent / "trash"
+
+
+def trash_lesson(lesson_id):
+    src = LESSONS / f"{lesson_id}.yaml"
+    if not src.is_file():
+        return False
+    data = yaml.safe_load(src.read_text(encoding="utf-8")) or {}
+    data["deleted_on"] = now_stamp()
+    trash_dir().mkdir(parents=True, exist_ok=True)
+    dest = trash_dir() / src.name
+    n = 2
+    while dest.exists():
+        dest, n = trash_dir() / f"{lesson_id}-{n}.yaml", n + 1
+    dest.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100), encoding="utf-8")
+    src.unlink()
+    return True
+
+
+def trashed_lessons():
+    """[{file, id, title, deleted_on, data}], newest deletion first."""
+    out = []
+    folder = trash_dir()
+    for path in sorted(folder.glob("*.yaml")) if folder.is_dir() else []:
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        out.append({"file": path.stem, "id": data.get("id", path.stem), "title": data.get("title") or path.stem,
+                    "deleted_on": str(data.get("deleted_on") or ""), "data": data})
+    return sorted(out, key=lambda t: t["deleted_on"], reverse=True)
+
+
+def _trash_path(name):
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", name or ""):
+        return None
+    path = trash_dir() / f"{name}.yaml"
+    return path if path.is_file() else None
+
+
+def restore_lesson(name):
+    """Puts a trashed lesson back. If a lesson with its id exists now, it gets a new id."""
+    path = _trash_path(name)
+    if not path:
+        return None
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data.pop("deleted_on", None)
+    base = data.get("id") or path.stem
+    new_id, n = base, 2
+    while (LESSONS / f"{new_id}.yaml").exists():
+        new_id, n = f"{base}-{n}", n + 1
+    data["id"] = new_id
+    LESSONS.mkdir(parents=True, exist_ok=True)
+    (LESSONS / f"{new_id}.yaml").write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100),
+                                            encoding="utf-8")
+    path.unlink()
+    return new_id
+
+
+def purge_lesson(name):
+    path = _trash_path(name)
+    if path:
+        path.unlink()
+    return bool(path)
+
+
 def slugify(text):
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "lesson"
 

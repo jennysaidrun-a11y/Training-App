@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+from pathlib import Path
 import time
 
 import pytest
@@ -20,6 +21,9 @@ def env(tmp_path, monkeypatch):
     """A private copy of content/ and a fresh database for each test."""
     shutil.copytree(content.CONTENT, tmp_path / "content")
     (tmp_path / "content" / "rules_status.json").unlink(missing_ok=True)
+    shutil.rmtree(tmp_path / "content" / "trash", ignore_errors=True)
+    # Folders as shipped, so tests don't depend on how managers have arranged the live ones.
+    shutil.copy(Path(__file__).parent / "topics.yaml", tmp_path / "content" / "topics.yaml")
     monkeypatch.setattr(content, "CONTENT", tmp_path / "content")
     monkeypatch.setattr(content, "LESSONS", tmp_path / "content" / "lessons")
     monkeypatch.setattr(rules, "STATUS_PATH", tmp_path / "content" / "rules_status.json")
@@ -946,3 +950,35 @@ def test_workers_sign_up_and_wait_for_approval(client, anon):
     assert "Rosa Diaz" in anon.get("/").text
     worker = TestClient(app)
     assert worker.post(f"/signin/{rosa['id']}", data={"pin": "2468"}, follow_redirects=False).headers["location"] == f"/me/{rosa['id']}"
+
+
+def test_delete_lesson_goes_to_trash_and_comes_back(client, anon, env):
+    client.post("/manage/workers", data={"name": "Sam", "role": "packaging", "pin": "1234"})
+    with db.connect() as con:
+        sam = db.workers(con)[0]
+    anon.post(f"/signin/{sam['id']}", data={"pin": "1234"})
+    right = {i: q["answer"] for i, q in enumerate(content.load_lessons()["forklifts"]["questions"])}
+    cert = anon.post("/api/lesson/forklifts/finish", json={"answers": right}).json()["certificate"]
+
+    assert anon.post("/manage/lesson/forklifts/delete", follow_redirects=False).status_code in (303, 401)
+    assert "forklifts" in content.load_lessons()                      # workers can't delete
+    r = client.post("/manage/lesson/forklifts/delete", follow_redirects=False)
+    assert r.status_code == 303 and "forklifts" not in content.load_lessons()
+    page = client.get("/manage").text
+    assert "Put back" in page and "Forklifts" in page.split('id="trash"')[1]
+    # Pages that list past results still work while the lesson is in the trash.
+    for path in ["/manage", "/manage/dashboard", "/manage/requirements", f"/me/{sam['id']}"]:
+        assert client.get(path).status_code == 200, path
+    assert anon.get(f"/me/{sam['id']}").status_code == 200
+    assert anon.get(cert).status_code in (200, 404)
+    assert client.post("/manage/lesson/forklifts/delete").status_code == 404
+
+    name = content.trashed_lessons()[0]["file"]
+    client.post(f"/manage/trash/{name}/restore")
+    assert "forklifts" in content.load_lessons() and not content.trashed_lessons()
+
+    client.post("/manage/lesson/forklifts/delete")
+    assert client.post("/manage/trash/..%2Flessons%2Fallergens/purge").status_code == 404
+    client.post(f"/manage/trash/{content.trashed_lessons()[0]['file']}/purge")
+    assert not content.trashed_lessons() and "forklifts" not in content.load_lessons()
+    assert "allergens" in content.load_lessons()
