@@ -31,5 +31,5 @@ Cal/OSHA (8 CCR, Title 8) apply.
   checks (public domain, CC0, CC BY, CC BY-SA; `app._settle_pictures`), saved to `data/media` and credited in sources.
 - The user never commits, pushes or rebuilds by hand: `update.sh` (started detached
   from the Codespace's postStartCommand) auto-saves `content/` and pulls new code every minute. On the Windows work PC
-  the same job is `update.ps1`, started by double-clicking `start.bat` (http://localhost:8001). Keep both working and in step.
+  the same job is `update.ps1`, started by double-clicking `start.bat` (http://localhost:8001); it also puts a "Training App" desktop shortcut (`open.ps1`: start if needed, then open the browser). Keep both working and in step.
 - Run `python -m pytest` before committing.

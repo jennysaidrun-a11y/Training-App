@@ -1,6 +1,7 @@
 @echo off
 rem Starts the training app on this PC (http://localhost:8001) and keeps it updated.
 rem Double-click this file. It runs in the background; closing this window is fine.
+rem The "Training App" desktop shortcut (open.ps1) does the same and opens the browser.
 cd /d "%~dp0"
 powershell -NoProfile -Command "if (Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.CommandLine -match 'update\.ps1' }) { exit 1 }"
 if errorlevel 1 (

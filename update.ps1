@@ -86,6 +86,24 @@ function Sync {
   }
 }
 
+# One-click "Training App" shortcut on the desktop (made once; delete it and it stays gone).
+$made = Join-Path $PSScriptRoot "data\desktop_shortcut_made"
+if (-not (Test-Path $made)) {
+  try {
+    $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath("Desktop")) "Training App.lnk"))
+    $lnk.TargetPath = "powershell.exe"
+    $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSScriptRoot\open.ps1`""
+    $lnk.WorkingDirectory = $PSScriptRoot
+    $lnk.IconLocation = "$PSScriptRoot\trainer\static\app.ico"
+    $lnk.WindowStyle = 7   # minimized
+    $lnk.Description = "Start and open the United Bakery training app"
+    $lnk.Save()
+    New-Item -ItemType Directory -Force data | Out-Null
+    Set-Content $made (Get-Date -Format s)
+    Write-Output "Made the Training App shortcut on the desktop."
+  } catch { Write-Output "Couldn't make the desktop shortcut: $_" }
+}
+
 & $Py -m pip install -q -r requirements.txt
 Sync
 Start-App
