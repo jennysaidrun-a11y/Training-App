@@ -1,23 +1,19 @@
 {% extends "base.html" %}
 {% from "icons.html" import icon %}
-{% block title %}Manager · Training · United Bakery{% endblock %}
+{% block title %}People · Training · United Bakery{% endblock %}
 {% block body %}
 {% set needs = [] %}{% for lid, f in flagged.items() if f %}{% set _ = needs.append(lid) %}{% endfor %}
 {% set ns = namespace(done=0, total=0) %}{% for p in progress %}{% set ns.done = ns.done + p.done %}{% set ns.total = ns.total + p.total %}{% endfor %}
 {% include "_manager_nav.html" %}
+{% if pending_count %}<p class="note">{{ pending_count }} {{ "person is" if pending_count == 1 else "people are" }} waiting for you to approve their account. <a href="/manage/approvals">Review</a></p>{% endif %}
 <div class="page-head">
-  <h1>People &amp; lessons</h1>
-  <a class="btn" href="/manage/lesson/new">{{ icon("plus") }} New lesson</a>
+  <h1>People</h1>
 </div>
-{% if request.query_params.get('saved') %}<p class="note">Saved. Everyone sees the new version now.</p>{% endif %}
 {% if request.query_params.get('pin_bad') %}<p class="note bad">A worker PIN must be exactly 4 digits.</p>{% endif %}
 {% if request.query_params.get('pin_set') %}<p class="note">PIN saved. Tell the person their new PIN.</p>{% endif %}
 {% set mbad = request.query_params.get('manager_bad') %}{% if mbad == 'email' %}<p class="note bad">Type a work email, like name@unitedbakery.com.</p>{% elif mbad == 'taken' %}<p class="note bad">Another manager already uses that email.</p>{% elif mbad %}<p class="note bad">A manager needs a name, a work email and a 6-digit PIN.</p>{% endif %}
-{% if request.query_params.get('trashed') %}<p class="note">Lesson moved to the trash. You can put it back from the Trash list below.</p>{% endif %}
 {% if request.query_params.get('manager_saved') %}<p class="note">Saved.</p>{% endif %}
 {% if request.query_params.get('manager_added') %}<p class="note">Manager added.</p>{% endif %}
-{% if request.query_params.get('checking') %}<p class="note">Checking the rules now. Refresh in a minute to see the results.</p>{% endif %}
-{% for name, err in broken %}<p class="note bad">The lesson file {{ name }} can't be read ({{ err }}). It's hidden until it's fixed.</p>{% endfor %}
 
 <div class="stats">
   <div class="stat"><span class="ico" style="background:var(--blue)">{{ icon("users") }}</span><div><b>{{ progress | length }}</b><span>People</span></div></div>
@@ -26,25 +22,6 @@
   <div class="stat"><span class="ico" style="background:var(--gold)">{{ icon("book") }}</span><div><b>{{ lessons | length }}</b><span>Lessons</span></div></div>
 </div>
 
-<section class="section" id="rules">
-  <div class="section-head">
-    <h2>Needs your review {% if needs %}<span class="pill warn">{{ needs | length }}</span>{% else %}<span class="pill done">All current</span>{% endif %}</h2>
-    <form method="post" action="/manage/check"><button class="ghost small">{{ icon("refresh") }} Check now</button></form>
-  </div>
-  <p class="muted">Rules last checked {{ status.checked_at[:16].replace("T", " at ") ~ " UTC" if status.checked_at else "not yet" }}. The app checks every day by itself.</p>
-  <div class="stack">
-  {% for lid in needs %}{% set l = lessons[lid] %}
-  <div class="card flag">
-    <h3>{{ l.title }}</h3>
-    <ul>{% for f in flagged[lid] %}<li>{% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.ref }}</a>{% else %}{{ f.ref }}{% endif %}: {{ f.why }}</li>{% endfor %}</ul>
-    <div class="row">
-      <a class="btn small" href="/manage/lesson/{{ lid }}">Update lesson</a>
-      <form method="post" action="/manage/lesson/{{ lid }}/reviewed"><button class="ghost small">Still correct</button></form>
-    </div>
-  </div>
-  {% endfor %}
-  </div>
-</section>
 
 <section class="section" id="people">
   <div class="section-head"><h2>People</h2></div>
@@ -126,50 +103,5 @@
   </form>
 </section>
 
-<section class="section" id="lessons">
-  <div class="section-head"><h2>Lessons</h2></div>
-  <p class="muted">Grouped by folder. Change folders on the <a href="/manage/topics">Topics</a> page.</p>
-  {% for topic, members in groups %}{% if members %}
-  <h3 class="folder-head">{{ topic.name }}</h3>
-  <div class="list">
-    {% for l in members %}
-    <div class="item">
-      <span class="lesson-ico{{ ' warn' if flagged[l.id] else '' }}">{{ icon("alert" if flagged[l.id] else "book") }}</span>
-      <div class="grow">
-        <a class="title" href="/manage/lesson/{{ l.id }}">{{ l.title }}</a>
-        <div class="meta">{% if 'all' in l.roles %}Everyone{% elif not l.roles %}Not required for anyone{% else %}{% for r in l.roles %}{{ role_names.get(r, r) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
-          · {{ l.questions | length }} questions · {{ "video" if l.video else "no video" }} · checked {{ l.reviewed_on[:10] }}</div>
-      </div>
-      <a class="btn ghost small" href="/lesson/{{ l.id }}">Preview</a>
-      <form method="post" action="/manage/lesson/{{ l.id }}/delete" onsubmit="return confirm('Move this lesson to the trash? You can put it back later.')">
-        <button class="ghost small danger" aria-label="Delete {{ l.title }}" title="Delete">{{ icon("trash") }}</button>
-      </form>
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}{% endfor %}
-</section>
 
-<section class="section" id="trash">
-  <div class="section-head"><h2>{{ icon("trash") }} Trash</h2></div>
-  {% if trash %}
-  <p class="muted">Deleted lessons wait here. Workers' past results for them are kept either way.</p>
-  <div class="list">
-    {% for t in trash %}
-    <div class="item">
-      <div class="grow">
-        <span class="title">{{ t.title }}</span>
-        <div class="meta">Deleted {{ t.deleted_on[:10] }}</div>
-      </div>
-      <form method="post" action="/manage/trash/{{ t.file }}/restore"><button class="ghost small">{{ icon("redo") }} Put back</button></form>
-      <form method="post" action="/manage/trash/{{ t.file }}/purge" onsubmit="return confirm('Delete this lesson for good? This can\'t be undone.')">
-        <button class="ghost small danger">Delete for good</button>
-      </form>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p class="muted">The trash is empty. Deleted lessons show up here so you can put them back.</p>
-  {% endif %}
-</section>
 {% endblock %}

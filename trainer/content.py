@@ -71,6 +71,14 @@ def save_topics(topics):
     (CONTENT / "topics.yaml").write_text(header + yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100), encoding="utf-8")
 
 
+def topic_name(lesson_id, topics=None):
+    """The folder a lesson sits in now ("Other lessons" when none)."""
+    for t in load_topics() if topics is None else topics:
+        if lesson_id in t["lessons"]:
+            return t["name"]
+    return OTHER_TOPIC["name"]
+
+
 def group_by_topic(lessons, topics=None):
     """[(topic, [lessons in folder order])], empty folders included, then Other."""
     topics = load_topics() if topics is None else topics

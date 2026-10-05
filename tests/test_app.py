@@ -179,7 +179,7 @@ def test_rule_change_flags_lesson_and_review_clears_it(client, env):
     rules.run_check({"lockout-tagout": lesson}, get=_fake_get({"1910.147": "2099-01-01"}, "§3314. New text"))
     flags = rules.lesson_flags(lesson, rules.load_status())
     assert {f["ref"] for f in flags} == {"29 CFR 1910.147", "8 CCR 3314"}
-    assert "Needs your review" in client.get("/manage").text
+    assert "Needs your review" in client.get("/manage/topics").text
 
     client.post("/manage/lesson/lockout-tagout/reviewed")
     lesson = content.load_lessons()["lockout-tagout"]
@@ -274,7 +274,7 @@ def test_pages_render(client):
 def test_broken_lesson_file_does_not_break_app(client, env):
     (env / "content" / "lessons" / "oops.yaml").write_text("title: [unclosed")
     assert client.get("/manage").status_code == 200
-    assert "oops.yaml" in client.get("/manage").text
+    assert "oops.yaml" in client.get("/manage/topics").text
 
 
 def test_status_file_is_valid_json():
@@ -976,7 +976,7 @@ def test_delete_lesson_goes_to_trash_and_comes_back(client, anon, env):
     assert "forklifts" in content.load_lessons()                      # workers can't delete
     r = client.post("/manage/lesson/forklifts/delete", follow_redirects=False)
     assert r.status_code == 303 and "forklifts" not in content.load_lessons()
-    page = client.get("/manage").text
+    page = client.get("/manage/topics").text
     assert "Put back" in page and "Forklifts" in page.split('id="trash"')[1]
     # Pages that list past results still work while the lesson is in the trash.
     for path in ["/manage", "/manage/dashboard", "/manage/requirements", f"/me/{sam['id']}"]:
@@ -1042,8 +1042,21 @@ def test_training_records_page_and_download(client, anon):
     r = client.get("/manage/records.csv")
     assert r.headers["content-type"].startswith("text/csv") and "attachment" in r.headers["content-disposition"]
     lines = r.text.lstrip("﻿").splitlines()
-    assert lines[0].startswith("Name,Position,Lesson") and len(lines) == 3
-    assert any(l.startswith("'=cmd,") for l in lines)                  # no spreadsheet formulas
+    assert lines[0].startswith("Topic,Name,Position,Lesson") and len(lines) == 3
+    assert any(",'=cmd," in l for l in lines)                  # no spreadsheet formulas
     assert lesson["title"] in r.text and "UB-" in r.text
     assert anon.get("/manage/records", follow_redirects=False).status_code == 303
     assert anon.get("/manage/records.csv", follow_redirects=False).status_code in (303, 401)
+    # Records follow the lesson folders: grouped under each folder, and filtered by one.
+    assert '📁 Machines and equipment' in page and lines[1].startswith("Machines and equipment,")
+    assert client.get("/manage/records?topic=Machines+and+equipment").text.count("Passed</span>") == 2
+    assert client.get("/manage/records?topic=Food+safety").text.count("Passed</span>") == 0
+
+
+def test_manager_has_four_tabs(client):
+    nav = client.get("/manage").text.split('class="subnav"')[1].split("</nav>")[0]
+    assert [a.split(">")[1].split("<")[0].strip() for a in nav.split("<a ")[1:]] == ["Dashboard", "Lessons", "People", "Records"]
+    page = client.get("/manage/topics").text
+    assert "Folders &amp; lessons" in page and "Who takes what" in page and 'id="trash"' in page and "New lesson" in page
+    assert 'class="chips-nav"' in client.get("/manage/requirements").text
+    assert 'class="chips-nav"' not in client.get("/manage").text

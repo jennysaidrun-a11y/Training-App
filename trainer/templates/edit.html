@@ -5,11 +5,11 @@
 {% block main_class %}studio{% endblock %}
 {% block body %}
 <div class="studio-bar">
-  <a href="/manage#lessons" class="back">← Manager</a>
+  <a href="/manage/topics" class="back">← Lessons</a>
   <h1 id="deck-title">{{ "New lesson" if is_new else lesson.title }}</h1>
   <span class="grow"></span>
   {% if not is_new %}<a class="btn ghost small" href="/lesson/{{ lesson.id }}" target="_blank" rel="noopener">{{ icon("play") }} Preview</a>{% endif %}
-  {% if not is_new %}<form method="post" action="/manage/lesson/{{ lesson.id }}/delete" onsubmit="return confirm('Move this lesson to the trash? You can put it back from the Manager page.')"><button class="ghost small danger" title="Delete lesson">{{ icon("trash") }} Delete</button></form>{% endif %}
+  {% if not is_new %}<form method="post" action="/manage/lesson/{{ lesson.id }}/delete" onsubmit="return confirm('Move this lesson to the trash? You can put it back from the Trash on the Lessons page.')"><button class="ghost small danger" title="Delete lesson">{{ icon("trash") }} Delete</button></form>{% endif %}
   <button type="button" class="small blue ask-toggle" id="ask-open">{{ icon("star") }} Ask Claude</button>
 </div>
 

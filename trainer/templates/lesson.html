@@ -3,7 +3,7 @@
 {% block title %}{{ lesson.title }} · Training · United Bakery{% endblock %}
 {% block body_class %}focus{% endblock %}
 {% block body %}
-{% set back = "/me/" ~ person.id if person else "/manage#lessons" %}
+{% set back = "/me/" ~ person.id if person else "/manage/topics" %}
 <div class="lesson-bar">
   <a class="close" href="{{ back }}" id="close" aria-label="Leave the lesson">{{ icon("x") }}</a>
   <div class="meter light" role="progressbar" aria-label="Lesson progress"><span id="progress" style="width:0%"></span></div>

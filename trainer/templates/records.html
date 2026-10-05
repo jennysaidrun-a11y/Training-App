@@ -11,9 +11,14 @@
     <button type="button" class="small" onclick="window.print()">Print or save as PDF</button>
   </div>
 </div>
-<p class="muted no-print">Every training anyone has passed, kept forever, including people who no longer work here. Use the filters to show one person, position or lesson, for example for an inspection.</p>
+<p class="muted no-print">Every training anyone has passed, kept forever, including people who no longer work here. Grouped by your lesson folders. Use the filters to show one topic, person, position or lesson, for example for an inspection.</p>
 
 <form method="get" class="filters card no-print">
+  <label class="field"><span class="lbl">Topic</span>
+    <select name="topic" onchange="this.form.submit()">
+      <option value="">All topics</option>
+      {% for f in folders %}<option value="{{ f }}" {{ 'selected' if f == topic else '' }}>{{ f }}</option>{% endfor %}
+    </select></label>
   <label class="field"><span class="lbl">Person</span>
     <select name="person" onchange="this.form.submit()">
       <option value="0">Everyone</option>
@@ -46,6 +51,7 @@
 <div class="table-wrap"><table class="grid records">
   <thead><tr><th>Name</th><th>Position</th><th>Lesson</th><th>Date</th><th>Score</th><th>Result</th><th>Certificate</th><th>Rules</th></tr></thead>
   <tbody>{% for r in rows %}
+    {% if loop.first or r.topic != loop.previtem.topic %}<tr class="topic-row"><th colspan="8">📁 {{ r.topic }}</th></tr>{% endif %}
     <tr>
       <td>{{ r.name }}{% if not r.active %} <span class="pill">left</span>{% endif %}</td>
       <td>{{ r.position }}</td>

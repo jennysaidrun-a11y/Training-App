@@ -57,7 +57,8 @@ ADDED_COLUMNS = [("workers", "pin_hash", "TEXT"), ("workers", "lang", "TEXT"),
                  ("workers", "approved", "INTEGER NOT NULL DEFAULT 1"), ("workers", "requested_on", "TEXT"),
                  # What the lesson was called and cited when it was taken, so the record stands
                  # even after the lesson is renamed or deleted. Records are kept forever.
-                 ("completions", "lesson_title", "TEXT"), ("completions", "lesson_citations", "TEXT")]
+                 ("completions", "lesson_title", "TEXT"), ("completions", "lesson_citations", "TEXT"),
+                 ("completions", "lesson_topic", "TEXT")]
 
 
 def db_path():
@@ -175,10 +176,10 @@ def record(con, wid, lesson, score):
     """Saves an attempt; returns (passed, completion id)."""
     passed = score >= PASS_MARK
     cur = con.execute(
-        "INSERT INTO completions (worker_id, lesson_id, score, passed, lesson_version, completed_at, lesson_title, lesson_citations)"
-        " VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO completions (worker_id, lesson_id, score, passed, lesson_version, completed_at, lesson_title, lesson_citations,"
+        " lesson_topic) VALUES (?,?,?,?,?,?,?,?,?)",
         (wid, lesson["id"], score, int(passed), lesson.get("version"), dt.datetime.now().isoformat(timespec="seconds"),
-         lesson.get("title"), ", ".join(lesson.get("citations") or [])),
+         lesson.get("title"), ", ".join(lesson.get("citations") or []), lesson.get("topic_name")),
     )
     con.commit()
     return passed, cur.lastrowid

@@ -362,7 +362,7 @@ async def finish(lesson_id: str, request: Request):
         with db.connect() as con:
             if _locked_for(con, who, lesson_id):
                 raise HTTPException(403, "Finish the lessons before this one first.")
-            passed, cid = db.record(con, who["id"], lesson, score)
+            passed, cid = db.record(con, who["id"], {**lesson, "topic_name": content.topic_name(lesson["id"])}, score)
             out["saved"] = True
             if passed:
                 out["certificate"] = f"/certificate/{cid}"
@@ -624,10 +624,12 @@ def dashboard(request: Request, role: str = "", lesson: str = ""):
                   focus=focus, columns=columns, matrix=matrix, totals=totals, who_did=who_did, survey=survey, charts=charts)
 
 
-def _records(role="", person=0, lesson="", result="passed"):
+def _records(role="", person=0, lesson="", result="passed", topic=""):
     """Training records (every attempt ever saved; nothing is ever deleted), oldest first."""
     lessons = {t["id"]: t["data"] for t in content.trashed_lessons()} | content.load_lessons()  # trashed ones still name old records
     role_names = content.role_names()
+    topics = content.load_topics()
+    order = {t["name"]: i for i, t in enumerate(topics)}
     with db.connect() as con:
         people = {w["id"]: w for w in db.workers(con, active_only=False)}
         rows = []
@@ -637,7 +639,13 @@ def _records(role="", person=0, lesson="", result="passed"):
                     or (lesson and a["lesson_id"] != lesson) or (result == "passed" and not a["passed"]):
                 continue
             live = lessons.get(a["lesson_id"]) or {}
-            rows.append({
+            # The folder it's in now; a lesson deleted for good keeps the folder it was in when taken.
+            folder = content.topic_name(a["lesson_id"], topics)
+            if folder == content.OTHER_TOPIC["name"] and a["lesson_id"] not in lessons:
+                folder = a.get("lesson_topic") or folder
+            if topic and folder != topic:
+                continue
+            rows.append({"topic": folder,
                 "name": a["name"], "position": role_names.get(a["role"], a["role"]), "active": bool(w["active"]),
                 "lesson": a.get("lesson_title") or live.get("title") or a["lesson_id"],
                 "version": a.get("lesson_version") or "", "date": a["completed_at"][:16].replace("T", " "),
@@ -646,22 +654,27 @@ def _records(role="", person=0, lesson="", result="passed"):
                 "cert_link": f"/certificate/{a['id']}" if a["passed"] else "",
                 "rules": a.get("lesson_citations") or ", ".join(live.get("citations") or []),
             })
+    rows.sort(key=lambda r: order.get(r["topic"], len(order)))   # by folder, oldest first within each
     return rows
 
 
-RECORD_COLUMNS = [("Name", "name"), ("Position", "position"), ("Lesson", "lesson"), ("Date", "date"),
+RECORD_COLUMNS = [("Topic", "topic"), ("Name", "name"), ("Position", "position"), ("Lesson", "lesson"), ("Date", "date"),
                   ("Score %", "score"), ("Result", "result"), ("Certificate", "certificate"),
                   ("Lesson version", "version"), ("Rules", "rules"), ("Still employed", "employed")]
 
 
 @app.get("/manage/records", response_class=HTMLResponse)
-def records_page(request: Request, role: str = "", person: int = 0, lesson: str = "", result: str = "passed"):
+def records_page(request: Request, role: str = "", person: int = 0, lesson: str = "", result: str = "passed",
+                 topic: str = ""):
     with db.connect() as con:
         people = sorted(db.workers(con, active_only=False), key=lambda w: w["name"].lower())
     lesson_ids = {}
     for lid, title in _record_lessons():
         lesson_ids.setdefault(lid, title)
-    return render(request, "records.html", rows=_records(role, person, lesson, result), roles=content.load_roles(),
+    rows = _records(role, person, lesson, result, topic)
+    folders = [t["name"] for t in content.load_topics()] + [content.OTHER_TOPIC["name"]]
+    folders += sorted({r["topic"] for r in _records(result="all")} - set(folders))
+    return render(request, "records.html", rows=rows, roles=content.load_roles(), folders=folders, topic=topic,
                   people=people, lesson_choices=sorted(lesson_ids.items(), key=lambda kv: kv[1].lower()),
                   role=role, person=person, lesson=lesson, result=result, provider=PROVIDER,
                   printed=dt.datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -678,13 +691,13 @@ def _record_lessons():
 
 
 @app.get("/manage/records.csv")
-def records_csv(role: str = "", person: int = 0, lesson: str = "", result: str = "passed"):
+def records_csv(role: str = "", person: int = 0, lesson: str = "", result: str = "passed", topic: str = ""):
     import csv
     import io
     buf = io.StringIO()
     out = csv.writer(buf)
     out.writerow([c for c, _ in RECORD_COLUMNS])
-    for r in _records(role, person, lesson, result):
+    for r in _records(role, person, lesson, result, topic):
         r = {**r, "result": "Passed" if r["passed"] else "Not passed", "employed": "Yes" if r["active"] else "No"}
         # A leading = + - @ would make Excel run the cell as a formula.
         out.writerow([("'" + str(v)) if str(v)[:1] in "=+-@" else v for v in (r[k] for _, k in RECORD_COLUMNS)])
@@ -720,9 +733,13 @@ async def save_requirements(request: Request):
 
 @app.get("/manage/topics", response_class=HTMLResponse)
 def topics_page(request: Request):
-    lessons = list(content.load_lessons().values())
+    lessons = content.load_lessons()
     topics = content.load_topics()
-    return render(request, "topics.html", groups=content.group_by_topic(lessons, topics), topics=topics, lang="en")
+    status = rules.load_status()
+    return render(request, "topics.html", groups=content.group_by_topic(list(lessons.values()), topics), topics=topics,
+                  lang="en", lessons=lessons, status=status, trash=content.trashed_lessons(),
+                  flagged={lid: rules.lesson_flags(l, status) for lid, l in lessons.items()},
+                  broken=content.broken_lesson_files())
 
 
 @app.post("/manage/topics")
@@ -927,7 +944,7 @@ def manager_pin(mid: int, pin: str = Form("")):
 @app.post("/manage/check")
 def manage_check():
     threading.Thread(target=check_rules_now, daemon=True).start()
-    return RedirectResponse("/manage?checking=1#rules", status_code=303)
+    return RedirectResponse("/manage/topics?checking=1#rules", status_code=303)
 
 
 @app.get("/rules", response_class=HTMLResponse)
@@ -946,14 +963,14 @@ def mark_reviewed(lesson_id: str):
     lesson = _get_lesson(lesson_id)
     lesson["reviewed_on"] = content.now_stamp()
     content.save_lesson(lesson)
-    return RedirectResponse("/manage#lessons", status_code=303)
+    return RedirectResponse("/manage/topics", status_code=303)
 
 
 @app.post("/manage/lesson/{lesson_id}/delete")
 def delete_lesson(lesson_id: str):
     _get_lesson(lesson_id)
     content.trash_lesson(lesson_id)
-    return RedirectResponse("/manage?trashed=1#trash", status_code=303)
+    return RedirectResponse("/manage/topics?trashed=1#trash", status_code=303)
 
 
 @app.post("/manage/trash/{name}/restore")
@@ -961,7 +978,7 @@ def restore_lesson(name: str):
     new_id = content.restore_lesson(name)
     if not new_id:
         raise HTTPException(404, "Not in the trash")
-    return RedirectResponse("/manage#lessons", status_code=303)
+    return RedirectResponse("/manage/topics", status_code=303)
 
 
 @app.post("/manage/trash/{name}/purge")
@@ -969,7 +986,7 @@ def purge_lesson(name: str):
     if not content.purge_lesson(name):
         raise HTTPException(404, "Not in the trash")
     _sweep_media(content.load_lessons())
-    return RedirectResponse("/manage#trash", status_code=303)
+    return RedirectResponse("/manage/topics#trash", status_code=303)
 
 
 def _editor(request, lesson, is_new=False):

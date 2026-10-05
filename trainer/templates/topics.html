@@ -1,9 +1,37 @@
 {% extends "base.html" %}
 {% from "icons.html" import icon %}
-{% block title %}Topics · Training · United Bakery{% endblock %}
+{% block title %}Lessons · Training · United Bakery{% endblock %}
 {% block body %}
+{% set needs = [] %}{% for lid, f in flagged.items() if f %}{% set _ = needs.append(lid) %}{% endfor %}
 {% include "_manager_nav.html" %}
-<div class="page-head"><h1>Topics</h1><span class="save-note muted" id="save-note" role="status" aria-live="polite"></span></div>
+<div class="page-head"><h1>Lessons</h1>
+  <a class="btn" href="/manage/lesson/new">{{ icon("plus") }} New lesson</a></div>
+{% if request.query_params.get('saved') %}<p class="note">Saved. Everyone sees the new version now.</p>{% endif %}
+{% if request.query_params.get('trashed') %}<p class="note">Lesson moved to the trash. You can put it back from the Trash list below.</p>{% endif %}
+{% if request.query_params.get('checking') %}<p class="note">Checking the rules now. Refresh in a minute to see the results.</p>{% endif %}
+{% for name, err in broken %}<p class="note bad">The lesson file {{ name }} can't be read ({{ err }}). It's hidden until it's fixed.</p>{% endfor %}
+<section class="section" id="rules">
+  <div class="section-head">
+    <h2>Needs your review {% if needs %}<span class="pill warn">{{ needs | length }}</span>{% else %}<span class="pill done">All current</span>{% endif %}</h2>
+    <form method="post" action="/manage/check"><button class="ghost small">{{ icon("refresh") }} Check now</button></form>
+  </div>
+  <p class="muted">Rules last checked {{ status.checked_at[:16].replace("T", " at ") ~ " UTC" if status.checked_at else "not yet" }}. The app checks every day by itself.</p>
+  <div class="stack">
+  {% for lid in needs %}{% set l = lessons[lid] %}
+  <div class="card flag">
+    <h3>{{ l.title }}</h3>
+    <ul>{% for f in flagged[lid] %}<li>{% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.ref }}</a>{% else %}{{ f.ref }}{% endif %}: {{ f.why }}</li>{% endfor %}</ul>
+    <div class="row">
+      <a class="btn small" href="/manage/lesson/{{ lid }}">Update lesson</a>
+      <form method="post" action="/manage/lesson/{{ lid }}/reviewed"><button class="ghost small">Still correct</button></form>
+    </div>
+  </div>
+  {% endfor %}
+  </div>
+</section>
+
+<section class="section" id="folders-sec">
+<div class="section-head"><h2>Folders</h2><span class="save-note muted" id="save-note" role="status" aria-live="polite"></span></div>
 <p class="muted">Folders that group the lessons. Workers see their lessons in this order, under these headings.
   Drag the <span class="grip-inline">{{ icon("grip") }}</span> handle to reorder folders and lessons, or to move a lesson into another folder.
   Turn on <b>Do in order</b> for a folder when its lessons must be taken one after another; otherwise workers can take them in any order.</p>
@@ -41,7 +69,11 @@
       <li data-lesson="{{ l.id }}" data-title="{{ l.title | lower }}">
         <button type="button" class="grip" aria-label="Move {{ l.title }}: drag, or use the arrow keys" title="Drag to reorder">{{ icon("grip") }}</button>
         <span class="num" aria-hidden="true"></span>
-        <a href="/manage/lesson/{{ l.id }}" class="grow">{{ l.title }}</a>
+        <a href="/manage/lesson/{{ l.id }}" class="grow">{{ l.title }}{% if flagged.get(l.id) %} <span class="pill warn">review</span>{% endif %}</a>
+        <span class="lesson-tools">
+          <a class="btn ghost small" href="/lesson/{{ l.id }}">Preview</a>
+          <button type="submit" form="del-{{ l.id }}" class="ghost small danger" aria-label="Delete {{ l.title }}" title="Delete">{{ icon("trash") }}</button>
+        </span>
         <form method="post" class="move">
           <input type="hidden" name="action" value="put"><input type="hidden" name="lesson" value="{{ l.id }}">
           <select name="topic" onchange="this.form.submit()" aria-label="Move {{ l.title }} to folder">
@@ -57,6 +89,34 @@
   </section>
 {% endfor %}
 </div>
+</section>
+{% for topic, members in groups %}{% for l in members %}
+<form method="post" action="/manage/lesson/{{ l.id }}/delete" id="del-{{ l.id }}" hidden onsubmit="return confirm('Move this lesson to the trash? You can put it back later.')"></form>
+{% endfor %}{% endfor %}
+
+<section class="section" id="trash">
+  <div class="section-head"><h2>{{ icon("trash") }} Trash</h2></div>
+  {% if trash %}
+  <p class="muted">Deleted lessons wait here. Workers' past results for them are kept either way.</p>
+  <div class="list">
+    {% for t in trash %}
+    <div class="item">
+      <div class="grow">
+        <span class="title">{{ t.title }}</span>
+        <div class="meta">Deleted {{ t.deleted_on[:10] }}</div>
+      </div>
+      <form method="post" action="/manage/trash/{{ t.file }}/restore"><button class="ghost small">{{ icon("redo") }} Put back</button></form>
+      <form method="post" action="/manage/trash/{{ t.file }}/purge" onsubmit="return confirm('Delete this lesson for good? This can\'t be undone.')">
+        <button class="ghost small danger">Delete for good</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">The trash is empty. Deleted lessons show up here so you can put them back.</p>
+  {% endif %}
+</section>
+
 <script>
 (() => {
   const root = document.getElementById("folders"), note = document.getElementById("save-note");
