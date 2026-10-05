@@ -2,6 +2,7 @@
 <nav class="subnav" aria-label="Manager">
   <a class="{{ 'on' if here.startswith('/manage/dashboard') else '' }}" href="/manage/dashboard">Dashboard</a>
   <a class="{{ 'on' if here.startswith('/manage/approvals') else '' }}" href="/manage/approvals">Approvals{% if pending_count %} <span class="count-badge">{{ pending_count }}</span>{% endif %}</a>
+  <a class="{{ 'on' if here.startswith('/manage/records') else '' }}" href="/manage/records">Records</a>
   <a class="{{ 'on' if here == '/manage' else '' }}" href="/manage">People &amp; lessons</a>
   <a class="{{ 'on' if here.startswith('/manage/topics') else '' }}" href="/manage/topics">Topics</a>
   <a class="{{ 'on' if here.startswith('/manage/requirements') else '' }}" href="/manage/requirements">Requirements</a>

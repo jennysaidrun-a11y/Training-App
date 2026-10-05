@@ -1018,3 +1018,32 @@ def test_records_outlive_their_lesson(client, anon):
     page = anon.get(cert).text
     assert lesson["title"] in page and lesson["citations"][0] in page
     assert lesson["title"] in client.get(f"/me/{sam['id']}").text      # manager's view of the record
+
+
+def test_training_records_page_and_download(client, anon):
+    client.post("/manage/workers", data={"name": "Sam", "role": "packaging", "pin": "1234"})
+    client.post("/manage/workers", data={"name": "=cmd", "role": "baking", "pin": "4321"})
+    with db.connect() as con:
+        sam, odd = sorted(db.workers(con), key=lambda w: w["id"])
+    lesson = content.load_lessons()["forklifts"]
+    right = {i: q["answer"] for i, q in enumerate(lesson["questions"])}
+    wrong = {i: (q["answer"] + 1) % len(q["choices"]) for i, q in enumerate(lesson["questions"])}
+    for w, pin in ((sam, "1234"), (odd, "4321")):
+        c = TestClient(app)
+        c.post(f"/signin/{w['id']}", data={"pin": pin})
+        c.post("/api/lesson/forklifts/finish", json={"answers": wrong})
+        c.post("/api/lesson/forklifts/finish", json={"answers": right})
+    client.post(f"/manage/workers/{sam['id']}/active", data={"active": 0})                # Sam leaves; the record stays
+
+    page = client.get("/manage/records").text
+    assert page.count("Passed</span>") == 2 and "Not passed</span>" not in page and "left</span>" in page
+    assert client.get("/manage/records?result=all").text.count("Not passed</span>") == 2
+    assert client.get(f"/manage/records?person={sam['id']}").text.count("Passed</span>") == 1
+    r = client.get("/manage/records.csv")
+    assert r.headers["content-type"].startswith("text/csv") and "attachment" in r.headers["content-disposition"]
+    lines = r.text.lstrip("﻿").splitlines()
+    assert lines[0].startswith("Name,Position,Lesson") and len(lines) == 3
+    assert any(l.startswith("'=cmd,") for l in lines)                  # no spreadsheet formulas
+    assert lesson["title"] in r.text and "UB-" in r.text
+    assert anon.get("/manage/records", follow_redirects=False).status_code == 303
+    assert anon.get("/manage/records.csv", follow_redirects=False).status_code in (303, 401)

@@ -769,3 +769,15 @@ body.zoom-open { overflow: hidden; }
 .count-badge { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 10px; background: var(--gold); color: #fff;
                font-size: .75rem; text-align: center; margin-left: 4px; }
 .item.approval .row { gap: 8px; flex-wrap: wrap; }
+
+/* Training records: prints as a plain table for inspections */
+.print-only { display: none; }
+.page-head .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+table.grid.records td .meta { font-size: 0.78rem; }
+@media print {
+  body:has(table.records) header.top, body:has(table.records) .subnav, .no-print { display: none !important; }
+  body:has(table.records) .print-only { display: block; }
+  body:has(table.records) { background: #fff; }
+  table.grid.records { font-size: 9pt; }
+  table.grid.records a { color: inherit; text-decoration: none; }
+}

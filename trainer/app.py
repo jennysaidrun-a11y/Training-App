@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -259,7 +259,7 @@ def my_page(request: Request, wid: int):
         history = db.attempts(con, wid)
     return render(request, "me.html", person=person, rows=rows, history=history, who=who,
                   manager_view=bool(auth.manager(request)),
-                  titles={lid: l["title"] for lid, l in lessons.items()})
+                  titles={t["id"]: t["title"] for t in content.trashed_lessons()} | {lid: l["title"] for lid, l in lessons.items()})
 
 
 def _get_lesson(lesson_id):
@@ -398,6 +398,9 @@ def certificate(request: Request, cid: int):
     if not _can_see(request, c["worker_id"]):
         return RedirectResponse(f"/signin/{c['worker_id']}", status_code=303)
     lesson = content.load_lessons().get(c["lesson_id"]) or {"title": c["lesson_id"], "citations_parsed": []}
+    trashed = next((t["data"] for t in content.trashed_lessons() if t["id"] == c["lesson_id"]), None)
+    if trashed and not c.get("lesson_title"):
+        c = {**c, "lesson_title": trashed.get("title"), "lesson_citations": ", ".join(trashed.get("citations") or [])}
     if c.get("lesson_title"):   # as it was when they passed it
         lesson = {"title": c["lesson_title"],
                   "citations_parsed": [{"ref": r.strip()} for r in (c.get("lesson_citations") or "").split(",") if r.strip()]}
@@ -619,6 +622,75 @@ def dashboard(request: Request, role: str = "", lesson: str = ""):
     charts = _dashboard_charts(role, focus, columns, matrix, who_did, roles)
     return render(request, "dashboard.html", roles=roles, role=role, lessons=sorted(lessons.values(), key=lambda l: l["title"]),
                   focus=focus, columns=columns, matrix=matrix, totals=totals, who_did=who_did, survey=survey, charts=charts)
+
+
+def _records(role="", person=0, lesson="", result="passed"):
+    """Training records (every attempt ever saved; nothing is ever deleted), oldest first."""
+    lessons = {t["id"]: t["data"] for t in content.trashed_lessons()} | content.load_lessons()  # trashed ones still name old records
+    role_names = content.role_names()
+    with db.connect() as con:
+        people = {w["id"]: w for w in db.workers(con, active_only=False)}
+        rows = []
+        for a in reversed(db.attempts(con)):
+            w = people.get(a["worker_id"])
+            if not w or (role and a["role"] != role) or (person and a["worker_id"] != person) \
+                    or (lesson and a["lesson_id"] != lesson) or (result == "passed" and not a["passed"]):
+                continue
+            live = lessons.get(a["lesson_id"]) or {}
+            rows.append({
+                "name": a["name"], "position": role_names.get(a["role"], a["role"]), "active": bool(w["active"]),
+                "lesson": a.get("lesson_title") or live.get("title") or a["lesson_id"],
+                "version": a.get("lesson_version") or "", "date": a["completed_at"][:16].replace("T", " "),
+                "score": round(a["score"] * 100), "passed": bool(a["passed"]),
+                "certificate": _certificate_number(a) if a["passed"] else "",
+                "cert_link": f"/certificate/{a['id']}" if a["passed"] else "",
+                "rules": a.get("lesson_citations") or ", ".join(live.get("citations") or []),
+            })
+    return rows
+
+
+RECORD_COLUMNS = [("Name", "name"), ("Position", "position"), ("Lesson", "lesson"), ("Date", "date"),
+                  ("Score %", "score"), ("Result", "result"), ("Certificate", "certificate"),
+                  ("Lesson version", "version"), ("Rules", "rules"), ("Still employed", "employed")]
+
+
+@app.get("/manage/records", response_class=HTMLResponse)
+def records_page(request: Request, role: str = "", person: int = 0, lesson: str = "", result: str = "passed"):
+    with db.connect() as con:
+        people = sorted(db.workers(con, active_only=False), key=lambda w: w["name"].lower())
+    lesson_ids = {}
+    for lid, title in _record_lessons():
+        lesson_ids.setdefault(lid, title)
+    return render(request, "records.html", rows=_records(role, person, lesson, result), roles=content.load_roles(),
+                  people=people, lesson_choices=sorted(lesson_ids.items(), key=lambda kv: kv[1].lower()),
+                  role=role, person=person, lesson=lesson, result=result, provider=PROVIDER,
+                  printed=dt.datetime.now().strftime("%Y-%m-%d %H:%M"))
+
+
+def _record_lessons():
+    """(lesson id, title) for every lesson that is live or appears in a record."""
+    out = [(lid, l["title"]) for lid, l in content.load_lessons().items()]
+    out += [(t["id"], t["title"]) for t in content.trashed_lessons()]
+    with db.connect() as con:
+        out += [(r["lesson_id"], r["lesson_title"] or r["lesson_id"]) for r in
+                con.execute("SELECT DISTINCT lesson_id, lesson_title FROM completions")]
+    return out
+
+
+@app.get("/manage/records.csv")
+def records_csv(role: str = "", person: int = 0, lesson: str = "", result: str = "passed"):
+    import csv
+    import io
+    buf = io.StringIO()
+    out = csv.writer(buf)
+    out.writerow([c for c, _ in RECORD_COLUMNS])
+    for r in _records(role, person, lesson, result):
+        r = {**r, "result": "Passed" if r["passed"] else "Not passed", "employed": "Yes" if r["active"] else "No"}
+        # A leading = + - @ would make Excel run the cell as a formula.
+        out.writerow([("'" + str(v)) if str(v)[:1] in "=+-@" else v for v in (r[k] for _, k in RECORD_COLUMNS)])
+    name = f"training-records-{dt.date.today().isoformat()}.csv"
+    return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",   # BOM: Excel reads it as UTF-8
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/manage/requirements", response_class=HTMLResponse)

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "icons.html" import icon %}
+{% block title %}Training records · United Bakery{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block body %}
+{% include "_manager_nav.html" %}
+<div class="page-head">
+  <h1 class="no-print">Training records</h1>
+  <div class="actions no-print">
+    <a class="btn ghost small" href="/manage/records.csv?{{ request.url.query }}">{{ icon("upload") }} Download for Excel</a>
+    <button type="button" class="small" onclick="window.print()">Print or save as PDF</button>
+  </div>
+</div>
+<p class="muted no-print">Every training anyone has passed, kept forever, including people who no longer work here. Use the filters to show one person, position or lesson, for example for an inspection.</p>
+
+<form method="get" class="filters card no-print">
+  <label class="field"><span class="lbl">Person</span>
+    <select name="person" onchange="this.form.submit()">
+      <option value="0">Everyone</option>
+      {% for p in people %}<option value="{{ p.id }}" {{ 'selected' if p.id == person else '' }}>{{ p.name }}{% if not p.active %} (left){% endif %}</option>{% endfor %}
+    </select></label>
+  <label class="field"><span class="lbl">Position</span>
+    <select name="role" onchange="this.form.submit()">
+      <option value="">All positions</option>
+      {% for r in roles %}<option value="{{ r.id }}" {{ 'selected' if r.id == role else '' }}>{{ r.name }}</option>{% endfor %}
+    </select></label>
+  <label class="field"><span class="lbl">Lesson</span>
+    <select name="lesson" onchange="this.form.submit()">
+      <option value="">All lessons</option>
+      {% for lid, title in lesson_choices %}<option value="{{ lid }}" {{ 'selected' if lid == lesson else '' }}>{{ title }}</option>{% endfor %}
+    </select></label>
+  <label class="field"><span class="lbl">Show</span>
+    <select name="result" onchange="this.form.submit()">
+      <option value="passed" {{ 'selected' if result == 'passed' else '' }}>Passed only</option>
+      <option value="all" {{ 'selected' if result == 'all' else '' }}>Every try</option>
+    </select></label>
+  <noscript><button class="small">Show</button></noscript>
+</form>
+
+<div class="print-only records-head">
+  <h2>{{ provider }}: training records</h2>
+  <p>Printed {{ printed }} · {{ rows | length }} record{{ '' if rows | length == 1 else 's' }}</p>
+</div>
+
+{% if rows %}
+<div class="table-wrap"><table class="grid records">
+  <thead><tr><th>Name</th><th>Position</th><th>Lesson</th><th>Date</th><th>Score</th><th>Result</th><th>Certificate</th><th>Rules</th></tr></thead>
+  <tbody>{% for r in rows %}
+    <tr>
+      <td>{{ r.name }}{% if not r.active %} <span class="pill">left</span>{% endif %}</td>
+      <td>{{ r.position }}</td>
+      <td>{{ r.lesson }}{% if r.version %}<div class="meta">version {{ r.version }}</div>{% endif %}</td>
+      <td>{{ r.date }}</td>
+      <td>{{ r.score }}%</td>
+      <td>{% if r.passed %}<span class="pill done">Passed</span>{% else %}<span class="pill bad">Not passed</span>{% endif %}</td>
+      <td>{% if r.cert_link %}<a href="{{ r.cert_link }}">{{ r.certificate }}</a>{% endif %}</td>
+      <td class="meta">{{ r.rules }}</td>
+    </tr>
+  {% endfor %}</tbody>
+</table></div>
+{% else %}
+<div class="empty"><h2>No records yet</h2><p>Records show up here as soon as someone passes a lesson.</p></div>
+{% endif %}
+{% endblock %}
