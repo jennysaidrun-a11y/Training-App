@@ -1,6 +1,7 @@
 # Puts the training app online at Fly.io. Needs the FLY_API_TOKEN repository secret;
-# without it this does nothing. CONTENT_PUSH_TOKEN (optional) lets the online app
-# save lesson edits back to GitHub.
+# without it this does nothing. Optional secrets: CONTENT_PUSH_TOKEN lets the online app
+# save lesson edits back to GitHub; CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`)
+# signs its Claude Code in with brennan's Claude account.
 # Day-to-day code changes don't need this: the online app pulls them every minute.
 name: Put online (Fly.io)
 on:
@@ -15,6 +16,7 @@ jobs:
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       CONTENT_PUSH_TOKEN: ${{ secrets.CONTENT_PUSH_TOKEN }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Check for the Fly key
@@ -34,6 +36,9 @@ jobs:
           fi
           if [ -n "$CONTENT_PUSH_TOKEN" ]; then
             printf 'GITHUB_TOKEN=%s\n' "$CONTENT_PUSH_TOKEN" | flyctl secrets import -a "$APP" --stage
+          fi
+          if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$CLAUDE_CODE_OAUTH_TOKEN" | flyctl secrets import -a "$APP" --stage
           fi
       - name: Deploy
         if: steps.key.outputs.go == 'yes'

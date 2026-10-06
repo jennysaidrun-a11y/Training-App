@@ -684,7 +684,7 @@
         const res = await fetch("/api/manage/research", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ history, draft: payload() }) });
         r = await res.json();
         if (r.error === "signin") r = { signin: true, failed: true };
-        else if (!res.ok) r = { reply: r.error === "setup" ? "Claude isn't set up in this Codespace yet." : r.error || r.detail || "Something went wrong. Try again.", failed: true };
+        else if (!res.ok) r = { reply: r.error === "setup" ? "Claude isn't connected to this copy of the app yet." : r.error || r.detail || "Something went wrong. Try again.", failed: true };
       } catch (e) {
         r = { reply: "Couldn't reach the app. Check the connection and try again.", failed: true };
       }

@@ -7,7 +7,7 @@
   {% if research_ready %}<button type="button" id="all-missing" class="small">Translate everything missing</button>{% endif %}</div>
 <p class="muted">Workers pick their language on the sign-in page. A lesson shows in their language once it has a current translation; otherwise it shows in English. When you change a lesson's English, its translations go out of date and workers see English until you translate it again.</p>
 <p class="note">Translations are made by Claude. Before relying on one for a safety lesson, have someone who reads that language check it.</p>
-{% if not research_ready %}<p class="note bad">Claude isn't set up in this Codespace yet, so translating is off. See the lesson editor's Claude panel for the steps.</p>{% endif %}
+{% if not research_ready %}<p class="note bad">Claude isn't connected to this copy of the app yet, so translating is off. See the lesson editor's Claude panel for the steps.</p>{% endif %}
 <div class="table-wrap"><table class="grid req" id="langs">
   <thead><tr><th class="sticky">Lesson</th>{% for code, name in langs if code != "en" %}<th lang="{{ code }}">{{ name }}</th>{% endfor %}</tr></thead>
   <tbody>

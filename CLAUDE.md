@@ -34,5 +34,6 @@ Cal/OSHA (8 CCR, Title 8) apply.
   the same job is `update.ps1`, started by double-clicking `start.bat` (http://localhost:8001); it also puts a "Training App" desktop shortcut (`open.ps1`: start if needed, then open the browser). Keep both working and in step.
 - Online copy (Fly.io): `Dockerfile`, `fly.toml`, `fly/start.sh` (keeps its own clone on the /data volume
   and runs `update.sh`, so it updates itself like the PC); `.github/workflows/fly-deploy.yml` deploys when
-  the `FLY_API_TOKEN` secret exists. Only one copy may be live with real records at a time.
+  the `FLY_API_TOKEN` secret exists. Its Claude Code signs in with the user's Claude account through the
+  `CLAUDE_CODE_OAUTH_TOKEN` secret (`claude setup-token`), not an API key. Only one copy may be live with real records at a time.
 - Run `python -m pytest` before committing.
