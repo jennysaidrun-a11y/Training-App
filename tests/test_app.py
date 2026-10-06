@@ -12,7 +12,7 @@ os.environ["TRAINING_NO_RULES_LOOP"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from trainer import content, db, editor, research, rules  # noqa: E402
+from trainer import auth, content, db, editor, research, rules  # noqa: E402
 from trainer.app import app  # noqa: E402
 
 
@@ -33,6 +33,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(content, "LESSONS", tmp_path / "content" / "lessons")
     monkeypatch.setattr(rules, "STATUS_PATH", tmp_path / "content" / "rules_status.json")
     monkeypatch.setenv("TRAINING_DB", str(tmp_path / "t.db"))
+    auth._fails.clear()
+    auth._ip_fails.clear()
     return tmp_path
 
 
@@ -1060,3 +1062,66 @@ def test_manager_has_four_tabs(client):
     assert "Folders &amp; lessons" in page and "Who takes what" in page and 'id="trash"' in page and "New lesson" in page
     assert 'class="chips-nav"' in client.get("/manage/requirements").text
     assert 'class="chips-nav"' not in client.get("/manage").text
+
+
+def test_safety_headers_and_forged_posts(client):
+    r = client.get("/manage")
+    h = r.headers
+    assert "frame-ancestors 'self'" in h["content-security-policy"] and h["x-content-type-options"] == "nosniff"
+    assert h["x-frame-options"] == "SAMEORIGIN" and h["cache-control"] == "no-store"
+    assert client.get("/docs").status_code == 404 and client.get("/openapi.json").status_code == 404
+    # A form on another website can't post here with the manager's cookie.
+    r = client.post("/manage/workers", data={"name": "Mallory", "role": "baking", "pin": "1234"},
+                    headers={"origin": "https://evil.example"}, follow_redirects=False)
+    assert r.status_code == 403
+    r = client.post("/manage/workers", data={"name": "Sam", "role": "baking", "pin": "1234"},
+                    headers={"origin": "http://testserver"}, follow_redirects=False)
+    assert r.status_code == 303
+
+
+def test_pin_guessing_gets_slower(client, anon):
+    client.post("/manage/workers", data={"name": "Sam", "role": "packaging", "pin": "1234"})
+    with db.connect() as con:
+        sam = db.workers(con)[0]
+    for i in range(5):
+        anon.post(f"/signin/{sam['id']}", data={"pin": f"{i:04d}"})
+    first = auth.locked_for("w", sam["id"])
+    assert 0 < first <= auth.LOCK_SECONDS
+    count, _ = auth._fails[("w", sam["id"])]
+    auth._fails[("w", sam["id"])] = (count, 0)                       # wait out the first lock
+    for i in range(5):
+        anon.post(f"/signin/{sam['id']}", data={"pin": f"{i + 10:04d}"})
+    assert auth.LOCK_SECONDS < auth.locked_for("w", sam["id"]) <= 2 * auth.LOCK_SECONDS   # longer the second time
+    # One device can't spread guesses across everyone either.
+    auth._fails.clear()
+    auth._ip_fails["testclient"] = [time.time()] * auth.IP_MAX_FAILS
+    assert "wrong=1" in anon.post(f"/signin/{sam['id']}", data={"pin": "1234"}, follow_redirects=False).headers["location"]
+    auth._ip_fails.clear()
+    assert anon.post(f"/signin/{sam['id']}", data={"pin": "1234"}, follow_redirects=False).headers["location"] == f"/me/{sam['id']}"
+
+
+def test_manager_recovery_code(anon):
+    page = anon.post("/manage/setup", data={"name": "Pat", "email": "pat@bakery.example", "pin": "135790", "pin2": "135790"}).text
+    code = re.search(r'class="card recovery-code"[^>]*>([A-Z0-9-]{14})<', page).group(1)
+    assert "only time it's shown" in page
+    assert "recovery code yet" not in anon.get("/manage").text
+    anon.post("/signout")
+
+    bad = anon.post("/manage/recover", data={"email": "pat@bakery.example", "code": "AAAA-BBBB-CCCC", "pin": "246802", "pin2": "246802"}, follow_redirects=False)
+    assert "bad=code" in bad.headers["location"]
+    page = anon.post("/manage/recover", data={"email": "PAT@bakery.example", "code": code.lower().replace("-", " "), "pin": "246802", "pin2": "246802"}).text
+    new_code = re.search(r'class="card recovery-code"[^>]*>([A-Z0-9-]{14})<', page).group(1)
+    assert new_code != code and "new PIN is saved" in page
+    assert anon.get("/manage/dashboard").status_code == 200                     # signed in
+    other = TestClient(app)
+    assert other.post("/manage/signin", data={"email": "pat@bakery.example", "pin": "246802"}, follow_redirects=False).headers["location"] == "/manage/dashboard"
+    # The old code was used up.
+    again = other.post("/manage/recover", data={"email": "pat@bakery.example", "code": code, "pin": "111111", "pin2": "111111"}, follow_redirects=False)
+    assert "bad=code" in again.headers["location"]
+    # A manager without a code is nudged to make one.
+    with db.connect() as con:
+        lee = db.add_manager(con, "Lee", auth.hash_pin("778899"), "lee@bakery.example")
+    c = TestClient(app)
+    c.post("/manage/signin", data={"email": "lee@bakery.example", "pin": "778899"})
+    assert "recovery code yet" in c.get("/manage").text
+    assert re.search(r'recovery-code"[^>]*>[A-Z0-9-]{14}<', c.post("/manage/recovery-code").text)

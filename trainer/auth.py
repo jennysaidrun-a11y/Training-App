@@ -6,8 +6,12 @@ PINs are stored as salted PBKDF2 hashes. Sessions are signed cookies
 ("w:<id>" or "m:<id>" plus an expiry), signed with a key kept in data/ (never in
 git). Workers and managers have separate cookies, so a worker signing in on the
 same device never signs the manager out. A manager stays signed in for 30 days
-from their last visit to a manager page, until they sign out. Five wrong PINs in
-a row lock that account for five minutes."""
+from their last visit to a manager page, until they sign out.
+
+Guessing is slowed two ways, so a 4-digit PIN holds up once the app is online:
+every 5 wrong PINs in a row lock that account, for 5 minutes, then 10, 20 ...
+up to a day; and one device (IP address) gets at most 30 wrong PINs in 15 minutes,
+whichever accounts it tries."""
 import hashlib
 import hmac
 import os
@@ -27,14 +31,30 @@ EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 WORKER_MINUTES = 30        # a shared tablet on the floor: sign out soon after
 MANAGER_DAYS = 30          # renewed on every manager page, so it only runs out after 30 days away
 MAX_TRIES = 5
-LOCK_SECONDS = 300
-_fails = {}                # (kind, id) -> (count, locked_until)
+LOCK_SECONDS = 300         # first lock; doubles with each further lock
+MAX_LOCK_SECONDS = 86400
+IP_MAX_FAILS = 30
+IP_WINDOW = 900
+_fails = {}                # (kind, id) -> (wrong tries since the last right one, locked_until)
+_ip_fails = {}             # ip -> [times of wrong tries]
 
 
 def hash_pin(pin):
     salt = secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", pin.encode(), bytes.fromhex(salt), 200_000).hex()
     return f"{salt}${digest}"
+
+
+RECOVERY_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"   # no 0/O or 1/I to mix up
+
+
+def new_recovery_code():
+    raw = "".join(secrets.choice(RECOVERY_LETTERS) for _ in range(12))
+    return "-".join(raw[i:i + 4] for i in range(0, 12, 4))
+
+
+def clean_recovery_code(text):
+    return re.sub(r"[^A-Z0-9]", "", (text or "").upper())
 
 
 def pin_matches(pin, stored):
@@ -83,15 +103,39 @@ def locked_for(kind, account_id):
     return max(0, int(until - time.time()))
 
 
-def check_pin(kind, account_id, pin, stored):
-    """True if right. Wrong tries count toward a short lock."""
-    if locked_for(kind, account_id):
+def client_ip(request):
+    """The device's address. Behind Fly's proxy the real one is in Fly-Client-IP."""
+    if request is None:
+        return ""
+    return request.headers.get("fly-client-ip") or (request.client.host if request.client else "")
+
+
+def ip_blocked(ip):
+    now = time.time()
+    recent = [t for t in _ip_fails.get(ip, []) if now - t < IP_WINDOW]
+    _ip_fails[ip] = recent
+    return bool(ip) and len(recent) >= IP_MAX_FAILS
+
+
+def note_ip_fail(ip):
+    if ip:
+        _ip_fails.setdefault(ip, []).append(time.time())
+
+
+def check_pin(kind, account_id, pin, stored, request=None):
+    """True if right. Wrong tries count toward a lock that grows each time."""
+    ip = client_ip(request)
+    if locked_for(kind, account_id) or ip_blocked(ip):
         return False
     if pin_matches(pin, stored):
         _fails.pop((kind, account_id), None)
         return True
+    note_ip_fail(ip)
     count = _fails.get((kind, account_id), (0, 0))[0] + 1
-    _fails[(kind, account_id)] = (0, time.time() + LOCK_SECONDS) if count >= MAX_TRIES else (count, 0)
+    until = 0
+    if count % MAX_TRIES == 0:
+        until = time.time() + min(MAX_LOCK_SECONDS, LOCK_SECONDS * 2 ** (count // MAX_TRIES - 1))
+    _fails[(kind, account_id)] = (count, until)
     return False
 
 

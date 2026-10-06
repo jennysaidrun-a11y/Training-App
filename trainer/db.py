@@ -58,7 +58,9 @@ ADDED_COLUMNS = [("workers", "pin_hash", "TEXT"), ("workers", "lang", "TEXT"),
                  # What the lesson was called and cited when it was taken, so the record stands
                  # even after the lesson is renamed or deleted. Records are kept forever.
                  ("completions", "lesson_title", "TEXT"), ("completions", "lesson_citations", "TEXT"),
-                 ("completions", "lesson_topic", "TEXT")]
+                 ("completions", "lesson_topic", "TEXT"),
+                 # A one-time code a manager writes down; it resets a forgotten PIN (hashed like PINs).
+                 ("managers", "recovery_hash", "TEXT")]
 
 
 def db_path():
@@ -164,6 +166,11 @@ def set_manager_email(con, mid, email):
 
 def set_manager_pin(con, mid, pin_hash):
     con.execute("UPDATE managers SET pin_hash = ? WHERE id = ?", (pin_hash, mid))
+    con.commit()
+
+
+def set_manager_recovery(con, mid, recovery_hash):
+    con.execute("UPDATE managers SET recovery_hash = ? WHERE id = ?", (recovery_hash, mid))
     con.commit()
 
 

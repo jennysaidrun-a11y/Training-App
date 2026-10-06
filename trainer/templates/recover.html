@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Forgot your PIN · Training · United Bakery{% endblock %}
+{% block main_class %}narrow{% endblock %}
+{% block body %}
+<div class="signin">
+  <h1>Forgot your PIN?</h1>
+  <p class="muted">Type your work email and the recovery code you wrote down, then pick a new 6-digit PIN.</p>
+  {% if bad == "code" %}<p class="note bad">That email and recovery code don't match. Too many wrong tries lock it for a while.</p>
+  {% elif bad == "pin" %}<p class="note bad">The new PIN must be 6 digits, typed the same way twice.</p>{% endif %}
+  <form method="post" action="/manage/recover" class="card stack-form">
+    <label class="field"><span class="lbl">Work email</span><input name="email" type="email" required autocomplete="username"></label>
+    <label class="field"><span class="lbl">Recovery code</span><input name="code" required autocomplete="off" autocapitalize="characters" placeholder="ABCD-EFGH-JKLM"></label>
+    <label class="field"><span class="lbl">New PIN (6 digits)</span><input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="new-password"></label>
+    <label class="field"><span class="lbl">Type it again</span><input name="pin2" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="new-password"></label>
+    <button>Save new PIN</button>
+  </form>
+  <p class="muted">No recovery code? Another manager can reset your PIN on the People tab, under Managers.</p>
+  <p><a href="/manage/signin">← Back to sign-in</a></p>
+</div>
+{% endblock %}

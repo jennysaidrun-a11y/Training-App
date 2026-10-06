@@ -790,3 +790,6 @@ table.grid.records td .meta { font-size: 0.78rem; }
 .folder-lessons li .lesson-tools { display: flex; gap: 6px; align-items: center; }
 table.grid.records tr.topic-row th { background: var(--bg); color: var(--crust); font-size: 0.95rem; text-transform: none; letter-spacing: 0; padding-top: 14px; }
 @media (max-width: 480px) { .subnav { gap: 0; } .subnav a { padding: 10px 9px; font-size: 0.95rem; } }
+.recovery-code { font: 700 1.8rem/1.2 ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.08em; text-align: center; padding: 22px 12px; color: var(--crust); }
+.recovery-nudge { align-items: center; gap: 12px; flex-wrap: wrap; }
+@media print { body:has(.recovery-code) header.top, body:has(.recovery-code) nav { display: none !important; } }

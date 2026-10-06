@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Recovery code · Training · United Bakery{% endblock %}
+{% block main_class %}narrow{% endblock %}
+{% block body %}
+<div class="signin">
+  {% if after == "reset" %}<p class="note">Your new PIN is saved and you're signed in.</p>{% endif %}
+  <h1>Your recovery code</h1>
+  <p class="muted">If you ever forget your PIN, this code lets you make a new one. Write it down or print this page, and keep it somewhere safe away from the computer, like the office safe.</p>
+  <div class="card recovery-code" aria-label="Recovery code">{{ code }}</div>
+  <p class="muted">For {{ manager.name }}{% if manager.email %} ({{ manager.email }}){% endif %}. It works once. You get a new one each time you use it or make another, and the old one stops working.</p>
+  <p class="note">This is the only time it's shown.</p>
+  <div class="row no-print">
+    <button type="button" class="ghost" onclick="window.print()">Print</button>
+    <a class="btn" href="{{ '/manage/dashboard' if after == 'setup' else '/manage' }}">I've written it down</a>
+  </div>
+</div>
+{% endblock %}

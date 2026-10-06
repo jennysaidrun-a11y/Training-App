@@ -110,11 +110,56 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title="United Bakery Training", lifespan=lifespan)
+app = FastAPI(title="United Bakery Training", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
 
-OPEN_MANAGER_PATHS = ("/manage/signin", "/manage/setup")
+# Where pages may load things from. Inline scripts stay allowed (the templates use
+# them); everything else is this app, plus Google Fonts and YouTube for lesson videos.
+CSP = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://www.youtube.com https://s.ytimg.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob: https:",
+    "media-src 'self' blob: https:",
+    "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+])
+
+
+def _same_site(request):
+    """False when a form or script on another website is posting here (a forged request)."""
+    source = request.headers.get("origin") or request.headers.get("referer")
+    if not source:
+        return True     # some browsers and tools send neither; the cookies' SameSite rule still applies
+    from urllib.parse import urlsplit
+    return urlsplit(source).netloc == request.headers.get("host", request.url.netloc)
+
+
+@app.middleware("http")
+async def safety(request: Request, call_next):
+    if request.method not in ("GET", "HEAD", "OPTIONS") and not _same_site(request):
+        return JSONResponse({"error": "That request came from another website."}, status_code=403)
+    response = await call_next(request)
+    h = response.headers
+    h.setdefault("Content-Security-Policy", CSP)
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("X-Frame-Options", "SAMEORIGIN")
+    h.setdefault("Referrer-Policy", "same-origin")
+    h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+        h.setdefault("Strict-Transport-Security", "max-age=31536000")
+    if request.url.path.startswith(("/manage", "/api/", "/me/", "/certificate/")):
+        h.setdefault("Cache-Control", "no-store")    # records and PINs never sit in a shared browser's cache
+    return response
+
+
+OPEN_MANAGER_PATHS = ("/manage/signin", "/manage/setup", "/manage/recover")
 
 
 @app.middleware("http")
@@ -192,7 +237,7 @@ def signin(request: Request, wid: int, pin: str = Form("")):
         person = db.worker(con, wid)
     if not person or not person["active"] or not person.get("approved", 1):
         raise HTTPException(404, "No one with that id")
-    if not auth.check_pin("w", wid, pin.strip(), person.get("pin_hash")):
+    if not auth.check_pin("w", wid, pin.strip(), person.get("pin_hash"), request):
         return RedirectResponse(f"/signin/{wid}?wrong=1", status_code=303)
     response = RedirectResponse(f"/me/{wid}", status_code=303)
     auth.set_session(response, request, "w", wid)
@@ -872,7 +917,7 @@ def setup(request: Request, name: str = Form(""), email: str = Form(""), pin: st
         if bad:
             return RedirectResponse(f"/manage/setup?bad={bad}", status_code=303)
         mid = db.add_manager(con, name, auth.hash_pin(pin.strip()), email)
-    response = RedirectResponse("/manage/dashboard", status_code=303)
+    response = _show_recovery_code(request, mid, after="setup")
     auth.set_session(response, request, "m", mid)
     return response
 
@@ -898,9 +943,50 @@ def manager_signin(request: Request, email: str = Form(""), manager: int = Form(
         else:
             m = db.manager(con, manager)
             m = m if m and not m.get("email") else None
-    if not m or not m["active"] or not auth.check_pin("m", m["id"], pin.strip(), m["pin_hash"]):
+    if not m or not m["active"]:
+        auth.note_ip_fail(auth.client_ip(request))    # a made-up email counts as a wrong try too
+    if not m or not m["active"] or not auth.check_pin("m", m["id"], pin.strip(), m["pin_hash"], request):
         return RedirectResponse(f"/manage/signin?wrong=1&next={next if _safe_next(next, '') else ''}", status_code=303)
     response = RedirectResponse(_safe_next(next, "/manage/dashboard"), status_code=303)
+    auth.set_session(response, request, "m", m["id"])
+    return response
+
+
+def _show_recovery_code(request, mid, after=""):
+    """Makes a new recovery code (the old one stops working) and shows it once."""
+    code = auth.new_recovery_code()
+    with db.connect() as con:
+        db.set_manager_recovery(con, mid, auth.hash_pin(auth.clean_recovery_code(code)))
+        m = db.manager(con, mid)
+    return render(request, "recovery_code.html", code=code, manager=m, after=after)
+
+
+@app.post("/manage/recovery-code")
+def make_recovery_code(request: Request):
+    return _show_recovery_code(request, auth.manager(request)["id"])
+
+
+@app.get("/manage/recover", response_class=HTMLResponse)
+def recover_page(request: Request, bad: str = ""):
+    return render(request, "recover.html", bad=bad)
+
+
+@app.post("/manage/recover")
+def recover(request: Request, email: str = Form(""), code: str = Form(""), pin: str = Form(""), pin2: str = Form("")):
+    """Forgotten PIN: work email + recovery code -> a new PIN (and a new recovery code)."""
+    if not auth.MANAGER_PIN.match(pin.strip()) or pin.strip() != pin2.strip():
+        return RedirectResponse("/manage/recover?bad=pin", status_code=303)
+    with db.connect() as con:
+        m = db.manager_by_email(con, email) if auth.EMAIL.match(email.strip()) else None
+    if not m or not m.get("recovery_hash"):
+        auth.note_ip_fail(auth.client_ip(request))
+        return RedirectResponse("/manage/recover?bad=code", status_code=303)
+    if not auth.check_pin("r", m["id"], auth.clean_recovery_code(code), m["recovery_hash"], request):
+        return RedirectResponse("/manage/recover?bad=code", status_code=303)
+    with db.connect() as con:
+        db.set_manager_pin(con, m["id"], auth.hash_pin(pin.strip()))
+    auth._fails.pop(("m", m["id"]), None)          # a PIN lock no longer applies to the new PIN
+    response = _show_recovery_code(request, m["id"], after="reset")
     auth.set_session(response, request, "m", m["id"])
     return response
 

@@ -5,6 +5,12 @@
 {% set needs = [] %}{% for lid, f in flagged.items() if f %}{% set _ = needs.append(lid) %}{% endfor %}
 {% set ns = namespace(done=0, total=0) %}{% for p in progress %}{% set ns.done = ns.done + p.done %}{% set ns.total = ns.total + p.total %}{% endfor %}
 {% include "_manager_nav.html" %}
+{% if current_manager and not current_manager.recovery_hash %}
+<form method="post" action="/manage/recovery-code" class="note row recovery-nudge">
+  <span class="grow">You don't have a recovery code yet. It lets you reset your PIN yourself if you forget it.{% if not current_manager.email %} Add your work email under Managers first.{% endif %}</span>
+  <button class="small">Make my recovery code</button>
+</form>
+{% endif %}
 {% if pending_count %}<p class="note">{{ pending_count }} {{ "person is" if pending_count == 1 else "people are" }} waiting for you to approve their account. <a href="/manage/approvals">Review</a></p>{% endif %}
 <div class="page-head">
   <h1>People</h1>
@@ -67,7 +73,7 @@
 
 <section class="section" id="managers">
   <div class="section-head"><h2>Managers</h2></div>
-  <p class="muted">Managers sign in with their work email and a 6-digit PIN. If one forgets their PIN, any manager can set a new one here.</p>
+  <p class="muted">Managers sign in with their work email and a 6-digit PIN. If one forgets their PIN, they can use their recovery code on the sign-in page, or any manager can set a new one here.</p>
   {% if current_manager and not current_manager.email %}
   <form method="post" action="/manage/managers/{{ current_manager.id }}/email" class="note row">
     <b>Add your work email</b> so you can sign in with it:
@@ -79,7 +85,11 @@
     {% for m in managers %}
     <div class="item">
       <div class="grow"><span class="title">{{ m.name }}</span>
-        <div class="meta">{% if m.email %}{{ m.email }}{% else %}<b class="warn-text">no work email yet</b>{% endif %}</div></div>
+        <div class="meta">{% if m.email %}{{ m.email }}{% else %}<b class="warn-text">no work email yet</b>{% endif %}
+          · {{ "has a recovery code" if m.recovery_hash else "no recovery code" }}</div></div>
+      {% if current_manager and m.id == current_manager.id and m.recovery_hash %}
+      <form method="post" action="/manage/recovery-code" onsubmit="return confirm('Make a new recovery code? Your old one stops working.')"><button class="ghost small">New recovery code</button></form>
+      {% endif %}
       {% if not m.email %}
       <details class="pin-set"><summary class="btn ghost small">Add email</summary>
         <form method="post" action="/manage/managers/{{ m.id }}/email" class="row">
