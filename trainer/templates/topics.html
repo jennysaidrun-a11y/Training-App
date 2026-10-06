@@ -9,10 +9,11 @@
 {% if request.query_params.get('saved') %}<p class="note">Saved. Everyone sees the new version now.</p>{% endif %}
 {% if request.query_params.get('trashed') %}<p class="note">Lesson moved to the trash. You can put it back from the Trash list below.</p>{% endif %}
 {% if request.query_params.get('checking') %}<p class="note">Checking the rules now. Refresh in a minute to see the results.</p>{% endif %}
+{% if rule_msg %}<p class="note{{ ' bad' if rule_bad }}">{% if rule_ref %}<b>{{ rule_ref }}</b>: {% endif %}{{ rule_msg }}</p>{% endif %}
 {% for name, err in broken %}<p class="note bad">The lesson file {{ name }} can't be read ({{ err }}). It's hidden until it's fixed.</p>{% endfor %}
 <section class="section" id="rules">
   <div class="section-head">
-    <h2>Needs your review {% if needs %}<span class="pill warn">{{ needs | length }}</span>{% else %}<span class="pill done">All current</span>{% endif %}</h2>
+    <h2>Needs your review {% if needs or loose %}<span class="pill warn">{{ needs | length + loose | length }}</span>{% else %}<span class="pill done">All current</span>{% endif %}</h2>
     <form method="post" action="/manage/check"><button class="ghost small">{{ icon("refresh") }} Check now</button></form>
   </div>
   <p class="muted">Rules last checked {{ status.checked_at[:16].replace("T", " at ") ~ " UTC" if status.checked_at else "not yet" }}. The app checks every day by itself.</p>
@@ -27,12 +28,22 @@
     </div>
   </div>
   {% endfor %}
+  {% for r in loose %}
+  <div class="card flag">
+    <h3>{{ r.ref }}{% if r.name or r.official %} · {{ r.name or r.official }}{% endif %}</h3>
+    <ul><li><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.ref }}</a>: {{ "This rule wasn't found at the official source. It may have been renumbered or removed." if r.state == "bad" else r.state_words ~ ", after you last checked it. No lesson uses it yet." }}</li></ul>
+    <div class="row">
+      <form method="post" action="/manage/rules"><input type="hidden" name="ref" value="{{ r.ref }}"><button name="action" value="reviewed" class="ghost small">Still correct</button></form>
+    </div>
+  </div>
+  {% endfor %}
   </div>
 </section>
 
 <section class="section" id="folders-sec">
 <div class="section-head"><h2>Folders</h2><span class="save-note muted" id="save-note" role="status" aria-live="polite"></span></div>
-<p class="muted">Folders that group the lessons. Workers see their lessons in this order, under these headings.
+<p class="muted">Folders that group the lessons and the rules they're based on. Workers see their lessons in this order, under these headings.
+  Rules a lesson cites are added to its folder by themselves; add your own with <b>+ Add rule</b>, and file, rename or delete them here.
   Drag the <span class="grip-inline">{{ icon("grip") }}</span> handle to reorder folders and lessons, or to move a lesson into another folder.
   Turn on <b>Do in order</b> for a folder when its lessons must be taken one after another; otherwise workers can take them in any order.</p>
 <div class="row topic-tools">
@@ -50,7 +61,7 @@
     <div class="folder-bar">
       {% if topic.id == "other" %}
         <span class="folder-ico" aria-hidden="true">📁</span>
-        <h2>{{ topic.name }}</h2><span class="muted">Lessons in no folder</span>
+        <h2>{{ topic.name }}</h2><span class="muted">Lessons and rules in no folder</span>
       {% else %}
         <button type="button" class="grip" aria-label="Move folder {{ topic.name }}: drag, or use the arrow keys" title="Drag to reorder">{{ icon("grip") }}</button>
         <span class="folder-ico" aria-hidden="true">📁</span>
@@ -86,6 +97,36 @@
       {% endfor %}
     </ol>
     <p class="muted empty-note">Empty. Drag lessons here.</p>
+    {% set frules = rule_groups.get(topic.id, []) %}
+    <div class="folder-rules">
+      <h3 class="rules-head">{{ icon("rules") }} Rules <span class="muted">({{ frules | length }})</span></h3>
+      {% if frules %}<ul class="rule-list">
+      {% for r in frules %}
+      <li class="rule-row">
+        <form method="post" action="/manage/rules" class="rule-form">
+          <input type="hidden" name="ref" value="{{ r.ref }}">
+          <span class="pill {{ r.state if r.state != 'none' else '' }}" title="{{ r.official }}">{{ r.state_words }}</span>
+          <a class="ref" href="{{ r.url }}" target="_blank" rel="noopener" title="Open at the official source">{{ r.ref }}</a>
+          <input name="name" value="{{ r.name or r.official }}" placeholder="What it covers" maxlength="120" aria-label="What {{ r.ref }} covers" class="rule-name">
+          <select name="topic" aria-label="Folder for {{ r.ref }}">
+            {% for t in topics %}<option value="{{ t.id }}" {{ 'selected' if t.id == r.topic }}>{{ t.name }}</option>{% endfor %}
+            <option value="" {{ 'selected' if topic.id == 'other' }}>Other</option>
+          </select>
+          <button name="action" value="save" class="ghost small">Save</button>
+          {% if r.state == "warn" %}<button name="action" value="reviewed" class="ghost small">Still correct</button>{% endif %}
+          <button name="action" value="delete" class="ghost small danger" aria-label="Delete {{ r.ref }}" title="Delete"
+            onclick="return confirm('Delete the rule {{ r.ref }} from the list?')">{{ icon("trash") }}</button>
+        </form>
+        <div class="meta">{% if r.used_by %}Used in {% for l in r.used_by %}<a href="/manage/lesson/{{ l.id }}">{{ l.title }}</a>{{ ", " if not loop.last }}{% endfor %}{% else %}Not used in a lesson yet{% endif %}</div>
+      </li>
+      {% endfor %}</ul>{% endif %}
+      <form method="post" action="/manage/rules" class="row add-rule">
+        <input type="hidden" name="action" value="add"><input type="hidden" name="topic" value="{{ '' if topic.id == 'other' else topic.id }}">
+        <input name="ref" placeholder="29 CFR 1910.147 or 8 CCR 3314" required maxlength="40" aria-label="New rule for {{ topic.name }}">
+        <input name="name" placeholder="What it covers (optional)" maxlength="120" aria-label="What the new rule covers">
+        <button class="small">{{ icon("plus") }} Add rule</button>
+      </form>
+    </div>
   </section>
 {% endfor %}
 </div>

@@ -339,7 +339,7 @@
     const list = el("div", { class: "cites" });
     const drawCites = () => {
       list.replaceChildren(...D.citations.map((ref, i) => {
-        const input = el("input", { value: ref, placeholder: "29 CFR 1910.147 or 8 CCR 3314" });
+        const input = el("input", { value: ref, placeholder: "29 CFR 1910.147 or 8 CCR 3314", list: "rule-choices" });
         input.addEventListener("input", () => { D.citations[i] = input.value; touch(); });
         return el("div", { class: "cite" }, badge(ref), input,
           el("button", { type: "button", class: "ghost small x", "aria-label": "Remove rule", onclick: () => { D.citations.splice(i, 1); touch(); drawCites(); drawRail(); } }, "✕"));
@@ -360,11 +360,14 @@
         el("button", { type: "button", class: "ghost small x", "aria-label": "Remove link", onclick: () => { D.sources.splice(i, 1); touch(); drawSources(); } }, "✕"))));
     };
     drawSources();
+    // Rules saved on the Lessons page, offered as choices while typing.
+    const choices = el("datalist", { id: "rule-choices" },
+      ...(window.RULE_LIST || []).map((r) => el("option", { value: r.ref }, r.name || r.ref)));
     return el("div", { class: "slide rules-slide" },
       el("p", { class: "eyebrow" }, "Rules & sources"),
       el("h2", {}, "Rules it's based on"),
-      el("p", { class: "help" }, "Every lesson cites at least one government rule. The app checks them every day and tells you when one changes."),
-      list,
+      el("p", { class: "help" }, "Every lesson cites at least one government rule. Start typing to pick one from your rules list. The app checks them every day and tells you when one changes."),
+      choices, list,
       el("div", { class: "row" },
         el("button", { type: "button", class: "ghost small", onclick: () => { D.citations.push(""); touch(); drawCites(); list.lastChild.querySelector("input").focus(); } }, "+ Rule"),
         verifyBtn),

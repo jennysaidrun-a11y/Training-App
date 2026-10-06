@@ -7,6 +7,7 @@ import shutil
 import threading
 import time
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -781,10 +782,101 @@ def topics_page(request: Request):
     lessons = content.load_lessons()
     topics = content.load_topics()
     status = rules.load_status()
-    return render(request, "topics.html", groups=content.group_by_topic(list(lessons.values()), topics), topics=topics,
+    groups = content.group_by_topic(list(lessons.values()), topics)
+    used_by = {}
+    for l in lessons.values():
+        for c in l["citations_parsed"]:
+            used_by.setdefault(c["ref"], []).append(l)
+    known = {t["id"] for t in topics}
+    rule_groups = {}
+    for r in content.sync_rules(lessons, topics):
+        kind, words = rules.rule_state(r, status)
+        s = status.get("rules", {}).get(r["ref"]) or {}
+        c = content.parse_citation(r["ref"])
+        rule_groups.setdefault(r["topic"] if r["topic"] in known else "other", []).append(
+            {**r, "state": kind, "state_words": words, "url": c["url"], "official": _short_rule_name(s.get("name", "")),
+             "used_by": used_by.get(r["ref"], [])})
+    if not any(t["id"] == "other" for t, _ in groups):   # always there, so a rule can be added with no folders yet
+        groups.append((content.OTHER_TOPIC, []))
+    # Changed or missing rules no lesson cites yet (the ones lessons cite are flagged on the lesson).
+    loose = [r for rs in rule_groups.values() for r in rs if r["state"] in ("bad", "warn") and not r["used_by"]]
+    return render(request, "topics.html", groups=groups, topics=topics, rule_groups=rule_groups, loose=loose,
                   lang="en", lessons=lessons, status=status, trash=content.trashed_lessons(),
                   flagged={lid: rules.lesson_flags(l, status) for lid, l in lessons.items()},
-                  broken=content.broken_lesson_files())
+                  broken=content.broken_lesson_files(), rule_msg=RULE_MESSAGES.get(request.query_params.get("rule", "")),
+                  rule_bad=request.query_params.get("rule") in ("bad", "dup", "notfound", "unreachable", "inuse"),
+                  rule_ref=request.query_params.get("ref", "")[:40])
+
+
+def _short_rule_name(name):
+    """'§ 1910.178 Powered industrial trucks.' -> 'Powered industrial trucks'"""
+    return re.sub(r"^(§\s*[\w.]+|Section\s+[\w.]+\.)\s*", "", name or "").strip().rstrip(".")
+
+
+RULE_MESSAGES = {
+    "added": "Rule added. It was found at the official source.",
+    "saved": "Rule saved.",
+    "deleted": "Rule deleted.",
+    "bad": "That isn't a rule citation the app can read. Use the form 29 CFR 1910.147 (federal) or 8 CCR 3314 (California).",
+    "dup": "That rule is already on the list.",
+    "notfound": "That rule wasn't found at the official source (eCFR or California's Title 8 site). Check the number.",
+    "unreachable": "The official source couldn't be reached to check that rule. Try again in a minute.",
+    "inuse": "That rule can't be deleted while lessons cite it. Remove it from those lessons first (last page of the lesson).",
+}
+
+
+@app.post("/manage/rules")
+async def edit_rules(request: Request):
+    """The rules list on the Lessons page: add (checked at the official source first),
+    rename, file in a folder, note, mark still correct, delete."""
+    form = await request.form()
+    action = form.get("action")
+    topics = content.load_topics()
+    known = {t["id"] for t in topics}
+    topic = str(form.get("topic") or "")
+    topic = topic if topic in known else ""
+    rules_list = content.load_rules()
+    c = content.parse_citation(str(form.get("ref") or ""))
+    where = "#t-" + (topic or "other")
+    if not c:
+        return RedirectResponse(f"/manage/topics?rule=bad{where}", status_code=303)
+    ref = c["ref"]
+    q = "&ref=" + quote(ref)
+    rule = next((r for r in rules_list if r["ref"] == ref), None)
+    if action == "add":
+        if rule:
+            return RedirectResponse(f"/manage/topics?rule=dup{q}#t-{rule['topic'] or 'other'}", status_code=303)
+        status = rules.load_status()
+        entry = await run_in_threadpool(rules.check_rule, c, status["rules"].get(ref))
+        if entry.get("found") is None or entry.get("last_error"):
+            return RedirectResponse(f"/manage/topics?rule=unreachable{q}{where}", status_code=303)
+        if not entry["found"]:
+            return RedirectResponse(f"/manage/topics?rule=notfound{q}{where}", status_code=303)
+        status["rules"][ref] = entry
+        rules.save_status(status)
+        rules_list.append({"ref": ref, "name": str(form.get("name") or "").strip()[:120] or _short_rule_name(entry.get("name", "")),
+                           "topic": topic, "note": "", "reviewed_on": content.now_stamp()})
+        content.save_rules(rules_list)
+        return RedirectResponse(f"/manage/topics?rule=added{q}{where}", status_code=303)
+    if not rule:
+        return RedirectResponse("/manage/topics", status_code=303)
+    if action == "save":
+        rule["name"] = str(form.get("name") or "").strip()[:120]
+        rule["topic"] = topic
+        msg = "saved"
+    elif action == "reviewed":
+        rule["reviewed_on"] = content.now_stamp()
+        msg, where = "saved", "#rules"
+    elif action == "delete":
+        users = [l for l in content.load_lessons().values() if any(x["ref"] == ref for x in l["citations_parsed"])]
+        if users:
+            return RedirectResponse(f"/manage/topics?rule=inuse{q}#t-{rule['topic'] or 'other'}", status_code=303)
+        rules_list.remove(rule)
+        msg = "deleted"
+    else:
+        return RedirectResponse("/manage/topics", status_code=303)
+    content.save_rules(rules_list)
+    return RedirectResponse(f"/manage/topics?rule={msg}{q}{where}", status_code=303)
 
 
 @app.post("/manage/topics")
@@ -1079,7 +1171,9 @@ def _editor(request, lesson, is_new=False):
     status = rules.load_status().get("rules", {})
     return render(request, "edit.html", lesson=lesson, is_new=is_new, roles=content.load_roles(),
                   data=editor.editor_payload(lesson), rule_status=status, research_ready=research.available(),
-                  research_mode=research.mode())
+                  research_mode=research.mode(),
+                  rule_list=[{"ref": r["ref"], "name": r["name"] or status.get(r["ref"], {}).get("name", "")}
+                             for r in content.load_rules()])
 
 
 @app.get("/manage/lesson/new", response_class=HTMLResponse)

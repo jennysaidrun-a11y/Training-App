@@ -94,6 +94,51 @@ def group_by_topic(lessons, topics=None):
     return out
 
 
+def load_rules():
+    """The managed rules list: [{ref, name, topic, note, reviewed_on}], in the file's order."""
+    path = CONTENT / "rules.yaml"
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or [] if path.exists() else []
+    except yaml.YAMLError:
+        data = []
+    out, seen = [], set()
+    for r in data if isinstance(data, list) else []:
+        c = parse_citation(str(r.get("ref") or "")) if isinstance(r, dict) else None
+        if not c or c["ref"] in seen:
+            continue
+        seen.add(c["ref"])
+        out.append({"ref": c["ref"], "name": str(r.get("name") or ""), "topic": str(r.get("topic") or ""),
+                    "note": str(r.get("note") or ""), "reviewed_on": str(r.get("reviewed_on") or "")})
+    return out
+
+
+def save_rules(rules_list):
+    data = [{k: r[k] for k in ("ref", "name", "topic", "note", "reviewed_on") if r.get(k)} for r in rules_list]
+    header = "# The government rules the lessons are based on, kept on Manager > Lessons.\n" \
+             "# topic is the folder (from topics.yaml) a rule is filed under; none means \"Other\".\n"
+    (CONTENT / "rules.yaml").write_text(header + yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100), encoding="utf-8")
+
+
+def sync_rules(lessons, topics=None):
+    """Adds every rule a lesson cites to the rules list, filed in that lesson's folder.
+    Returns the list (saved only when something was added)."""
+    topics = load_topics() if topics is None else topics
+    rules_list = load_rules()
+    have = {r["ref"] for r in rules_list}
+    folder = {lid: t["id"] for t in topics for lid in t["lessons"]}
+    added = False
+    for l in sorted(lessons.values(), key=lambda l: l["title"]):
+        for c in l["citations_parsed"]:
+            if c["kind"] in ("cfr", "ccr") and c["ref"] not in have:
+                have.add(c["ref"])
+                rules_list.append({"ref": c["ref"], "name": "", "topic": folder.get(l["id"], ""), "note": "",
+                                   "reviewed_on": l.get("reviewed_on") or now_stamp()})
+                added = True
+    if added:
+        save_rules(rules_list)
+    return rules_list
+
+
 def load_survey():
     with open(CONTENT / "survey.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)

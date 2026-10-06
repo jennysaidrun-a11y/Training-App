@@ -83,6 +83,7 @@
   window.DECK_NEW = {{ "true" if is_new else "false" }};
   window.ROLES = {{ roles | tojson }};
   window.RULE_STATUS = {{ rule_status | tojson }};
+  window.RULE_LIST = {{ rule_list | tojson }};
   window.RESEARCH_READY = {{ "true" if research_ready else "false" }};
 </script>
 <script src="/static/editor.js?v={{ asset_v }}"></script>

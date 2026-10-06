@@ -16,6 +16,9 @@ Cal/OSHA (8 CCR, Title 8) apply.
 - `content/lessons/*.yaml`: one lesson per file. `version` = last change that makes
   everyone retake it; `reviewed_on` = last time it was checked against its rules.
   Citations must parse (`29 CFR 1910.147`, `8 CCR 3314`).
+- `content/rules.yaml`: the managed rules list (ref, name, folder), edited in each folder on Manager > Lessons;
+  rules a lesson cites are added by themselves (`content.sync_rules`) and can't be deleted while cited.
+  New rules are checked at the official source before they are added.
 - `content/rules_status.json`: written by the rules checker (app + nightly workflow).
 - `data/`: employee records (`training.db`) and uploaded videos (`media/`, served at
   `/media/<name>` with range requests). Gitignored; the repo is public. Never commit it.

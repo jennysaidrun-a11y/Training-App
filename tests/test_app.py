@@ -24,6 +24,7 @@ def env(tmp_path, monkeypatch):
     """A private copy of content/ and a fresh database for each test."""
     shutil.copytree(content.CONTENT, tmp_path / "content")
     (tmp_path / "content" / "rules_status.json").unlink(missing_ok=True)
+    (tmp_path / "content" / "rules.yaml").unlink(missing_ok=True)
     shutil.rmtree(tmp_path / "content" / "trash", ignore_errors=True)
     # Lessons and folders as shipped, so tests don't depend on what managers have changed in the live ones.
     shutil.rmtree(tmp_path / "content" / "lessons", ignore_errors=True)
@@ -1125,3 +1126,44 @@ def test_manager_recovery_code(anon):
     c.post("/manage/signin", data={"email": "lee@bakery.example", "pin": "778899"})
     assert "recovery code yet" in c.get("/manage").text
     assert re.search(r'recovery-code"[^>]*>[A-Z0-9-]{14}<', c.post("/manage/recovery-code").text)
+
+
+def _found(c, old, get=None):
+    return {"ref": c["ref"], "url": c["url"], "kind": c["kind"], "found": True, "name": "Official name", "last_checked": "2026-10-06"}
+
+
+def test_rules_list_add_edit_delete(client, monkeypatch):
+    monkeypatch.setattr(rules, "check_rule", _found)
+    r = client.post("/manage/rules", data={"action": "add", "ref": "29 cfr 1910.22", "name": "Walking surfaces", "topic": "machines"})
+    assert "rule=added" in r.url.query.decode()
+    listed = {x["ref"]: x for x in content.load_rules()}
+    assert listed["29 CFR 1910.22"]["topic"] == "machines" and listed["29 CFR 1910.22"]["name"] == "Walking surfaces"
+    page = client.get("/manage/topics").text
+    assert "29 CFR 1910.22" in page and "Walking surfaces" in page and "Add rule" in page
+    # Rename and move to no folder.
+    client.post("/manage/rules", data={"action": "save", "ref": "29 CFR 1910.22", "name": "Floors", "topic": ""})
+    listed = {x["ref"]: x for x in content.load_rules()}
+    assert listed["29 CFR 1910.22"]["name"] == "Floors" and listed["29 CFR 1910.22"]["topic"] == ""
+    assert "rule=dup" in client.post("/manage/rules", data={"action": "add", "ref": "29 CFR 1910.22"}).url.query.decode()
+    assert "rule=bad" in client.post("/manage/rules", data={"action": "add", "ref": "rule 5"}).url.query.decode()
+    client.post("/manage/rules", data={"action": "delete", "ref": "29 CFR 1910.22"})
+    assert "29 CFR 1910.22" not in {x["ref"] for x in content.load_rules()}
+
+
+def test_rules_list_checks_the_source_first(client, monkeypatch):
+    monkeypatch.setattr(rules, "check_rule", lambda c, old, get=None: {**_found(c, old), "found": False})
+    assert "rule=notfound" in client.post("/manage/rules", data={"action": "add", "ref": "29 CFR 1910.9999"}).url.query.decode()
+    monkeypatch.setattr(rules, "check_rule", lambda c, old, get=None: {"ref": c["ref"], "last_error": "2026-10-06: Timeout"})
+    assert "rule=unreachable" in client.post("/manage/rules", data={"action": "add", "ref": "8 CCR 9999"}).url.query.decode()
+    assert not {"29 CFR 1910.9999", "8 CCR 9999"} & {x["ref"] for x in content.load_rules()}
+
+
+def test_lesson_rules_filed_in_their_folder_and_kept(client):
+    client.get("/manage/topics")
+    listed = {x["ref"]: x for x in content.load_rules()}
+    assert listed["29 CFR 1910.147"]["topic"] == "machines"     # lockout-tagout sits in Machines
+    r = client.post("/manage/rules", data={"action": "delete", "ref": "29 CFR 1910.147"})
+    assert "rule=inuse" in r.url.query.decode() and "29 CFR 1910.147" in {x["ref"] for x in content.load_rules()}
+    # The checker also checks listed rules no lesson cites.
+    content.save_rules(content.load_rules() + [{"ref": "8 CCR 9999", "name": "", "topic": "", "note": "", "reviewed_on": ""}])
+    assert "8 CCR 9999" in rules.cited_rules(content.load_lessons())

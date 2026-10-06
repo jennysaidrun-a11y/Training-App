@@ -793,3 +793,18 @@ table.grid.records tr.topic-row th { background: var(--bg); color: var(--crust);
 .recovery-code { font: 700 1.8rem/1.2 ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.08em; text-align: center; padding: 22px 12px; color: var(--crust); }
 .recovery-nudge { align-items: center; gap: 12px; flex-wrap: wrap; }
 @media print { body:has(.recovery-code) header.top, body:has(.recovery-code) nav { display: none !important; } }
+
+/* Rules inside each folder (Lessons page) */
+.folder-rules { margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.rules-head { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font: 600 0.95rem var(--font); color: var(--heading); }
+.rules-head svg { width: 18px; height: 18px; }
+.rule-list { list-style: none; margin: 0; padding: 0; }
+.rule-row { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.rule-row:last-child { border-bottom: 0; }
+.rule-form { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; }
+.rule-form .ref { font-weight: 700; white-space: nowrap; }
+.rule-form .rule-name { flex: 1 1 200px; min-width: 0; min-height: 36px; padding: 4px 8px; font-size: 0.9rem; }
+.rule-form select { min-height: 36px; padding: 4px 8px; font-size: 0.85rem; max-width: 180px; }
+.rule-row .meta { margin-top: 4px; }
+.add-rule { margin: 10px 0 0; gap: 6px; flex-wrap: wrap; }
+.add-rule input { flex: 1 1 180px; min-width: 0; min-height: 38px; }

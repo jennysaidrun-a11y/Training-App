@@ -23,7 +23,7 @@ import sys
 
 import requests
 
-from .content import CONTENT, load_lessons
+from .content import CONTENT, load_lessons, load_rules, parse_citation
 
 STATUS_PATH = CONTENT / "rules_status.json"
 TIMEOUT = 30
@@ -112,8 +112,13 @@ def fetch_federal_register(title, part, get=requests.get):
 
 # ---- Checking ---------------------------------------------------------------
 
-def cited_rules(lessons):
+def cited_rules(lessons, listed=None):
+    """Every rule to check: the ones lessons cite plus the managed rules list."""
     rules = {}
+    for r in load_rules() if listed is None else listed:
+        c = parse_citation(r["ref"])
+        if c:
+            rules[c["ref"]] = c
     for lesson in lessons.values():
         for c in lesson["citations_parsed"]:
             if c["kind"] in ("cfr", "ccr"):
@@ -164,6 +169,18 @@ def run_check(lessons=None, path=None, get=requests.get):
     status["checked_at"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     save_status(status, path)
     return status
+
+
+def rule_state(rule, status):
+    """(kind, words) for a listed rule: bad / warn / done / none."""
+    s = status.get("rules", {}).get(rule["ref"]) or {}
+    if "found" not in s:
+        return "none", "Not checked yet"
+    if not s["found"]:
+        return "bad", "Not found at the official source"
+    if s.get("changed_on") and s["changed_on"] > (rule.get("reviewed_on") or "0000"):
+        return "warn", f"Changed {s['changed_on'][:10]}"
+    return "done", "Current"
 
 
 def lesson_flags(lesson, status):
