@@ -1,0 +1,4 @@
+# Only requirements.txt and fly/ are needed to build; never send employee records.
+*
+!requirements.txt
+!fly/

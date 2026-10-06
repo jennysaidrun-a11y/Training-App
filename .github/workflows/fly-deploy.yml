@@ -1,0 +1,40 @@
+# Puts the training app online at Fly.io. Needs the FLY_API_TOKEN repository secret;
+# without it this does nothing. CONTENT_PUSH_TOKEN (optional) lets the online app
+# save lesson edits back to GitHub.
+# Day-to-day code changes don't need this: the online app pulls them every minute.
+name: Put online (Fly.io)
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/project-thread-f2cmko]
+    paths: [Dockerfile, fly.toml, fly/**, requirements.txt, .github/workflows/fly-deploy.yml]
+concurrency: fly-deploy
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      CONTENT_PUSH_TOKEN: ${{ secrets.CONTENT_PUSH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for the Fly key
+        id: key
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then echo "No FLY_API_TOKEN secret yet; skipping."; echo "go=no" >> "$GITHUB_OUTPUT"
+          else echo "go=yes" >> "$GITHUB_OUTPUT"; fi
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: steps.key.outputs.go == 'yes'
+      - name: Create the app and its disk the first time
+        if: steps.key.outputs.go == 'yes'
+        run: |
+          APP=$(grep '^app' fly.toml | cut -d'"' -f2)
+          flyctl status -a "$APP" > /dev/null 2>&1 || flyctl apps create "$APP"
+          if ! flyctl volumes list -a "$APP" --json | grep -q '"name": *"data"'; then
+            flyctl volumes create data -a "$APP" --region sjc --size 3 --yes
+          fi
+          if [ -n "$CONTENT_PUSH_TOKEN" ]; then
+            printf 'GITHUB_TOKEN=%s\n' "$CONTENT_PUSH_TOKEN" | flyctl secrets import -a "$APP" --stage
+          fi
+      - name: Deploy
+        if: steps.key.outputs.go == 'yes'
+        run: flyctl deploy --remote-only --ha=false

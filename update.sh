@@ -4,6 +4,7 @@
 #   1. saves lesson edits made on the Manager page (content/) to GitHub,
 #   2. picks up any new version of the app from GitHub and restarts it.
 # Employee records (data/) never leave this Codespace.
+# The online copy (Fly.io) runs this too, through fly/start.sh.
 cd "$(dirname "$0")"
 # Only one updater at a time (the Codespace starts it on every start).
 # A running updater touches BEAT every minute; one that has gone quiet for 5
@@ -41,7 +42,7 @@ start_app() {
 save_work() {
   if [ -n "$(git status --porcelain content)" ]; then
     git add -A content
-    git commit -q -m "Codespace: lesson edits saved" && echo "Saved lesson edits."
+    git commit -q -m "${SAVE_LABEL:-Codespace}: lesson edits saved" && echo "Saved lesson edits."
   fi
 }
 
@@ -87,6 +88,7 @@ install_claude() {
   command -v claude > /dev/null
 }
 
+[ -n "${SKIP_CLAUDE:-}" ] && install_claude() { true; }   # the online copy has no Claude sign-in
 pip install -q -r requirements.txt
 install_claude || echo "Couldn't install Claude Code; will try again on the next start."
 sync
