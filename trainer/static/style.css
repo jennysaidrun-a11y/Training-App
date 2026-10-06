@@ -527,7 +527,8 @@ details.pin-set form { position: absolute; right: 0; top: 46px; z-index: 5; back
 
 /* ---- Manager pages ------------------------------------------------------------- */
 main.wide { max-width: 1240px; }
-.subnav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 0 12px; overflow-x: auto; }
+.subnav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 0 12px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.subnav::-webkit-scrollbar { display: none; }
 .subnav a { padding: 10px 14px; color: var(--muted); font-weight: 600; border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
 .subnav a:hover { color: var(--heading); text-decoration: none; }
 .subnav a.on { color: var(--crust); border-bottom-color: var(--oven); }
@@ -792,6 +793,7 @@ table.grid.records tr.topic-row th { background: var(--bg); color: var(--crust);
 @media (max-width: 480px) { .subnav { gap: 0; } .subnav a { padding: 10px 9px; font-size: 0.95rem; } }
 .recovery-code { font: 700 1.8rem/1.2 ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.08em; text-align: center; padding: 22px 12px; color: var(--crust); }
 .recovery-nudge { align-items: center; gap: 12px; flex-wrap: wrap; }
+.recovery-nudge > :first-child { flex: 1 1 220px; }
 @media print { body:has(.recovery-code) header.top, body:has(.recovery-code) nav { display: none !important; } }
 
 /* Rules inside each folder (Lessons page) */

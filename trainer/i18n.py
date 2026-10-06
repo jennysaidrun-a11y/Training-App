@@ -43,6 +43,7 @@ S = {
     "manager_signin": {"en": "Manager sign-in", "es": "Acceso de gerentes", "zh": "经理登录", "vi": "Quản lý đăng nhập",
                        "ar": "دخول المديرين"},
     "manager": {"en": "Manager", "es": "Gerente", "zh": "经理", "vi": "Quản lý", "ar": "المدير"},
+    "lessons": {"en": "Lessons", "es": "Lecciones", "zh": "课程", "vi": "Bài học", "ar": "الدروس"},
     "rules": {"en": "Rules", "es": "Reglas", "zh": "法规", "vi": "Quy định", "ar": "القواعد"},
     "sign_out": {"en": "Sign out", "es": "Salir", "zh": "退出", "vi": "Đăng xuất", "ar": "خروج"},
     "language": {"en": "Language", "es": "Idioma", "zh": "语言", "vi": "Ngôn ngữ", "ar": "اللغة"},

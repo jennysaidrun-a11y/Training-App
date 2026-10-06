@@ -135,6 +135,23 @@
 <form method="post" action="/manage/lesson/{{ l.id }}/delete" id="del-{{ l.id }}" hidden onsubmit="return confirm('Move this lesson to the trash? You can put it back later.')"></form>
 {% endfor %}{% endfor %}
 
+<section class="section" id="federal">
+  <details>
+    <summary><h2 style="display:inline">Upcoming federal rule changes</h2></summary>
+    <p class="muted">From the Federal Register, for each part of the federal rules your lessons and rules use. Heads-up only: not every one affects the bakery.</p>
+    {% for part, fr in status.federal_register | dictsort %}
+    <h3>{{ part }}</h3>
+    <div class="list">
+      {% for d in fr.documents or [] %}
+      <div class="item"><div class="grow"><a class="title" href="{{ d.html_url }}" target="_blank" rel="noopener">{{ d.title }}</a>
+        <div class="meta"><span class="pill {{ 'warn' if d.type == 'Proposed Rule' else 'due' }}">{{ d.type }}</span> {{ d.publication_date }}{% if d.effective_on %} · effective {{ d.effective_on }}{% endif %}</div></div></div>
+      {% else %}<div class="item muted">Nothing yet.</div>{% endfor %}
+    </div>
+    {% else %}<p class="muted">Nothing checked yet.</p>
+    {% endfor %}
+  </details>
+</section>
+
 <section class="section" id="trash">
   <div class="section-head"><h2>{{ icon("trash") }} Trash</h2></div>
   {% if trash %}

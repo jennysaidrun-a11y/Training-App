@@ -269,7 +269,7 @@ def test_slides_round_trip_every_lesson(any_lessons):
 
 def test_pages_render(client):
     for path in ["/", "/manage", "/manage/dashboard", "/manage/requirements", "/manage/topics", "/manage/translations",
-                 "/rules", "/lesson/indoor-heat",
+                 "/lesson/indoor-heat",
                  "/manage/lesson/new", "/health"]:
         assert client.get(path).status_code == 200, path
 
@@ -936,8 +936,9 @@ def test_manager_tab_only_for_managers(client, anon):
     assert tab not in anon.get("/").text and 'href="/manage/signin"' in anon.get("/").text   # just a small sign-in link
     worker = TestClient(app)
     worker.post(f"/signin/{wid}", data={"pin": "1357"})
-    assert tab not in worker.get(f"/me/{wid}").text and tab not in worker.get("/rules").text
-    assert tab in client.get("/").text and tab in client.get("/rules").text                   # a signed-in manager
+    assert tab not in worker.get(f"/me/{wid}").text and 'href="/manage/topics"' not in worker.get(f"/me/{wid}").text
+    assert tab in client.get("/").text and 'href="/manage/topics"' in client.get("/").text    # a signed-in manager: Lessons + Manager tabs
+    assert client.get("/rules").url.path == "/manage/topics"                                   # the old Rules tab leads to Lessons
 
 
 def test_workers_sign_up_and_wait_for_approval(client, anon):
@@ -1056,13 +1057,16 @@ def test_training_records_page_and_download(client, anon):
     assert client.get("/manage/records?topic=Food+safety").text.count("Passed</span>") == 0
 
 
-def test_manager_has_four_tabs(client):
+def test_lessons_tab_and_manager_tabs(client):
     nav = client.get("/manage").text.split('class="subnav"')[1].split("</nav>")[0]
-    assert [a.split(">")[1].split("<")[0].strip() for a in nav.split("<a ")[1:]] == ["Dashboard", "Lessons", "People", "Records"]
+    assert [a.split(">")[1].split("<")[0].strip() for a in nav.split("<a ")[1:]] == ["Dashboard", "People", "Records"]
+    top = client.get("/manage/topics").text.split('class="tabs"')[1].split("</nav>")[0]
+    assert "<span>Lessons</span>" in top and "<span>Rules</span>" not in top
     page = client.get("/manage/topics").text
     assert "Folders &amp; lessons" in page and "Who takes what" in page and 'id="trash"' in page and "New lesson" in page
     assert 'class="chips-nav"' in client.get("/manage/requirements").text
     assert 'class="chips-nav"' not in client.get("/manage").text
+    assert 'class="subnav"' not in page and 'id="federal"' in page
 
 
 def test_safety_headers_and_forged_posts(client):

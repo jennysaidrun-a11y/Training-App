@@ -1,16 +1,16 @@
 {% set here = request.url.path %}
 {% set on_lessons = here.startswith('/manage/topics') or here.startswith('/manage/requirements') or here.startswith('/manage/translations') or here.startswith('/manage/lesson') %}
+{% if not on_lessons %}
 <nav class="subnav" aria-label="Manager">
   <a class="{{ 'on' if here.startswith('/manage/dashboard') else '' }}" href="/manage/dashboard">Dashboard</a>
-  <a class="{{ 'on' if on_lessons else '' }}" href="/manage/topics">Lessons</a>
   <a class="{{ 'on' if here == '/manage' or here.startswith('/manage/approvals') else '' }}" href="/manage">People{% if pending_count %} <span class="count-badge">{{ pending_count }}</span>{% endif %}</a>
   <a class="{{ 'on' if here.startswith('/manage/records') else '' }}" href="/manage/records">Records</a>
 </nav>
-{% if on_lessons %}
+{% else %}
 <nav class="chips-nav" aria-label="Lessons">
   <a class="{{ 'on' if here.startswith('/manage/topics') else '' }}" href="/manage/topics">Folders &amp; lessons</a>
   <a class="{{ 'on' if here.startswith('/manage/requirements') else '' }}" href="/manage/requirements">Who takes what</a>
   <a class="{{ 'on' if here.startswith('/manage/translations') else '' }}" href="/manage/translations">Languages</a>
 </nav>
 {% endif %}
-<script>document.querySelector(".subnav a.on")?.scrollIntoView({ inline: "center", block: "nearest" });</script>
+<script>document.querySelector(".subnav a.on, .chips-nav a.on")?.scrollIntoView({ inline: "center", block: "nearest" });</script>

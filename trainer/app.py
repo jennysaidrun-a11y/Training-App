@@ -1125,15 +1125,10 @@ def manage_check():
     return RedirectResponse("/manage/topics?checking=1#rules", status_code=303)
 
 
-@app.get("/rules", response_class=HTMLResponse)
-def rules_page(request: Request):
-    lessons = content.load_lessons()
-    status = rules.load_status()
-    used_by = {}
-    for l in lessons.values():
-        for c in l["citations_parsed"]:
-            used_by.setdefault(c["ref"], []).append(l)
-    return render(request, "rules.html", status=status, used_by=used_by)
+@app.get("/rules")
+def rules_page():
+    """The old Rules tab: rules now live with the lessons."""
+    return RedirectResponse("/manage/topics#federal", status_code=303)
 
 
 @app.post("/manage/lesson/{lesson_id}/reviewed")
