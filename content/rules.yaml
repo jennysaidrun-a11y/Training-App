@@ -1,0 +1,20 @@
+# The government rules the lessons are based on, kept on Manager > Lessons.
+# topic is the folder (from topics.yaml) a rule is filed under; none means "Other".
+- ref: 8 CCR 3203
+  reviewed_on: 2026-10-06T23:46
+- ref: 8 CCR 3380
+  reviewed_on: 2026-10-06T23:46
+- ref: 8 CCR 3668
+  reviewed_on: 2026-10-06T23:46
+- ref: 8 CCR 3314
+  reviewed_on: 2026-10-06T23:46
+- ref: 29 CFR 1910.147
+  reviewed_on: 2026-10-06T23:46
+- ref: 8 CCR 5194
+  reviewed_on: 2026-10-06T23:46
+- ref: 8 CCR 5162
+  reviewed_on: 2026-10-06T23:46
+- ref: 8 CCR 3396
+  reviewed_on: 2026-10-06T23:46
+- ref: 8 CCR 5155
+  reviewed_on: 2026-10-06T23:46
