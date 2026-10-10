@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-10-09T11:27:32+00:00",
+  "checked_at": "2026-10-10T11:25:37+00:00",
   "federal_register": {
     "21 CFR 117": {
       "documents": [
@@ -79,7 +79,7 @@
           "type": "Proposed Rule"
         }
       ],
-      "last_checked": "2026-10-09"
+      "last_checked": "2026-10-10"
     }
   },
   "rules": {
@@ -150,7 +150,7 @@
       "changed_on": "2017-01-01",
       "found": true,
       "kind": "cfr",
-      "last_checked": "2026-10-09",
+      "last_checked": "2026-10-10",
       "name": "\u00a7 1910.147 The control of hazardous energy (lockout/tagout).",
       "ref": "29 CFR 1910.147",
       "url": "https://www.ecfr.gov/current/title-29/section-1910.147"
@@ -186,7 +186,7 @@
       "fingerprint": "d302aadfa2a75ec1",
       "found": true,
       "kind": "ccr",
-      "last_checked": "2026-10-09",
+      "last_checked": "2026-10-10",
       "name": "Section 3203. Injury and Illness Prevention Program.",
       "ref": "8 CCR 3203",
       "url": "https://www.dir.ca.gov/title8/3203.html"
@@ -195,7 +195,7 @@
       "fingerprint": "5372ee5c91df9055",
       "found": true,
       "kind": "ccr",
-      "last_checked": "2026-10-09",
+      "last_checked": "2026-10-10",
       "name": "Section 3314. The Control of Hazardous Energy for the Cleaning, Repairing, Servicing, Setting-Up, and Adjusting Operations of Prime Movers, Machinery and Equipment, Including Lockout/Tagout.",
       "ref": "8 CCR 3314",
       "url": "https://www.dir.ca.gov/title8/3314.html"
@@ -204,7 +204,7 @@
       "fingerprint": "deb4c9b984c84980",
       "found": true,
       "kind": "ccr",
-      "last_checked": "2026-10-09",
+      "last_checked": "2026-10-10",
       "name": "Section 3380. Personal Protective Devices.",
       "ref": "8 CCR 3380",
       "url": "https://www.dir.ca.gov/title8/3380.html"
@@ -213,7 +213,7 @@
       "fingerprint": "7b640a05035ae22e",
       "found": true,
       "kind": "ccr",
-      "last_checked": "2026-10-09",
+      "last_checked": "2026-10-10",
       "name": "Section 3396. Heat Illness Prevention in Indoor Places of Employment.",
       "ref": "8 CCR 3396",
       "url": "https://www.dir.ca.gov/title8/3396.html"
@@ -231,7 +231,7 @@
       "fingerprint": "f06d19d2d4d9c2bf",
       "found": true,
       "kind": "ccr",
-      "last_checked": "2026-10-09",
+      "last_checked": "2026-10-10",
       "name": "Section 3668. Powered Industrial Truck Operator Training.",
       "ref": "8 CCR 3668",
       "url": "https://www.dir.ca.gov/title8/3668.html"
@@ -249,7 +249,7 @@
       "fingerprint": "6b0bccba73f390a7",
       "found": true,
       "kind": "ccr",
-      "last_checked": "2026-10-09",
+      "last_checked": "2026-10-10",
       "name": "Section 5155. Airborne Contaminants.",
       "ref": "8 CCR 5155",
       "url": "https://www.dir.ca.gov/title8/5155.html"
@@ -267,7 +267,7 @@
       "fingerprint": "eb2afac7698f09bd",
       "found": true,
       "kind": "ccr",
-      "last_checked": "2026-10-09",
+      "last_checked": "2026-10-10",
       "name": "Section 5162. Emergency Eyewash and Shower Equipment.",
       "ref": "8 CCR 5162",
       "url": "https://www.dir.ca.gov/title8/5162.html"
@@ -276,7 +276,7 @@
       "fingerprint": "53d12e22510593f5",
       "found": true,
       "kind": "ccr",
-      "last_checked": "2026-10-09",
+      "last_checked": "2026-10-10",
       "name": "Section 5194. Hazard Communication.",
       "ref": "8 CCR 5194",
       "url": "https://www.dir.ca.gov/title8/5194.html"
