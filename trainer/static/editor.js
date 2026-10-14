@@ -63,7 +63,7 @@
       if (!hasFiles(e)) return;
       e.preventDefault(); e.stopPropagation();
       target.classList.remove("drop-on");
-      const fs = [...e.dataTransfer.files].filter((x) => x.type.startsWith(kind + "/"));
+      const fs = [...e.dataTransfer.files].filter((x) => [].concat(kind).some((k) => x.type.startsWith(k + "/")));
       if (fs.length) onFile(kind === "image" ? fs : fs[0]); else if (onWrong) onWrong();
     });
   }
@@ -76,6 +76,15 @@
     if (!res.ok) throw new Error(r.error || r.detail || "That picture couldn't be added.");
     slide.images = [...(slide.images || []), r.image];
     touch();
+  }
+  // Google Drive: paste a share link; the server copies the file into the app.
+  const isDrive = (u) => /^https:\/\/(drive|docs)\.google\.com\//.test(String(u || "").trim());
+  async function fromDrive(link, kind) {
+    const res = await fetch("/api/manage/drive", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ link: link.trim(), kind, lesson: D.id || D.title || "lesson" }) });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(r.error || r.detail || "That Drive file couldn't be copied. Try again.");
+    return r;
   }
 
   function thumb(index, kind, label, sub) {
@@ -199,13 +208,21 @@
       file.addEventListener("change", () => file.files[0] && upload(file.files[0]));
       kids.push(el("div", { class: "row" },
         el("label", { class: "upload" }, file, el("span", { class: "btn blue small" }, D.video ? "Replace video" : "Upload a video")),
-        D.video && D.video.startsWith("/media/") ? el("button", { type: "button", class: "btn small", onclick: () => openVideoEditor(draw) }, "✂ Edit video") : null,
+        el("button", { type: "button", class: "btn small", onclick: () => openVideoEditor(draw) },
+          D.video && D.video.startsWith("/media/") ? "✂ Edit video" : "🎬 Make a video"),
         D.video ? el("button", { type: "button", class: "ghost small danger", onclick: () => { D.video = ""; touch(); draw(); } }, "Remove") : null));
       const meter = el("div", { class: "meter light", hidden: true }, el("span", { style: "width:0%" }));
       const note = el("p", { class: "muted", hidden: true });
       kids.push(meter, note);
-      const link = el("input", { value: D.video.startsWith("/media/") ? "" : D.video, placeholder: "or paste a YouTube link" });
-      link.addEventListener("change", () => { D.video = link.value.trim(); touch(); draw(); });
+      const link = el("input", { value: D.video.startsWith("/media/") ? "" : D.video, placeholder: "or paste a YouTube or Google Drive link" });
+      link.addEventListener("change", async () => {
+        const v = link.value.trim();
+        if (!isDrive(v)) { D.video = v; touch(); draw(); return; }
+        note.hidden = false; note.textContent = "Copying the video from Google Drive…"; saveBtn.disabled = true; link.disabled = true;
+        try { D.video = (await fromDrive(v, "video")).video; touch(); draw(); saveNote.textContent = "Video copied from Google Drive. Save the lesson to keep it."; }
+        catch (e) { note.textContent = e.message; link.disabled = false; }
+        finally { saveBtn.disabled = false; }
+      });
       kids.push(link, el("span", { class: "help" }, "MP4 plays everywhere. On iPhone: Settings › Camera › Formats › Most Compatible."));
       kids.splice(kids.length - 2, 0, el("span", { class: "help" }, "Or drag a video file onto this box."));
       box.replaceChildren(el("span", { class: "lbl" }, "Video (optional)"), ...kids);
@@ -242,8 +259,9 @@
   }
 
   // ---- Video editor -------------------------------------------------------------
-  // Trim, cut out parts, add more clips at the end, mute, turn. The server makes the
-  // new MP4 with ffmpeg (free and open source); the clips themselves aren't changed.
+  // Trim, cut out parts, add more clips or pictures (from the device or Google Drive),
+  // mute, turn. The server makes the new MP4 with ffmpeg (free and open source); the
+  // clips themselves aren't changed.
   const clock = (t) => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s < 10 ? "0" : ""}${s.toFixed(1)}`; };
   function keepPieces(c) {          // same rule as the server (trainer/video.py keep_pieces)
     const dur = c.duration || 0, start = Math.min(c.start || 0, dur), end = c.end == null ? dur : Math.max(start, Math.min(c.end, dur));
@@ -255,10 +273,11 @@
     return pieces.filter(([p, q]) => q - p >= 0.05);
   }
   function openVideoEditor(redrawField) {
-    const clips = [{ video: D.video, start: 0, end: null, cuts: [], duration: 0 }];
+    const clips = D.video && D.video.startsWith("/media/") ? [{ video: D.video, start: 0, end: null, cuts: [], duration: 0 }] : [];
     let active = 0, cutFrom = null, busy = false;
     const opts = { mute: false, turn: 0 };
     const player = el("video", { class: "vedit-player", controls: true, playsinline: true, preload: "metadata" });
+    const still = el("img", { class: "vedit-player vedit-still", alt: "", hidden: true });
     const list = el("div", { class: "vedit-clips" });
     const total = el("span", { class: "vedit-total" });
     const status = el("p", { class: "muted vedit-status", role: "status", "aria-live": "polite" });
@@ -269,6 +288,9 @@
     function load(i) {
       active = i; cutFrom = null;
       const c = clips[i];
+      player.hidden = !c || !!c.still; still.hidden = !c || !c.still;
+      if (!c) { player.pause(); drawClips(); return; }
+      if (c.still) { player.pause(); still.src = c.video; drawClips(); return; }
       if (player.getAttribute("src") !== c.video) player.src = c.video;
       if (!c.duration && !c.asked) {   // the server reads the length too, in case this browser can't
         c.asked = true;
@@ -283,9 +305,11 @@
     });
     player.addEventListener("loadedmetadata", () => {
       const c = clips[active];
+      if (!c || c.still) return;
       if (!c.duration) { c.duration = player.duration || 0; drawClips(); }
     });
     player.addEventListener("timeupdate", () => {
+      if (!clips[active] || clips[active].still) return;
       const c = clips[active], head = list.querySelector(`[data-clip="${active}"] .vedit-head`);
       if (head && c.duration) head.style.left = (100 * player.currentTime / c.duration) + "%";
       // Previewing: skip over the parts that will be cut.
@@ -305,15 +329,21 @@
       }
       b.addEventListener("click", (e) => {
         if (i !== active) { load(i); return; }
+        if (c.still) return;
         const r = b.getBoundingClientRect();
         if (c.duration) player.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * c.duration;
       });
       return b;
     }
     function drawClips() {
-      list.replaceChildren(...clips.map((c, i) => {
+      makeBtn.disabled = busy || !clips.length;
+      if (!clips.length) list.replaceChildren(el("p", { class: "muted" }, "Add a video or a picture below to start."));
+      else list.replaceChildren(...clips.map((c, i) => {
         const here = () => (i === active ? player.currentTime : 0);
-        const tools = i === active ? el("div", { class: "row vedit-tools" },
+        const secs = el("input", { type: "number", min: "0.5", max: "120", step: "0.5", value: c.seconds, class: "short", "aria-label": "Seconds to show the picture" });
+        secs.addEventListener("change", () => { c.seconds = c.duration = Math.min(120, Math.max(0.5, +secs.value || 5)); setTimeout(drawClips); });
+        const tools = c.still ? el("label", { class: "row vedit-tools" }, "Show this picture for ", secs, " seconds")
+          : i === active ? el("div", { class: "row vedit-tools" },
           el("button", { type: "button", class: "ghost small", onclick: () => { c.start = here(); if (c.end != null && c.end < c.start) c.end = null; drawClips(); } }, "⇤ Start here"),
           el("button", { type: "button", class: "ghost small", onclick: () => { c.end = Math.max(here(), c.start || 0); drawClips(); } }, "End here ⇥"),
           cutFrom == null
@@ -326,24 +356,53 @@
         const kept = keepPieces(c).reduce((n, [a, b]) => n + b - a, 0);
         return el("div", { class: "vedit-clip" + (i === active ? " on" : ""), "data-clip": i },
           el("div", { class: "row" },
-            el("b", {}, clips.length > 1 ? `Clip ${i + 1}` : "Your video"),
-            el("span", { class: "muted" }, c.duration ? `Keeps ${clock(c.start || 0)} to ${clock(c.end == null ? c.duration : c.end)} · ${clock(kept)} long` : "Loading…"),
+            el("b", {}, c.still ? `Picture${clips.length > 1 ? ` (clip ${i + 1})` : ""}` : clips.length > 1 ? `Clip ${i + 1}` : "Your video"),
+            el("span", { class: "muted" }, c.still ? `${clock(c.seconds)} long` : c.duration ? `Keeps ${clock(c.start || 0)} to ${clock(c.end == null ? c.duration : c.end)} · ${clock(kept)} long` : "Loading…"),
             el("span", { class: "grow" }),
             i > 0 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move clip earlier", onclick: () => { clips.splice(i - 1, 0, clips.splice(i, 1)[0]); load(i - 1); } }, "↑") : null,
             i < clips.length - 1 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move clip later", onclick: () => { clips.splice(i + 1, 0, clips.splice(i, 1)[0]); load(i + 1); } }, "↓") : null,
-            clips.length > 1 ? el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove clip", onclick: () => { clips.splice(i, 1); load(Math.min(active, clips.length - 1)); } }, "✕") : null),
+            clips.length > 1 || !(D.video || "").startsWith("/media/") ? el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove clip", onclick: () => { clips.splice(i, 1); load(Math.max(0, Math.min(active, clips.length - 1))); } }, "✕") : null),
           bar(c, i), tools, cuts);
       }));
       const all = clips.reduce((n, c) => n + keepPieces(c).reduce((m, [a, b]) => m + b - a, 0), 0);
-      total.textContent = clips.every((c) => c.duration) ? `New video: ${clock(all)} long` : "";
+      total.textContent = clips.length && clips.every((c) => c.duration) ? `New video: ${clock(all)} long` : "";
     }
 
-    // Another clip at the end: tap to choose or drag a video onto the box (app rule).
-    const pick = el("input", { type: "file", accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" });
-    const addBox = el("label", { class: "pic-drop upload vedit-add" }, pick, el("span", {}, "+ Add another clip at the end"), el("span", { class: "help" }, "Tap to choose a video, or drag one here."));
-    pick.addEventListener("change", () => pick.files[0] && addClip(pick.files[0]));
-    dropZone(addBox, "video", (f) => addClip(f), () => { status.textContent = "That isn't a video file. MP4 works best."; });
+    // Another clip or picture at the end: tap to choose or drag one onto the box (app rule),
+    // or paste a Google Drive link.
+    const pick = el("input", { type: "file", accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*,image/jpeg,image/png,image/webp,image/gif" });
+    const addBox = el("label", { class: "pic-drop upload vedit-add" }, pick, el("span", {}, "+ Add a video or picture at the end"),
+      el("span", { class: "help" }, "Tap to choose one, or drag it here. A picture shows for 5 seconds; you can change that."));
+    pick.addEventListener("change", () => { if (pick.files[0]) addClip(pick.files[0]); pick.value = ""; });
+    dropZone(addBox, ["video", "image"], (f) => addClip(f), () => { status.textContent = "That isn't a video or picture. MP4 or JPG works best."; });
+    const pushClip = (kind, link) => {
+      clips.push(kind === "image" ? { video: link, still: true, seconds: 5, duration: 5, start: 0, end: null, cuts: [] }
+        : { video: link, start: 0, end: null, cuts: [], duration: 0 });
+      status.textContent = ""; load(clips.length - 1);
+    };
+    const driveLink = el("input", { placeholder: "Paste a Google Drive link to a video or picture", "aria-label": "Google Drive link" });
+    const driveBtn = el("button", { type: "button", class: "ghost small" }, "Add from Google Drive");
+    driveBtn.addEventListener("click", async () => {
+      if (!driveLink.value.trim()) { driveLink.focus(); return; }
+      driveBtn.disabled = true; status.textContent = "Copying from Google Drive… a big video can take a few minutes.";
+      try { const r = await fromDrive(driveLink.value); pushClip(r.kind, r[r.kind]); driveLink.value = ""; }
+      catch (e) { status.textContent = e.message; }
+      finally { driveBtn.disabled = false; }
+    });
+    const driveRow = el("div", { class: "row vedit-drive" }, driveLink, driveBtn);
     function addClip(f) {
+      if (f.type.startsWith("image/")) {
+        const form = new FormData();
+        form.append("image_file", f);
+        form.append("lesson", D.id || D.title || "lesson");
+        status.textContent = `Uploading ${f.name}…`;
+        fetch("/api/manage/image", { method: "POST", body: form }).then(async (res) => {
+          const r = await res.json().catch(() => ({}));
+          if (!res.ok || !r.image) throw new Error(r.error || r.detail || "That picture couldn't be added.");
+          pushClip("image", r.image);
+        }).catch((e) => { status.textContent = e.message === "Failed to fetch" ? "The upload didn't go through. Check the connection and try again." : e.message; });
+        return;
+      }
       const form = new FormData();
       form.append("video_file", f);
       form.append("lesson", D.id || D.title || "lesson");
@@ -352,7 +411,7 @@
       xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) status.textContent = `Uploading ${f.name}: ${Math.round(100 * ev.loaded / ev.total)}%`; };
       xhr.onload = () => {
         let r = {}; try { r = JSON.parse(xhr.responseText); } catch (e) { /* below */ }
-        if (xhr.status === 200 && r.video) { clips.push({ video: r.video, start: 0, end: null, cuts: [], duration: 0 }); status.textContent = ""; load(clips.length - 1); }
+        if (xhr.status === 200 && r.video) pushClip("video", r.video);
         else status.textContent = r.error || r.detail || "The upload didn't work. Try again.";
       };
       xhr.onerror = () => { status.textContent = "The upload didn't go through. Check the connection and try again."; };
@@ -368,7 +427,7 @@
     // Questions timed on the video move with the edit (only the first clip is the old video).
     function moveTimes() {
       const c = clips[0];
-      if (c.video !== D.video) return 0;
+      if (!c || c.video !== D.video) return 0;
       const keep = keepPieces(c);
       let moved = 0;
       for (const s of D.slides) {
@@ -386,13 +445,13 @@
       return moved;
     }
     makeBtn.addEventListener("click", async () => {
-      if (busy || !clips.every((c) => c.duration)) return;
+      if (busy || !clips.length || !clips.every((c) => c.duration)) return;
       busy = true; makeBtn.disabled = true; player.pause();
       status.textContent = "Making the video… this can take a minute or two for a long video. Keep this open.";
       try {
         const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lesson: D.id || D.title || "lesson", mute: opts.mute, turn: opts.turn,
-            clips: clips.map((c) => ({ video: c.video, start: c.start || 0, end: c.end, cuts: c.cuts })) }) });
+            clips: clips.map((c) => ({ video: c.video, start: c.start || 0, end: c.end, cuts: c.cuts, ...(c.still ? { seconds: c.seconds } : {}) })) }) });
         const r = await res.json().catch(() => ({}));
         if (!res.ok || !r.video) throw new Error(r.error || r.detail || "The video couldn't be made. Try again.");
         const moved = moveTimes();
@@ -406,11 +465,11 @@
 
     const back = el("div", { class: "vedit-back", role: "dialog", "aria-modal": "true", "aria-label": "Edit video" },
       el("div", { class: "vedit card" },
-        el("div", { class: "row vedit-top" }, el("h2", {}, "Edit video"), el("span", { class: "grow" }),
+        el("div", { class: "row vedit-top" }, el("h2", {}, clips.length ? "Edit video" : "Make a video"), el("span", { class: "grow" }),
           el("button", { type: "button", class: "ghost small", onclick: close }, "Close")),
-        player,
+        player, still,
         el("p", { class: "help" }, "Play the video and stop where you want, then tap a button. The gold bar is what stays; tap the bar to jump."),
-        list, addBox,
+        list, addBox, driveRow,
         el("div", { class: "row vedit-opts" }, el("label", { class: "check" }, mute, " No sound"), turn),
         el("div", { class: "row vedit-foot" }, total, el("span", { class: "grow" }),
           el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), makeBtn),
@@ -449,6 +508,13 @@
     const draw = (msg) => {
       const file = el("input", { type: "file", multiple: true, accept: "image/jpeg,image/png,image/webp,image/gif" });
       file.addEventListener("change", () => file.files.length && upload([...file.files]));
+      const drive = el("input", { placeholder: "or paste a Google Drive link to a picture", "aria-label": "Google Drive link to a picture" });
+      drive.addEventListener("change", async () => {
+        if (!drive.value.trim()) return;
+        draw("Copying the picture from Google Drive…");
+        try { const r = await fromDrive(drive.value, "image"); s.images = [...s.images, r.image]; touch(); draw(); drawRail(); }
+        catch (e) { draw(e.message); }
+      });
       const n = s.images.length;
       const tiles = s.images.map((src, i) => el("figure", { class: "pic-tile" },
         el("img", { class: "slide-img", src, alt: "" }),
@@ -465,6 +531,7 @@
           n ? null : el("span", { class: "drop-ico", "aria-hidden": "true" }, "🖼️"),
           el("span", {}, el("b", {}, n ? "+ Add more pictures" : "Drag pictures here"), ...(n ? [" (drag them here or tap)"] : [el("br"), "or tap to choose. You can add several."])),
           n ? null : el("span", { class: "help" }, "JPG, PNG, WebP or GIF")),
+        drive,
         msg ? el("p", { class: "muted" }, msg) : null].filter(Boolean));
     };
     async function upload(files) {

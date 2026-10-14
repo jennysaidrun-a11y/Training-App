@@ -1,4 +1,4 @@
-"""The lesson editor's video editor: trim, cut out parts, join clips, mute, turn.
+"""The lesson editor's video editor: trim, cut out parts, join clips and pictures, mute, turn.
 
 The work is done by ffmpeg, the free open-source video tool, from the imageio-ffmpeg
 package (pip installs a ready-made copy on Windows, Mac and Linux, so nothing else to
@@ -12,6 +12,8 @@ import threading
 MAX_CLIPS = 10
 MAX_PIECES = 40          # kept pieces across all clips
 MIN_PIECE = 0.05         # seconds; shorter slivers are dropped
+STILL_SECONDS = 5        # how long a picture shows unless the manager picks another time
+MAX_STILL = 120
 TIMEOUT = 30 * 60
 TURNS = {0: "", 90: "transpose=1,", 180: "transpose=1,transpose=1,", 270: "transpose=2,"}
 lock = threading.Lock()  # one edit at a time, so a small server isn't swamped
@@ -74,17 +76,19 @@ def plan(clips, infos):
     return out
 
 
-def command(paths, pieces, audio, turn, out_path):
+def command(paths, pieces, audio, turn, out_path, stills=None):
     """The ffmpeg command line (a list, never run through a shell). audio: per input,
     whether it has sound; None or all False makes a silent video. A clip without
-    sound gets silence, so it can sit next to clips that have some."""
+    sound gets silence, so it can sit next to clips that have some. stills: {input
+    index: seconds} for pictures, which are shown still for that long."""
+    stills = stills or {}
     audio = audio if audio and any(audio) else None
     rot = TURNS.get(int(turn or 0), "")
     parts, labels = [], []
     for n, (i, a, b) in enumerate(pieces):
         parts.append(f"[{i}:v]trim=start={a}:end={b},setpts=PTS-STARTPTS,{rot}"
                      "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
-                     f"setsar=1,fps=30[v{n}]")
+                     f"setsar=1,fps=30,format=yuv420p[v{n}]")
         labels.append(f"[v{n}]")
         if audio and audio[i]:
             parts.append(f"[{i}:a]atrim=start={a}:end={b},asetpts=PTS-STARTPTS,aresample=48000,"
@@ -95,7 +99,9 @@ def command(paths, pieces, audio, turn, out_path):
             labels.append(f"[a{n}]")
     parts.append("".join(labels) + f"concat=n={len(pieces)}:v=1:a={1 if audio else 0}[v]" + ("[a]" if audio else ""))
     cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y"]
-    for p in paths:
+    for i, p in enumerate(paths):
+        if i in stills:
+            cmd += ["-loop", "1", "-framerate", "30", "-t", str(stills[i])]
         cmd += ["-i", str(p)]
     cmd += ["-filter_complex", ";".join(parts), "-map", "[v]"]
     cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", "128k"] if audio else ["-an"]
@@ -105,15 +111,23 @@ def command(paths, pieces, audio, turn, out_path):
 
 
 def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run):
-    """Makes the edited video at out_path. clips: [{start, end, cuts}] matching paths.
+    """Makes the edited video at out_path. clips: [{start, end, cuts}] matching paths;
+    a picture's clip also has "seconds" (how long it shows).
     Returns {"duration": new length in seconds}."""
-    infos = [probe(p, runner) for p in paths]
+    stills, infos = {}, []
+    for i, (c, p) in enumerate(zip(clips, paths)):
+        if "seconds" in c:
+            secs = round(min(max(float(c["seconds"] or STILL_SECONDS), 0.5), MAX_STILL), 2)
+            stills[i] = secs
+            infos.append({"duration": secs, "audio": False})
+        else:
+            infos.append(probe(p, runner))
     pieces = plan(clips, infos)
     audio = None if mute else [x["audio"] for x in infos]
     if not lock.acquire(blocking=False):
         raise EditError("Another video is being made right now. Try again in a minute.")
     try:
-        r = runner(command(paths, pieces, audio, turn, out_path), capture_output=True, text=True,
+        r = runner(command(paths, pieces, audio, turn, out_path, stills), capture_output=True, text=True,
                    encoding="utf-8", errors="replace", timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
         raise EditError("Making the video took too long. Try a shorter video.")

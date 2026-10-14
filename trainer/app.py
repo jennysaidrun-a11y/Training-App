@@ -1243,20 +1243,94 @@ async def upload_video(request: Request):
     return {"video": _save_upload(upload, str(form.get("lesson") or "lesson"))}
 
 
-def _media_video(link):
-    """The file behind an uploaded video's /media/ link, or None."""
+def _media_file(link, types=VIDEO_TYPES):
+    """The file behind an uploaded /media/ link of one of these types, or None."""
     link = str(link or "")
     name = link.rsplit("/", 1)[-1]
     ext = "." + name.rsplit(".", 1)[-1] if "." in name else ""
-    if link == "/media/" + name and MEDIA_NAME.match(name) and ext in VIDEO_TYPES and (media_dir() / name).is_file():
+    if link == "/media/" + name and MEDIA_NAME.match(name) and ext in types and (media_dir() / name).is_file():
         return media_dir() / name
     return None
+
+
+# Google Drive: a manager pastes a share link ("Anyone with the link"), the server copies
+# the file into data/media. Only Google's own download address is ever fetched.
+DRIVE_LINK = re.compile(r"^https://(?:drive|docs)\.google\.com/[^\s]*?(?:/d/|[?&]id=)([A-Za-z0-9_-]{20,})")
+DRIVE_DOWNLOAD = "https://drive.usercontent.google.com/download"
+MAGIC = {".mp4": [(4, b"ftyp")], ".m4v": [(4, b"ftyp")], ".mov": [(4, b"ftyp"), (4, b"moov"), (4, b"wide"), (4, b"mdat")],
+         ".webm": [(0, b"\x1a\x45\xdf\xa3")], ".jpg": [(0, b"\xff\xd8")], ".jpeg": [(0, b"\xff\xd8")],
+         ".png": [(0, b"\x89PNG")], ".gif": [(0, b"GIF8")], ".webp": [(8, b"WEBP")]}
+EXT_OF_TYPE = {"video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm", "video/x-m4v": ".m4v",
+               "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
+
+
+def _drive_copy(link, lesson_id, get=None):
+    """Copies a shared Google Drive video or picture into data/media. Returns
+    (kind, /media/ link) with kind "video" or "image"; raises ValueError with a message."""
+    import requests
+    get = get or requests.get
+    m = DRIVE_LINK.match(str(link or "").strip())
+    if not m:
+        raise ValueError("That isn't a Google Drive file link. In Drive, tap Share › Copy link, then paste it here.")
+    try:
+        r = get(DRIVE_DOWNLOAD, params={"id": m.group(1), "export": "download", "confirm": "t"}, stream=True, timeout=60)
+    except requests.RequestException:
+        raise ValueError("Google Drive couldn't be reached. Try again in a minute.")
+    with r:
+        ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if r.status_code != 200 or ctype.startswith("text/"):
+            raise ValueError("Google Drive didn't share that file. In Drive, set Share › General access to "
+                             "\"Anyone with the link\", then try again.")
+        fname = re.findall(r'filename="?([^";]+)"?', r.headers.get("Content-Disposition") or "")
+        ext = os.path.splitext(fname[-1])[1].lower() if fname else ""
+        if ext not in MEDIA_TYPES:
+            ext = EXT_OF_TYPE.get(ctype, ext)
+        if ext not in MEDIA_TYPES:
+            raise ValueError("That file isn't a video or picture the app can use (MP4, MOV, WebM, JPG, PNG, WebP or GIF).")
+        kind = "video" if ext in VIDEO_TYPES else "image"
+        cap = MAX_VIDEO_BYTES if kind == "video" else MAX_IMAGE_BYTES
+        name = f"{content.slugify(lesson_id)}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}{ext}"
+        path, size, head = media_dir() / name, 0, b""
+        try:
+            with open(path, "wb") as out:
+                for chunk in r.iter_content(1024 * 1024):
+                    size += len(chunk)
+                    if size > cap:
+                        raise ValueError("That file is too big (videos up to 2 GB, pictures up to 15 MB).")
+                    if len(head) < 16:
+                        head += chunk[:16]
+                    out.write(chunk)
+            if not any(head[i:i + len(sig)] == sig for i, sig in MAGIC[ext]):
+                raise ValueError("That file doesn't look like the video or picture its name says. Try another copy.")
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+    return kind, f"/media/{name}"
+
+
+@app.post("/api/manage/drive")
+async def from_drive(request: Request):
+    """Copies a video or picture from a Google Drive share link into the app."""
+    try:
+        body = await request.json()
+        link, lesson_id, want = str(body.get("link") or ""), str(body.get("lesson") or "lesson"), body.get("kind")
+    except (ValueError, AttributeError):
+        return JSONResponse({"error": "Paste a Google Drive link."}, status_code=400)
+    try:
+        kind, media = await run_in_threadpool(_drive_copy, link, lesson_id)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if want in ("video", "image") and kind != want:
+        (media_dir() / media.rsplit("/", 1)[-1]).unlink(missing_ok=True)
+        return JSONResponse({"error": "That Drive file is a picture, not a video." if want == "video"
+                             else "That Drive file is a video, not a picture."}, status_code=400)
+    return {"kind": kind, kind: media}
 
 
 @app.get("/api/manage/video/info")
 async def video_info(v: str = ""):
     """Length of an uploaded video, for the video editor when the browser can't read it."""
-    path = _media_video(v)
+    path = _media_file(v)
     if not path:
         return JSONResponse({"error": "Only videos uploaded to the app can be edited."}, status_code=400)
     try:
@@ -1268,7 +1342,8 @@ async def video_info(v: str = ""):
 @app.post("/api/manage/video/edit")
 async def edit_video(request: Request):
     """The editor's video editor: makes a new MP4 from one or more uploaded clips
-    (each trimmed, with parts cut out), optionally muted or turned. The clips are kept
+    (each trimmed, with parts cut out) and pictures (each shown for some seconds),
+    optionally muted or turned. The clips are kept
     as they were; the new video becomes part of the lesson when the lesson is saved."""
     try:
         body = await request.json()
@@ -1277,16 +1352,17 @@ async def edit_video(request: Request):
         return JSONResponse({"error": "That edit couldn't be read. Reload the page and try again."}, status_code=400)
     clips, paths = [], []
     for c in (body.get("clips") or [])[:video.MAX_CLIPS + 1]:
-        path = _media_video(c.get("video")) if isinstance(c, dict) else None
+        path = _media_file(c.get("video"), MEDIA_TYPES) if isinstance(c, dict) else None
         if not path:
-            return JSONResponse({"error": "Only videos uploaded to the app can be edited."}, status_code=400)
+            return JSONResponse({"error": "Only videos and pictures uploaded to the app can be used."}, status_code=400)
         try:
             cuts = [(float(a), float(b)) for a, b in (c.get("cuts") or [])[:video.MAX_PIECES]]
             start = float(c.get("start") or 0)
             end = None if c.get("end") in (None, "") else float(c["end"])
+            seconds = float(c.get("seconds") or video.STILL_SECONDS) if path.suffix in IMAGE_TYPES else None
         except (TypeError, ValueError):
             return JSONResponse({"error": "A start, end or cut time isn't a number."}, status_code=400)
-        clips.append({"start": start, "end": end, "cuts": cuts})
+        clips.append({"start": start, "end": end, "cuts": cuts, **({"seconds": seconds} if seconds is not None else {})})
         paths.append(path)
     if turn not in video.TURNS:
         return JSONResponse({"error": "Turn the video by 90, 180 or 270 degrees."}, status_code=400)

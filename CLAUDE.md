@@ -16,6 +16,10 @@ Cal/OSHA (8 CCR, Title 8) apply.
 - Video editor in the lesson editor ("✂ Edit video": trim, cut out parts, join clips, mute, turn): `trainer/video.py`
   runs ffmpeg from the `imageio-ffmpeg` pip package (no other install) and makes a new 720p MP4; routes
   `/api/manage/video/edit` and `/api/manage/video/info`. Only files already in `data/media` can be edited.
+  Pictures can be clips too (shown still for N seconds), so a video can be made from pictures alone.
+- Google Drive: managers paste a share link ("Anyone with the link") in the video editor, the Video box or a
+  picture slide; `/api/manage/drive` (`app._drive_copy`) copies the file into `data/media` from Google's fixed
+  download address only, with size caps and a file-signature check. No Google account or key is stored.
 - iPad/iPhone: `static/manifest.json` + `icon-*.png` (from `app.ico`) so Add to Home Screen opens it full screen.
 - `content/lessons/*.yaml`: one lesson per file. `version` = last change that makes
   everyone retake it; `reviewed_on` = last time it was checked against its rules.

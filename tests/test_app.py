@@ -1230,3 +1230,78 @@ def test_video_editor_reads_the_length(client, env):
     r = client.get("/api/manage/video/info", params={"v": "/media/" + a.name}).json()
     assert abs(r["duration"] - 2) < 0.2 and r["audio"]
     assert client.get("/api/manage/video/info", params={"v": "/media/../t.db"}).status_code == 400
+
+
+def test_video_editor_shows_pictures(client, env):
+    from trainer import app as app_module, video
+    a = app_module.media_dir() / "allergens-20990101000000.mp4"
+    _clip(a, 3)
+    pic = app_module.media_dir() / "allergens-20990101000002.png"
+    subprocess.run([video.ffmpeg_exe(), "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=red:s=301x199",
+                    "-frames:v", "1", str(pic)], check=True)
+    r = client.post("/api/manage/video/edit", json={"clips": [
+        {"video": "/media/" + pic.name, "seconds": 2.5}, {"video": "/media/" + a.name}]})
+    assert r.status_code == 200, r.text
+    assert abs(r.json()["duration"] - 5.5) < 0.01
+    info = video.probe(app_module.media_dir() / r.json()["video"].rsplit("/", 1)[-1])
+    assert abs(info["duration"] - 5.5) < 0.3 and info["audio"]  # the picture gets silence, the clip keeps its sound
+    # A picture alone makes a silent video.
+    r = client.post("/api/manage/video/edit", json={"clips": [{"video": "/media/" + pic.name}]})
+    assert r.status_code == 200 and abs(r.json()["duration"] - 5) < 0.01
+
+
+class _DriveReply:
+    def __init__(self, body, ctype="video/mp4", name="Floor clip.mp4", status=200):
+        self.status_code, self.body = status, body
+        self.headers = {"Content-Type": ctype, "Content-Disposition": f'attachment; filename="{name}"' if name else ""}
+
+    def iter_content(self, n):
+        for i in range(0, len(self.body), n):
+            yield self.body[i:i + n]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_google_drive_copies_shared_files(client, env, monkeypatch):
+    from trainer import app as app_module
+    calls = []
+
+    def fake_get(url, params=None, **kw):
+        calls.append((url, params))
+        return replies.pop(0)
+
+    monkeypatch.setattr("requests.get", fake_get)
+    fid = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+    mp4 = b"\x00\x00\x00\x18ftypmp42" + b"x" * 500
+    replies = [_DriveReply(mp4)]
+    r = client.post("/api/manage/drive", json={"link": f"https://drive.google.com/file/d/{fid}/view?usp=sharing", "lesson": "allergens"})
+    assert r.status_code == 200 and r.json()["kind"] == "video"
+    assert calls[0] == (app_module.DRIVE_DOWNLOAD, {"id": fid, "export": "download", "confirm": "t"})
+    assert client.get(r.json()["video"]).content == mp4
+
+    replies = [_DriveReply(b"\x89PNG\r\n\x1a\n" + b"p" * 50, "image/png", name="")]
+    r = client.post("/api/manage/drive", json={"link": f"https://drive.google.com/open?id={fid}", "kind": "image"})
+    assert r.status_code == 200 and r.json()["image"].endswith(".png")
+
+    # Not shared (Drive answers with a sign-in page), wrong kind, fake file, not a Drive link.
+    before = set(app_module.media_dir().iterdir())
+    replies = [_DriveReply(b"<html>", "text/html; charset=utf-8", name="")]
+    r = client.post("/api/manage/drive", json={"link": f"https://drive.google.com/file/d/{fid}/view"})
+    assert r.status_code == 400 and "Anyone with the link" in r.json()["error"]
+    replies = [_DriveReply(mp4)]
+    r = client.post("/api/manage/drive", json={"link": f"https://drive.google.com/file/d/{fid}/view", "kind": "image"})
+    assert r.status_code == 400 and "not a picture" in r.json()["error"]
+    replies = [_DriveReply(b"MZ not a video at all", name="clip.mp4")]
+    assert client.post("/api/manage/drive", json={"link": f"https://drive.google.com/file/d/{fid}/view"}).status_code == 400
+    replies = [_DriveReply(b"x", "application/zip", name="files.zip")]
+    assert client.post("/api/manage/drive", json={"link": f"https://drive.google.com/file/d/{fid}/view"}).status_code == 400
+    for bad in ["https://evil.example/file/d/" + fid, "http://drive.google.com/file/d/" + fid, "not a link"]:
+        r = client.post("/api/manage/drive", json={"link": bad})
+        assert r.status_code == 400 and "Google Drive file link" in r.json()["error"]
+    assert set(app_module.media_dir().iterdir()) == before  # nothing left behind
+    from fastapi.testclient import TestClient as _TC
+    assert _TC(app_module.app).post("/api/manage/drive", json={"link": "x"}, follow_redirects=False).status_code in (303, 401, 403)

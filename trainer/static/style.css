@@ -839,3 +839,9 @@ body:has(.vedit-back) { overflow: hidden; }
 
 /* Opened from the iPad/iPhone home screen: the clock bar sits over the brown header */
 .top { padding-top: env(safe-area-inset-top); }
+.vedit-still { object-fit: contain; aspect-ratio: 16 / 9; }
+.vedit-still[hidden], .vedit-player[hidden] { display: none; }
+.vedit-drive input { flex: 1 1 240px; min-height: 44px; }
+.vedit-drive button { min-height: 44px; }
+.vedit-tools input.short { width: 90px; min-height: 44px; }
+.picture-field > input { margin-top: 8px; }
