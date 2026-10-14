@@ -116,16 +116,17 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
 
 # Where pages may load things from. Inline scripts stay allowed (the templates use
-# them); everything else is this app, plus Google Fonts and YouTube for lesson videos.
+# them); everything else is this app, plus Google Fonts, YouTube for lesson videos and
+# Google's sign-in and Drive picker (the "Choose from Google Drive" button).
 CSP = "; ".join([
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://www.youtube.com https://s.ytimg.com",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "script-src 'self' 'unsafe-inline' https://www.youtube.com https://s.ytimg.com https://apis.google.com https://accounts.google.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob: https:",
     "media-src 'self' blob: https:",
-    "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
-    "connect-src 'self'",
+    "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://docs.google.com https://drive.google.com https://accounts.google.com https://content.googleapis.com",
+    "connect-src 'self' https://accounts.google.com https://www.googleapis.com https://content.googleapis.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -1162,11 +1163,21 @@ def purge_lesson(name: str):
     return RedirectResponse("/manage/topics#trash", status_code=303)
 
 
+def drive_picker():
+    """Settings for the "Choose from Google Drive" button, or None until set up. Both values
+    are public by design (Google shows them in the browser); they come from the
+    GOOGLE_CLIENT_ID and GOOGLE_API_KEY settings (GitHub secrets on the online copy)."""
+    client_id, api_key = os.environ.get("GOOGLE_CLIENT_ID", "").strip(), os.environ.get("GOOGLE_API_KEY", "").strip()
+    if not (client_id and api_key):
+        return None
+    return {"clientId": client_id, "apiKey": api_key, "appId": client_id.split("-", 1)[0]}
+
+
 def _editor(request, lesson, is_new=False):
     status = rules.load_status().get("rules", {})
     return render(request, "edit.html", lesson=lesson, is_new=is_new, roles=content.load_roles(),
                   data=editor.editor_payload(lesson), rule_status=status, research_ready=research.available(),
-                  research_mode=research.mode(),
+                  research_mode=research.mode(), drive=drive_picker(),
                   rule_list=[{"ref": r["ref"], "name": r["name"] or status.get(r["ref"], {}).get("name", "")}
                              for r in content.load_rules()])
 
@@ -1264,25 +1275,40 @@ EXT_OF_TYPE = {"video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".w
                "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
 
 
-def _drive_copy(link, lesson_id, get=None):
-    """Copies a shared Google Drive video or picture into data/media. Returns
-    (kind, /media/ link) with kind "video" or "image"; raises ValueError with a message."""
+DRIVE_FILE_ID = re.compile(r"^[A-Za-z0-9_-]{20,}$")
+DRIVE_API = "https://www.googleapis.com/drive/v3/files/"
+
+
+def _drive_copy(link, lesson_id, get=None, file_id=None, token=None, name=""):
+    """Copies a Google Drive video or picture into data/media: from a share link, or a file
+    picked with the Drive button (file_id + the manager's short-lived Google token, used
+    once and never stored). Returns (kind, /media/ link) with kind "video" or "image";
+    raises ValueError with a message."""
     import requests
     get = get or requests.get
-    m = DRIVE_LINK.match(str(link or "").strip())
-    if not m:
-        raise ValueError("That isn't a Google Drive file link. In Drive, tap Share › Copy link, then paste it here.")
     try:
-        r = get(DRIVE_DOWNLOAD, params={"id": m.group(1), "export": "download", "confirm": "t"}, stream=True, timeout=60)
+        if file_id:
+            if not (DRIVE_FILE_ID.match(str(file_id)) and token):
+                raise ValueError("Pick the file in Google Drive again.")
+            r = get(DRIVE_API + file_id, params={"alt": "media", "supportsAllDrives": "true"},
+                    headers={"Authorization": f"Bearer {token}"}, stream=True, timeout=60)
+        else:
+            m = DRIVE_LINK.match(str(link or "").strip())
+            if not m:
+                raise ValueError("That isn't a Google Drive file link. In Drive, tap Share › Copy link, then paste it here.")
+            r = get(DRIVE_DOWNLOAD, params={"id": m.group(1), "export": "download", "confirm": "t"}, stream=True, timeout=60)
     except requests.RequestException:
         raise ValueError("Google Drive couldn't be reached. Try again in a minute.")
     with r:
         ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if file_id and r.status_code != 200:
+            raise ValueError("Google Drive didn't let the app copy that file. Pick it again; if it keeps happening, "
+                             "sign in to Google again.")
         if r.status_code != 200 or ctype.startswith("text/"):
             raise ValueError("Google Drive didn't share that file. In Drive, set Share › General access to "
                              "\"Anyone with the link\", then try again.")
-        fname = re.findall(r'filename="?([^";]+)"?', r.headers.get("Content-Disposition") or "")
-        ext = os.path.splitext(fname[-1])[1].lower() if fname else ""
+        fname = re.findall(r'filename="?([^";]+)"?', r.headers.get("Content-Disposition") or "") or [str(name or "")]
+        ext = os.path.splitext(fname[-1])[1].lower() if fname[-1] else ""
         if ext not in MEDIA_TYPES:
             ext = EXT_OF_TYPE.get(ctype, ext)
         if ext not in MEDIA_TYPES:
@@ -1310,14 +1336,17 @@ def _drive_copy(link, lesson_id, get=None):
 
 @app.post("/api/manage/drive")
 async def from_drive(request: Request):
-    """Copies a video or picture from a Google Drive share link into the app."""
+    """Copies a video or picture from Google Drive into the app: a share link, or a file
+    picked with the "Choose from Google Drive" button."""
     try:
         body = await request.json()
         link, lesson_id, want = str(body.get("link") or ""), str(body.get("lesson") or "lesson"), body.get("kind")
+        picked = {"file_id": str(body.get("file_id") or ""), "token": str(body.get("token") or ""),
+                  "name": str(body.get("name") or "")} if body.get("file_id") else {}
     except (ValueError, AttributeError):
         return JSONResponse({"error": "Paste a Google Drive link."}, status_code=400)
     try:
-        kind, media = await run_in_threadpool(_drive_copy, link, lesson_id)
+        kind, media = await run_in_threadpool(lambda: _drive_copy(link, lesson_id, **picked))
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     if want in ("video", "image") and kind != want:

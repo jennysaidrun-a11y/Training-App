@@ -1305,3 +1305,35 @@ def test_google_drive_copies_shared_files(client, env, monkeypatch):
     assert set(app_module.media_dir().iterdir()) == before  # nothing left behind
     from fastapi.testclient import TestClient as _TC
     assert _TC(app_module.app).post("/api/manage/drive", json={"link": "x"}, follow_redirects=False).status_code in (303, 401, 403)
+
+
+def test_google_drive_picker(client, env, monkeypatch):
+    from trainer import app as app_module
+    page = client.get("/manage/lesson/allergens").text
+    assert "window.DRIVE = null" in page          # no button until Google is set up
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "123456789012-abc.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_API_KEY", "AIzaPublicBrowserKey")
+    page = client.get("/manage/lesson/allergens")
+    assert '"appId": "123456789012"' in page.text and "https://apis.google.com" in page.headers["content-security-policy"]
+
+    calls = []
+
+    def fake_get(url, params=None, headers=None, **kw):
+        calls.append((url, params, headers))
+        return replies.pop(0)
+
+    monkeypatch.setattr("requests.get", fake_get)
+    fid = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+    replies = [_DriveReply(b"\xff\xd8\xff\xe0jpegdata", "image/jpeg", name="")]
+    r = client.post("/api/manage/drive", json={"file_id": fid, "token": "ya29.short", "name": "Mixer guard.JPG", "kind": "image"})
+    assert r.status_code == 200 and r.json()["image"].endswith(".jpg")
+    assert calls[0][0] == app_module.DRIVE_API + fid and calls[0][1]["alt"] == "media"
+    assert calls[0][2] == {"Authorization": "Bearer ya29.short"}
+    # Google says no (expired pass), or a made-up file id: nothing is fetched or kept.
+    replies = [_DriveReply(b"{}", "application/json", name="", status=401)]
+    r = client.post("/api/manage/drive", json={"file_id": fid, "token": "old", "name": "a.jpg"})
+    assert r.status_code == 400 and "sign in to Google again" in r.json()["error"]
+    n = len(calls)
+    assert client.post("/api/manage/drive", json={"file_id": "../../etc", "token": "t"}).status_code == 400
+    assert client.post("/api/manage/drive", json={"file_id": fid}).status_code == 400
+    assert len(calls) == n

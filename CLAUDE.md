@@ -20,6 +20,9 @@ Cal/OSHA (8 CCR, Title 8) apply.
 - Google Drive: managers paste a share link ("Anyone with the link") in the video editor, the Video box or a
   picture slide; `/api/manage/drive` (`app._drive_copy`) copies the file into `data/media` from Google's fixed
   download address only, with size caps and a file-signature check. No Google account or key is stored.
+  "Choose from Google Drive" (Google's sign-in + Picker, scope `drive.file`) shows once `GOOGLE_CLIENT_ID` and
+  `GOOGLE_API_KEY` are set (GitHub secrets, staged to Fly by the deploy workflow); the browser's short-lived
+  Google token is sent with the picked file id, used once by the server and never stored.
 - iPad/iPhone: `static/manifest.json` + `icon-*.png` (from `app.ico`) so Add to Home Screen opens it full screen.
 - `content/lessons/*.yaml`: one lesson per file. `version` = last change that makes
   everyone retake it; `reviewed_on` = last time it was checked against its rules.

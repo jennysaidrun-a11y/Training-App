@@ -845,3 +845,5 @@ body:has(.vedit-back) { overflow: hidden; }
 .vedit-drive button { min-height: 44px; }
 .vedit-tools input.short { width: 90px; min-height: 44px; }
 .picture-field > input { margin-top: 8px; }
+.vedit-drive-wrap { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.vedit-drive-wrap .vedit-drive { align-self: stretch; }

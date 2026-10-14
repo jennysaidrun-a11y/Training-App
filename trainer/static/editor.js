@@ -79,12 +79,66 @@
   }
   // Google Drive: paste a share link; the server copies the file into the app.
   const isDrive = (u) => /^https:\/\/(drive|docs)\.google\.com\//.test(String(u || "").trim());
-  async function fromDrive(link, kind) {
+  async function fromDrive(link, kind, picked) {
     const res = await fetch("/api/manage/drive", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ link: link.trim(), kind, lesson: D.id || D.title || "lesson" }) });
+      body: JSON.stringify({ link: (link || "").trim(), kind, lesson: D.id || D.title || "lesson", ...(picked || {}) }) });
     const r = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(r.error || r.detail || "That Drive file couldn't be copied. Try again.");
     return r;
+  }
+  // "Choose from Google Drive": Google's own sign-in and file picker, shown once it's set up
+  // (window.DRIVE). Google keeps the sign-in; the app only gets a short-lived pass to copy
+  // the files you pick (drive.file), which the server uses once and doesn't store.
+  const DRIVE_TYPES = { video: "video/mp4,video/quicktime,video/webm,video/x-m4v", image: "image/jpeg,image/png,image/webp,image/gif" };
+  let driveToken = null, driveTokenAt = 0;
+  const loadScript = (src) => new Promise((ok, bad) => {
+    const t = document.createElement("script"); t.src = src; t.async = true; t.onload = ok;
+    t.onerror = () => bad(new Error("Google Drive couldn't be reached.")); document.head.append(t);
+  });
+  const driveReady = window.DRIVE ? Promise.all([loadScript("https://apis.google.com/js/api.js"), loadScript("https://accounts.google.com/gsi/client")])
+    .then(() => new Promise((ok) => window.gapi.load("picker", ok))).catch(() => null) : null;
+  function driveSignIn() {
+    if (driveToken && Date.now() - driveTokenAt < 50 * 60 * 1000) return Promise.resolve(driveToken);
+    return new Promise((ok, bad) => {
+      window.google.accounts.oauth2.initTokenClient({
+        client_id: window.DRIVE.clientId, scope: "https://www.googleapis.com/auth/drive.file",
+        callback: (r) => { if (r.error || !r.access_token) bad(new Error("Google sign-in didn't finish.")); else { driveToken = r.access_token; driveTokenAt = Date.now(); ok(driveToken); } },
+        error_callback: () => bad(new Error("Google sign-in was closed before it finished.")),
+      }).requestAccessToken();   // straight from the tap, so the sign-in window isn't blocked
+    });
+  }
+  // Opens the picker; resolves to [{id, name}] (empty if closed).
+  async function pickFromDrive(kinds, multi) {
+    if (!(window.google && window.google.picker && window.google.accounts)) throw new Error("Google Drive is still loading. Tap again in a moment.");
+    const token = await driveSignIn();
+    return new Promise((ok) => {
+      const P = window.google.picker;
+      const view = new P.DocsView(P.ViewId.DOCS).setMimeTypes(kinds.map((k) => DRIVE_TYPES[k]).join(",")).setIncludeFolders(true).setSelectFolderEnabled(false);
+      const b = new P.PickerBuilder().addView(view).setOAuthToken(token).setDeveloperKey(window.DRIVE.apiKey).setAppId(window.DRIVE.appId)
+        .setTitle("Choose from Google Drive")
+        .setCallback((d) => { if (d.action === P.Action.PICKED) ok(d.docs.map((x) => ({ id: x.id, name: x.name }))); else if (d.action === P.Action.CANCEL) ok([]); });
+      if (multi) b.enableFeature(P.Feature.MULTISELECT_ENABLED);
+      b.build().setVisible(true);
+    });
+  }
+  // A "Choose from Google Drive" button: picks, copies each file in, calls onCopied(kind, link).
+  function driveButton(kinds, multi, onCopied, say, label = "Choose from Google Drive") {
+    if (!window.DRIVE) return null;
+    const btn = el("button", { type: "button", class: "ghost small drive-btn" }, label);
+    btn.addEventListener("click", async () => {
+      try {
+        const docs = await pickFromDrive(kinds, multi);
+        btn.disabled = true;
+        for (const [i, d] of docs.entries()) {
+          say(`Copying ${docs.length > 1 ? `${i + 1} of ${docs.length}: ` : ""}${d.name} from Google Drive…`);
+          const r = await fromDrive("", kinds.length === 1 ? kinds[0] : undefined, { file_id: d.id, token: driveToken, name: d.name });
+          onCopied(r.kind, r[r.kind]);
+        }
+        if (docs.length) say("");
+      } catch (e) { say(e.message); }
+      finally { btn.disabled = false; }
+    });
+    return btn;
   }
 
   function thumb(index, kind, label, sub) {
@@ -208,6 +262,8 @@
       file.addEventListener("change", () => file.files[0] && upload(file.files[0]));
       kids.push(el("div", { class: "row" },
         el("label", { class: "upload" }, file, el("span", { class: "btn blue small" }, D.video ? "Replace video" : "Upload a video")),
+        driveButton(["video"], false, (k, v) => { D.video = v; touch(); draw(); saveNote.textContent = "Video copied from Google Drive. Save the lesson to keep it."; },
+          (m) => { note.hidden = !m; note.textContent = m; }, "From Google Drive"),
         el("button", { type: "button", class: "btn small", onclick: () => openVideoEditor(draw) },
           D.video && D.video.startsWith("/media/") ? "✂ Edit video" : "🎬 Make a video"),
         D.video ? el("button", { type: "button", class: "ghost small danger", onclick: () => { D.video = ""; touch(); draw(); } }, "Remove") : null));
@@ -389,7 +445,9 @@
       catch (e) { status.textContent = e.message; }
       finally { driveBtn.disabled = false; }
     });
-    const driveRow = el("div", { class: "row vedit-drive" }, driveLink, driveBtn);
+    const pickBtn = driveButton(["video", "image"], true, (k, v) => pushClip(k, v), (m) => { status.textContent = m; });
+    if (pickBtn) { pickBtn.className = "btn blue small drive-btn"; driveBtn.textContent = "Add link"; driveLink.placeholder = "or paste a Google Drive link"; }
+    const driveRow = el("div", { class: "vedit-drive-wrap" }, pickBtn, el("div", { class: "row vedit-drive" }, driveLink, driveBtn));
     function addClip(f) {
       if (f.type.startsWith("image/")) {
         const form = new FormData();
@@ -531,6 +589,7 @@
           n ? null : el("span", { class: "drop-ico", "aria-hidden": "true" }, "🖼️"),
           el("span", {}, el("b", {}, n ? "+ Add more pictures" : "Drag pictures here"), ...(n ? [" (drag them here or tap)"] : [el("br"), "or tap to choose. You can add several."])),
           n ? null : el("span", { class: "help" }, "JPG, PNG, WebP or GIF")),
+        driveButton(["image"], true, (k, v) => { s.images = [...s.images, v]; touch(); }, (m) => { if (m) draw(m); else { draw(); drawRail(); } }, "Choose pictures from Google Drive"),
         drive,
         msg ? el("p", { class: "muted" }, msg) : null].filter(Boolean));
     };
