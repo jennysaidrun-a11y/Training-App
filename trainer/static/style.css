@@ -810,3 +810,32 @@ table.grid.records tr.topic-row th { background: var(--bg); color: var(--crust);
 .rule-row .meta { margin-top: 4px; }
 .add-rule { margin: 10px 0 0; gap: 6px; flex-wrap: wrap; }
 .add-rule input { flex: 1 1 180px; min-width: 0; min-height: 38px; }
+
+/* Video editor (lesson editor: "✂ Edit video"); big tap targets for iPad */
+body:has(.vedit-back) { overflow: hidden; }
+.vedit-back { position: fixed; inset: 0; z-index: 90; background: rgba(20, 12, 4, .7); overflow-y: auto; -webkit-overflow-scrolling: touch;
+              padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+.vedit.card { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.vedit-top h2 { margin: 0; }
+.vedit-player { width: 100%; max-height: 55vh; background: #000; border-radius: var(--radius); }
+.vedit-clips { display: flex; flex-direction: column; gap: 10px; }
+.vedit-clip { border: 2px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.vedit-clip.on { border-color: var(--gold); }
+.vedit-clip .muted { font-size: .85rem; }
+.vedit-bar { position: relative; height: 36px; border-radius: 8px; background: var(--grey-node); cursor: pointer; overflow: hidden; touch-action: manipulation; }
+.vedit-bar .keep { position: absolute; top: 0; bottom: 0; background: var(--gold); }
+.vedit-head { position: absolute; top: -2px; bottom: -2px; width: 3px; margin-left: -1px; background: var(--crust); pointer-events: none; }
+.vedit-tools button, .vedit-clip .row button { min-height: 44px; }
+.vedit-cuts { display: flex; flex-wrap: wrap; gap: 6px; }
+.vedit-cuts .pill { background: var(--red-soft); color: var(--red-ink); padding: 2px 4px 2px 10px; }
+.vedit-cuts .x { min-height: 32px; min-width: 32px; padding: 0; border: 0; background: none; box-shadow: none; color: inherit; font-weight: 700; cursor: pointer; }
+.vedit-opts { gap: 16px; }
+.vedit-opts .check { margin: 0; align-items: center; }
+.vedit-opts select { min-height: 44px; }
+.vedit-foot { border-top: 1px solid var(--line); padding-top: 12px; }
+.vedit-total { font-weight: 700; color: var(--heading); }
+.vedit-status:empty { display: none; }
+.pic-drop.vedit-add { min-height: 0; padding: 14px 16px; gap: 2px; }
+
+/* Opened from the iPad/iPhone home screen: the clock bar sits over the brown header */
+.top { padding-top: env(safe-area-inset-top); }

@@ -199,6 +199,7 @@
       file.addEventListener("change", () => file.files[0] && upload(file.files[0]));
       kids.push(el("div", { class: "row" },
         el("label", { class: "upload" }, file, el("span", { class: "btn blue small" }, D.video ? "Replace video" : "Upload a video")),
+        D.video && D.video.startsWith("/media/") ? el("button", { type: "button", class: "btn small", onclick: () => openVideoEditor(draw) }, "✂ Edit video") : null,
         D.video ? el("button", { type: "button", class: "ghost small danger", onclick: () => { D.video = ""; touch(); draw(); } }, "Remove") : null));
       const meter = el("div", { class: "meter light", hidden: true }, el("span", { style: "width:0%" }));
       const note = el("p", { class: "muted", hidden: true });
@@ -238,6 +239,186 @@
     dropZone(box, "video", (f) => box.upload(f), () => alert("That isn't a video file. MP4 works best."));
     draw();
     return box;
+  }
+
+  // ---- Video editor -------------------------------------------------------------
+  // Trim, cut out parts, add more clips at the end, mute, turn. The server makes the
+  // new MP4 with ffmpeg (free and open source); the clips themselves aren't changed.
+  const clock = (t) => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s < 10 ? "0" : ""}${s.toFixed(1)}`; };
+  function keepPieces(c) {          // same rule as the server (trainer/video.py keep_pieces)
+    const dur = c.duration || 0, start = Math.min(c.start || 0, dur), end = c.end == null ? dur : Math.max(start, Math.min(c.end, dur));
+    let pieces = [[start, end]];
+    for (const [a, b] of [...c.cuts].sort((x, y) => x[0] - y[0])) {
+      if (b <= a) continue;
+      pieces = pieces.flatMap(([p, q]) => (b <= p || a >= q) ? [[p, q]] : [...(a > p ? [[p, a]] : []), ...(b < q ? [[b, q]] : [])]);
+    }
+    return pieces.filter(([p, q]) => q - p >= 0.05);
+  }
+  function openVideoEditor(redrawField) {
+    const clips = [{ video: D.video, start: 0, end: null, cuts: [], duration: 0 }];
+    let active = 0, cutFrom = null, busy = false;
+    const opts = { mute: false, turn: 0 };
+    const player = el("video", { class: "vedit-player", controls: true, playsinline: true, preload: "metadata" });
+    const list = el("div", { class: "vedit-clips" });
+    const total = el("span", { class: "vedit-total" });
+    const status = el("p", { class: "muted vedit-status", role: "status", "aria-live": "polite" });
+    const makeBtn = el("button", { type: "button", class: "btn" }, "Make the video");
+    const close = () => { if (!busy) { player.pause(); back.remove(); document.removeEventListener("keydown", onKey); } };
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+
+    function load(i) {
+      active = i; cutFrom = null;
+      const c = clips[i];
+      if (player.getAttribute("src") !== c.video) player.src = c.video;
+      if (!c.duration && !c.asked) {   // the server reads the length too, in case this browser can't
+        c.asked = true;
+        fetch("/api/manage/video/info?v=" + encodeURIComponent(c.video)).then((r) => r.json()).then((r) => {
+          if (r.duration && !c.duration) { c.duration = r.duration; drawClips(); }
+        }).catch(() => {});
+      }
+      drawClips();
+    }
+    player.addEventListener("error", () => {
+      status.textContent = "This browser can't show this video, so you can't pick times here. Safari and Chrome play MP4 best.";
+    });
+    player.addEventListener("loadedmetadata", () => {
+      const c = clips[active];
+      if (!c.duration) { c.duration = player.duration || 0; drawClips(); }
+    });
+    player.addEventListener("timeupdate", () => {
+      const c = clips[active], head = list.querySelector(`[data-clip="${active}"] .vedit-head`);
+      if (head && c.duration) head.style.left = (100 * player.currentTime / c.duration) + "%";
+      // Previewing: skip over the parts that will be cut.
+      if (!player.paused && c.duration) {
+        const t = player.currentTime, keep = keepPieces(c);
+        if (keep.length && !keep.some(([a, b]) => t >= a - 0.05 && t < b)) {
+          const next = keep.find(([a]) => a > t);
+          if (next) player.currentTime = next[0]; else player.pause();
+        }
+      }
+    });
+    function bar(c, i) {
+      const b = el("div", { class: "vedit-bar", title: "Tap to jump there" });
+      if (c.duration) {
+        for (const [a, q] of keepPieces(c)) b.append(el("span", { class: "keep", style: `left:${100 * a / c.duration}%;width:${100 * (q - a) / c.duration}%` }));
+        if (i === active) b.append(el("span", { class: "vedit-head" }));
+      }
+      b.addEventListener("click", (e) => {
+        if (i !== active) { load(i); return; }
+        const r = b.getBoundingClientRect();
+        if (c.duration) player.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * c.duration;
+      });
+      return b;
+    }
+    function drawClips() {
+      list.replaceChildren(...clips.map((c, i) => {
+        const here = () => (i === active ? player.currentTime : 0);
+        const tools = i === active ? el("div", { class: "row vedit-tools" },
+          el("button", { type: "button", class: "ghost small", onclick: () => { c.start = here(); if (c.end != null && c.end < c.start) c.end = null; drawClips(); } }, "⇤ Start here"),
+          el("button", { type: "button", class: "ghost small", onclick: () => { c.end = Math.max(here(), c.start || 0); drawClips(); } }, "End here ⇥"),
+          cutFrom == null
+            ? el("button", { type: "button", class: "ghost small", onclick: () => { cutFrom = here(); drawClips(); } }, "✂ Cut from here…")
+            : el("button", { type: "button", class: "small", onclick: () => { const a = Math.min(cutFrom, here()), b = Math.max(cutFrom, here()); if (b - a >= 0.1) c.cuts.push([a, b]); cutFrom = null; drawClips(); } }, `…to here (from ${clock(cutFrom)})`),
+          cutFrom != null ? el("button", { type: "button", class: "ghost small", onclick: () => { cutFrom = null; drawClips(); } }, "Never mind") : null)
+          : el("button", { type: "button", class: "ghost small", onclick: () => load(i) }, "Edit this clip");
+        const cuts = c.cuts.length ? el("div", { class: "vedit-cuts" }, ...c.cuts.map(([a, b], k) => el("span", { class: "pill" }, `Cut ${clock(a)}–${clock(b)} `,
+          el("button", { type: "button", class: "x", "aria-label": "Put this part back", onclick: () => { c.cuts.splice(k, 1); drawClips(); } }, "✕")))) : null;
+        const kept = keepPieces(c).reduce((n, [a, b]) => n + b - a, 0);
+        return el("div", { class: "vedit-clip" + (i === active ? " on" : ""), "data-clip": i },
+          el("div", { class: "row" },
+            el("b", {}, clips.length > 1 ? `Clip ${i + 1}` : "Your video"),
+            el("span", { class: "muted" }, c.duration ? `Keeps ${clock(c.start || 0)} to ${clock(c.end == null ? c.duration : c.end)} · ${clock(kept)} long` : "Loading…"),
+            el("span", { class: "grow" }),
+            i > 0 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move clip earlier", onclick: () => { clips.splice(i - 1, 0, clips.splice(i, 1)[0]); load(i - 1); } }, "↑") : null,
+            i < clips.length - 1 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move clip later", onclick: () => { clips.splice(i + 1, 0, clips.splice(i, 1)[0]); load(i + 1); } }, "↓") : null,
+            clips.length > 1 ? el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove clip", onclick: () => { clips.splice(i, 1); load(Math.min(active, clips.length - 1)); } }, "✕") : null),
+          bar(c, i), tools, cuts);
+      }));
+      const all = clips.reduce((n, c) => n + keepPieces(c).reduce((m, [a, b]) => m + b - a, 0), 0);
+      total.textContent = clips.every((c) => c.duration) ? `New video: ${clock(all)} long` : "";
+    }
+
+    // Another clip at the end: tap to choose or drag a video onto the box (app rule).
+    const pick = el("input", { type: "file", accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" });
+    const addBox = el("label", { class: "pic-drop upload vedit-add" }, pick, el("span", {}, "+ Add another clip at the end"), el("span", { class: "help" }, "Tap to choose a video, or drag one here."));
+    pick.addEventListener("change", () => pick.files[0] && addClip(pick.files[0]));
+    dropZone(addBox, "video", (f) => addClip(f), () => { status.textContent = "That isn't a video file. MP4 works best."; });
+    function addClip(f) {
+      const form = new FormData();
+      form.append("video_file", f);
+      form.append("lesson", D.id || D.title || "lesson");
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/manage/video");
+      xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) status.textContent = `Uploading ${f.name}: ${Math.round(100 * ev.loaded / ev.total)}%`; };
+      xhr.onload = () => {
+        let r = {}; try { r = JSON.parse(xhr.responseText); } catch (e) { /* below */ }
+        if (xhr.status === 200 && r.video) { clips.push({ video: r.video, start: 0, end: null, cuts: [], duration: 0 }); status.textContent = ""; load(clips.length - 1); }
+        else status.textContent = r.error || r.detail || "The upload didn't work. Try again.";
+      };
+      xhr.onerror = () => { status.textContent = "The upload didn't go through. Check the connection and try again."; };
+      xhr.send(form);
+    }
+
+    const mute = el("input", { type: "checkbox" });
+    mute.addEventListener("change", () => { opts.mute = mute.checked; });
+    const turn = el("select", { "aria-label": "Turn the video" },
+      ...[[0, "Don't turn"], [90, "Turn right"], [180, "Upside down"], [270, "Turn left"]].map(([v, t]) => el("option", { value: v }, t)));
+    turn.addEventListener("change", () => { opts.turn = +turn.value; });
+
+    // Questions timed on the video move with the edit (only the first clip is the old video).
+    function moveTimes() {
+      const c = clips[0];
+      if (c.video !== D.video) return 0;
+      const keep = keepPieces(c);
+      let moved = 0;
+      for (const s of D.slides) {
+        if (s.type !== "question" || typeof s.at !== "number") continue;
+        let off = 0, t = null;
+        for (const [a, b] of keep) {
+          if (s.at < a) { t = off; break; }               // in a removed part: ask it where the video picks up
+          if (s.at < b) { t = off + (s.at - a); break; }
+          off += b - a;
+        }
+        if (t == null) t = off;
+        t = Math.round(t);
+        if (t !== s.at) { s.at = t; moved++; }
+      }
+      return moved;
+    }
+    makeBtn.addEventListener("click", async () => {
+      if (busy || !clips.every((c) => c.duration)) return;
+      busy = true; makeBtn.disabled = true; player.pause();
+      status.textContent = "Making the video… this can take a minute or two for a long video. Keep this open.";
+      try {
+        const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lesson: D.id || D.title || "lesson", mute: opts.mute, turn: opts.turn,
+            clips: clips.map((c) => ({ video: c.video, start: c.start || 0, end: c.end, cuts: c.cuts })) }) });
+        const r = await res.json().catch(() => ({}));
+        if (!res.ok || !r.video) throw new Error(r.error || r.detail || "The video couldn't be made. Try again.");
+        const moved = moveTimes();
+        D.video = r.video; touch();
+        busy = false; close(); redrawField(); drawRail();
+        saveNote.textContent = `Edited video ready (${clock(r.duration)}).${moved ? ` ${moved} question time${moved === 1 ? "" : "s"} moved to match.` : ""} Save the lesson to keep it.`;
+      } catch (e) {
+        busy = false; makeBtn.disabled = false; status.textContent = e.message;
+      }
+    });
+
+    const back = el("div", { class: "vedit-back", role: "dialog", "aria-modal": "true", "aria-label": "Edit video" },
+      el("div", { class: "vedit card" },
+        el("div", { class: "row vedit-top" }, el("h2", {}, "Edit video"), el("span", { class: "grow" }),
+          el("button", { type: "button", class: "ghost small", onclick: close }, "Close")),
+        player,
+        el("p", { class: "help" }, "Play the video and stop where you want, then tap a button. The gold bar is what stays; tap the bar to jump."),
+        list, addBox,
+        el("div", { class: "row vedit-opts" }, el("label", { class: "check" }, mute, " No sound"), turn),
+        el("div", { class: "row vedit-foot" }, total, el("span", { class: "grow" }),
+          el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), makeBtn),
+        status));
+    back.addEventListener("click", (e) => { if (e.target === back) close(); });
+    document.addEventListener("keydown", onKey);
+    document.body.append(back);
+    load(0);
   }
 
   function readingSlide(index) {

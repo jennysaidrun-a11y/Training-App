@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from pathlib import Path
 import time
 
@@ -256,7 +257,8 @@ def test_slides_round_trip_every_lesson(any_lessons):
         slides = editor.to_slides(lesson)
         sections, questions, errors = editor.from_slides(slides)
         assert not errors, (lid, errors)
-        assert sections == [{"heading": s["heading"], "text": s["text"].strip() + "\n"} for s in lesson["sections"]], lid
+        assert sections == [{"heading": s["heading"], "text": s["text"].strip() + "\n",
+                             **({"images": s["images"]} if s.get("images") else {})} for s in lesson["sections"]], lid
         assert [(q["q"], q["choices"], q["answer"], q.get("at")) for q in questions] == \
                [(q["q"], q["choices"], q["answer"], q.get("at")) for q in lesson["questions"]], lid
         last = len(sections) - 1
@@ -1171,3 +1173,60 @@ def test_lesson_rules_filed_in_their_folder_and_kept(client):
     # The checker also checks listed rules no lesson cites.
     content.save_rules(content.load_rules() + [{"ref": "8 CCR 9999", "name": "", "topic": "", "note": "", "reviewed_on": ""}])
     assert "8 CCR 9999" in rules.cited_rules(content.load_lessons())
+
+
+# ---- Video editor (ffmpeg from imageio-ffmpeg) --------------------------------
+def _clip(path, seconds, sound=True):
+    from trainer import video
+    cmd = [video.ffmpeg_exe(), "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"testsrc=size=320x240:rate=15:duration={seconds}"]
+    if sound:
+        cmd += ["-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}", "-c:a", "aac"]
+    subprocess.run(cmd + ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-shortest", str(path)], check=True)
+
+
+def test_video_editor_trims_cuts_and_joins(client, env):
+    from trainer import app as app_module, video
+    a = app_module.media_dir() / "allergens-20990101000000.mp4"
+    b = app_module.media_dir() / "allergens-20990101000001.mp4"
+    _clip(a, 6)
+    _clip(b, 3, sound=False)
+    r = client.post("/api/manage/video/edit", json={"lesson": "allergens", "turn": 90, "clips": [
+        {"video": "/media/" + a.name, "start": 1, "end": 5, "cuts": [[2, 3]]},
+        {"video": "/media/" + b.name, "start": 0, "end": None, "cuts": []}]})
+    assert r.status_code == 200, r.text
+    made = r.json()
+    assert made["video"].startswith("/media/allergens-edited-") and made["video"].endswith(".mp4")
+    assert abs(made["duration"] - 6) < 0.01
+    info = video.probe(app_module.media_dir() / made["video"].rsplit("/", 1)[-1])
+    assert abs(info["duration"] - 6) < 0.3 and info["audio"]
+    assert a.exists() and b.exists()  # the clips themselves aren't changed
+
+    muted = client.post("/api/manage/video/edit", json={"mute": True, "clips": [{"video": "/media/" + a.name}]}).json()
+    assert not video.probe(app_module.media_dir() / muted["video"].rsplit("/", 1)[-1])["audio"]
+
+
+def test_video_editor_refuses_bad_edits(client, anon, env):
+    from trainer import app as app_module
+    a = app_module.media_dir() / "allergens-20990101000000.mp4"
+    _clip(a, 2)
+    ok = {"video": "/media/" + a.name}
+    for clips in ([{"video": "https://example.com/x.mp4"}], [{"video": "/media/../training.db"}],
+                  [{"video": "/media/missing-20990101000000.mp4"}], ["oops"]):
+        r = client.post("/api/manage/video/edit", json={"clips": clips})
+        assert r.status_code == 400 and "uploaded to the app" in r.json()["error"]
+    assert client.post("/api/manage/video/edit", json={"clips": [dict(ok, start="soon")]}).status_code == 400
+    assert client.post("/api/manage/video/edit", json={"turn": 45, "clips": [ok]}).status_code == 400
+    assert client.post("/api/manage/video/edit", json={"turn": "x", "clips": [ok]}).status_code == 400
+    r = client.post("/api/manage/video/edit", json={"clips": [dict(ok, cuts=[[0, 5]])]})
+    assert r.status_code == 400 and "Nothing would be left" in r.json()["error"]
+    assert not list(app_module.media_dir().glob("*-edited-*"))
+    assert anon.post("/api/manage/video/edit", json={"clips": [ok]}).status_code in (303, 401, 403)
+
+
+def test_video_editor_reads_the_length(client, env):
+    from trainer import app as app_module
+    a = app_module.media_dir() / "allergens-20990101000000.mp4"
+    _clip(a, 2)
+    r = client.get("/api/manage/video/info", params={"v": "/media/" + a.name}).json()
+    assert abs(r["duration"] - 2) < 0.2 and r["audio"]
+    assert client.get("/api/manage/video/info", params={"v": "/media/../t.db"}).status_code == 400

@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, content, db, editor, extract, i18n, research, rules
+from . import auth, content, db, editor, extract, i18n, research, rules, video
 
 HERE = content.ROOT / "trainer"
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -1241,6 +1241,62 @@ async def upload_video(request: Request):
     if (upload.size or 0) > MAX_VIDEO_BYTES:
         return JSONResponse({"error": "That video is over 2 GB. Please use a shorter or smaller copy."}, status_code=400)
     return {"video": _save_upload(upload, str(form.get("lesson") or "lesson"))}
+
+
+def _media_video(link):
+    """The file behind an uploaded video's /media/ link, or None."""
+    link = str(link or "")
+    name = link.rsplit("/", 1)[-1]
+    ext = "." + name.rsplit(".", 1)[-1] if "." in name else ""
+    if link == "/media/" + name and MEDIA_NAME.match(name) and ext in VIDEO_TYPES and (media_dir() / name).is_file():
+        return media_dir() / name
+    return None
+
+
+@app.get("/api/manage/video/info")
+async def video_info(v: str = ""):
+    """Length of an uploaded video, for the video editor when the browser can't read it."""
+    path = _media_video(v)
+    if not path:
+        return JSONResponse({"error": "Only videos uploaded to the app can be edited."}, status_code=400)
+    try:
+        return await run_in_threadpool(video.probe, path)
+    except video.EditError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post("/api/manage/video/edit")
+async def edit_video(request: Request):
+    """The editor's video editor: makes a new MP4 from one or more uploaded clips
+    (each trimmed, with parts cut out), optionally muted or turned. The clips are kept
+    as they were; the new video becomes part of the lesson when the lesson is saved."""
+    try:
+        body = await request.json()
+        turn = int(body.get("turn") or 0)
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"error": "That edit couldn't be read. Reload the page and try again."}, status_code=400)
+    clips, paths = [], []
+    for c in (body.get("clips") or [])[:video.MAX_CLIPS + 1]:
+        path = _media_video(c.get("video")) if isinstance(c, dict) else None
+        if not path:
+            return JSONResponse({"error": "Only videos uploaded to the app can be edited."}, status_code=400)
+        try:
+            cuts = [(float(a), float(b)) for a, b in (c.get("cuts") or [])[:video.MAX_PIECES]]
+            start = float(c.get("start") or 0)
+            end = None if c.get("end") in (None, "") else float(c["end"])
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "A start, end or cut time isn't a number."}, status_code=400)
+        clips.append({"start": start, "end": end, "cuts": cuts})
+        paths.append(path)
+    if turn not in video.TURNS:
+        return JSONResponse({"error": "Turn the video by 90, 180 or 270 degrees."}, status_code=400)
+    out = f"{content.slugify(str(body.get('lesson') or 'lesson'))}-edited-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}.mp4"
+    try:
+        made = await run_in_threadpool(video.make, clips, paths, media_dir() / out, bool(body.get("mute")), turn)
+    except video.EditError as e:
+        (media_dir() / out).unlink(missing_ok=True)
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return {"video": f"/media/{out}", **made}
 
 
 @app.post("/api/manage/image")

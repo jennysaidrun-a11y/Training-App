@@ -13,6 +13,10 @@ Cal/OSHA (8 CCR, Title 8) apply.
   `research.py` (web search/fetch + a strict `propose_lesson` tool; citations are then
   checked live with `rules.check_rule`). Uses the API when `ANTHROPIC_API_KEY` is set, else
   Claude Code (`claude -p`, the user's signed-in account; `update.sh` installs it). Tests stub both.
+- Video editor in the lesson editor ("✂ Edit video": trim, cut out parts, join clips, mute, turn): `trainer/video.py`
+  runs ffmpeg from the `imageio-ffmpeg` pip package (no other install) and makes a new 720p MP4; routes
+  `/api/manage/video/edit` and `/api/manage/video/info`. Only files already in `data/media` can be edited.
+- iPad/iPhone: `static/manifest.json` + `icon-*.png` (from `app.ico`) so Add to Home Screen opens it full screen.
 - `content/lessons/*.yaml`: one lesson per file. `version` = last change that makes
   everyone retake it; `reviewed_on` = last time it was checked against its rules.
   Citations must parse (`29 CFR 1910.147`, `8 CCR 3314`).
