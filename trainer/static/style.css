@@ -962,3 +962,8 @@ details.more-menu.down .menu { bottom: auto; top: calc(100% + 4px); left: 0; rig
 .vedit-transport { align-items: center; gap: 8px; margin: 8px 0 2px; flex-wrap: wrap; }
 .vedit-transport .vedit-play { min-width: 104px; }
 .vedit-time { font-variant-numeric: tabular-nums; }
+
+/* Videos on a reading slide: full width with their own controls, pictures below */
+.slide-media { display: grid; gap: 10px; }
+.slide-video { background: #000; max-height: 420px; object-fit: contain; }
+.pic-tile.vid .slide-img { background: #000; object-fit: contain; }

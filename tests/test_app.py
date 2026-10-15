@@ -572,6 +572,20 @@ def test_pictures_on_reading_slides(client, env):
     assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 400
 
 
+def test_videos_on_reading_slides(client, env):
+    """Any reading slide can show videos as well as pictures (not only the lesson's cover video)."""
+    png = b"\x89PNG\r\n\x1a\n" + b"x" * 200
+    image = client.post("/api/manage/image", data={"lesson": "allergens"}, files={"image_file": ("a.png", png, "image/png")}).json()["image"]
+    clip = client.post("/api/manage/video", data={"lesson": "allergens"}, files={"video_file": ("step.webm", b"webm" * 100, "video/webm")}).json()["video"]
+    deck = _deck()
+    deck["slides"][1]["images"] = [clip, image]
+    assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 200
+    assert content.load_lessons()["allergens"]["sections"][0]["images"] == [clip, image]
+    assert clip in client.get("/lesson/allergens").text
+    r = client.post("/api/manage/media/delete", json={"link": clip})   # in use, so it can't be deleted
+    assert r.status_code == 400 and "still used" in r.json()["error"]
+
+
 def test_static_links_are_versioned(client):
     from trainer.app import templates
     v = templates.env.globals["asset_v"]

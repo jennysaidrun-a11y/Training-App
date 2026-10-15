@@ -67,7 +67,20 @@
       if (fs.length) onFile(kind === "image" ? fs : fs[0]); else if (onWrong) onWrong();
     });
   }
-  async function uploadPicture(slide, f) {
+  const mediaCount = (list) => {
+    const v = (list || []).filter(isVideoLink).length, p = (list || []).length - v;
+    return [p ? ` · ${p === 1 ? "picture" : p + " pictures"}` : "", v ? ` · ${v === 1 ? "video" : v + " videos"}` : ""].join("");
+  };
+  // Pictures and videos both go on a reading slide (videos play on the slide with their own controls).
+  const isVideoFile = (f) => f.type.startsWith("video/") || /\.(mp4|m4v|webm|mov)$/i.test(f.name || "");
+  const isVideoLink = (src) => /\.(mp4|m4v|webm|mov)(\?|#|$)/i.test(String(src || ""));
+  async function uploadPicture(slide, f, onProgress) {
+    if (isVideoFile(f)) {
+      const r = await window.Studio.upload(f, onProgress);
+      slide.images = [...(slide.images || []), r.link];
+      touch();
+      return;
+    }
     const form = new FormData();
     form.append("image_file", f);
     form.append("lesson", D.id || D.title || "lesson");
@@ -118,14 +131,14 @@
       b.addEventListener("dragend", () => b.classList.remove("dragging"));
       b.addEventListener("dragover", (e) => { e.preventDefault(); b.classList.add("drop"); });
       b.addEventListener("dragleave", () => b.classList.remove("drop"));
-      if (kind === "reading") dropZone(b, "image", async (files) => {
+      if (kind === "reading") dropZone(b, ["image", "video"], async (files) => {
         b.classList.add("busy");
         try {
           for (const f of files) await uploadPicture(D.slides[index - 1], f);
-          saveNote.textContent = `${files.length === 1 ? "Picture" : files.length + " pictures"} added. Save the lesson to keep ${files.length === 1 ? "it" : "them"}.`;
+          saveNote.textContent = `${files.length === 1 ? "1 file" : files.length + " files"} added. Save the lesson to keep ${files.length === 1 ? "it" : "them"}.`;
         } catch (err) { saveNote.textContent = err.message; }
         show(index);
-      }, () => { saveNote.textContent = "Drop a picture (JPG, PNG, WebP or GIF)."; });
+      }, () => { saveNote.textContent = "Drop a picture or a video (JPG, PNG, MP4 or MOV)."; });
       b.addEventListener("drop", (e) => {
         if (hasFiles(e)) return;
         e.preventDefault();
@@ -138,7 +151,7 @@
   function drawRail() {
     const items = [thumb(0, "cover", D.title || "Untitled lesson", "Cover")];
     D.slides.forEach((s, i) => {
-      if (s.type === "reading") items.push(thumb(i + 1, "reading", s.heading, `Part ${partNumber(i)}${(s.images || []).length ? ` · ${s.images.length === 1 ? "picture" : s.images.length + " pictures"}` : ""}`));
+      if (s.type === "reading") items.push(thumb(i + 1, "reading", s.heading, `Part ${partNumber(i)}${mediaCount(s.images)}`));
       else items.push(thumb(i + 1, "question", s.q, s.at != null && s.at !== "" ? `Question · video ${fmtTime(s.at)}` : "Question"));
     });
     items.push(thumb(rulesIndex(), "rules", `${D.citations.length} rule${D.citations.length === 1 ? "" : "s"}`, "Rules & sources"));
@@ -306,40 +319,47 @@
       pic,
       bind(area({ class: "as-body", value: s.text, rows: 6, placeholder: "2-5 short sentences.\n\nFor steps, one per line:\n1. Stop the machine\n2. Lock it out", "aria-label": "Text" }), s, "text"),
       el("p", { class: "help" }, "Leave a blank line between paragraphs. Lines starting 1. 2. 3. show as numbered steps."));
-    dropZone(slide, "image", pic.upload, pic.wrong);
+    dropZone(slide, ["image", "video"], pic.upload, pic.wrong);
     return slide;
   }
 
   function galleryOf(list) {
     if (!list || !list.length) return null;
-    if (list.length === 1) return el("img", { class: "slide-img", src: list[0], alt: "" });
-    return el("div", { class: "slide-gallery n" + Math.min(list.length, 4) }, ...list.map((src) => el("img", { class: "slide-img", src, alt: "" })));
+    const vids = list.filter(isVideoLink).map((src) => el("video", { class: "slide-img slide-video", src, controls: true, playsinline: true, preload: "metadata" }));
+    const imgs = list.filter((src) => !isVideoLink(src));
+    const pics = !imgs.length ? null : imgs.length === 1 ? el("img", { class: "slide-img", src: imgs[0], alt: "" })
+      : el("div", { class: "slide-gallery n" + Math.min(imgs.length, 4) }, ...imgs.map((src) => el("img", { class: "slide-img", src, alt: "" })));
+    return vids.length ? el("div", { class: "slide-media" }, ...vids, pics) : pics;
   }
 
-  // Pictures on a reading slide, shown above the text the way the worker sees them.
+  // Pictures and videos on a reading slide, shown above the text the way the worker sees them.
   // Drag pictures onto it (or anywhere on the slide, or onto its thumbnail), or tap to choose.
   function pictureField(s) {
     const box = el("div", { class: "field picture-field" });
     s.images = s.images || [];
     const draw = (msg) => {
-      const file = el("input", { type: "file", multiple: true, accept: "image/jpeg,image/png,image/webp,image/gif" });
+      const file = el("input", { type: "file", multiple: true, accept: "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" });
       file.addEventListener("change", () => file.files.length && upload([...file.files]));
-      const drive = el("input", { placeholder: "or paste a Google Drive link to a picture", "aria-label": "Google Drive link to a picture" });
+      const drive = el("input", { placeholder: "or paste a Google Drive link to a picture or video", "aria-label": "Google Drive link to a picture or video" });
       drive.addEventListener("change", async () => {
         if (!drive.value.trim()) return;
-        draw("Copying the picture from Google Drive…");
-        try { const r = await fromDrive(drive.value, "image"); s.images = [...s.images, r.image]; touch(); draw(); drawRail(); }
+        draw("Copying from Google Drive… a big video can take a few minutes.");
+        try { const r = await fromDrive(drive.value); s.images = [...s.images, r[r.kind]]; touch(); draw(); drawRail(); }
         catch (e) { draw(e.message); }
       });
       const n = s.images.length;
-      const tiles = s.images.map((src, i) => el("figure", { class: "pic-tile" },
-        el("img", { class: "slide-img", src, alt: "" }),
+      const tiles = s.images.map((src, i) => el("figure", { class: "pic-tile" + (isVideoLink(src) ? " vid" : "") },
+        isVideoLink(src) ? el("video", { class: "slide-img", src, preload: "metadata", muted: true, playsinline: true, controls: true })
+          : el("img", { class: "slide-img", src, alt: "" }),
         el("div", { class: "pic-tools" },
           n > 1 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move picture earlier", disabled: i === 0 ? true : null,
                                 onclick: () => { [s.images[i - 1], s.images[i]] = [s.images[i], s.images[i - 1]]; touch(); draw(); } }, "←") : null,
           n > 1 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move picture later", disabled: i === n - 1 ? true : null,
                                 onclick: () => { [s.images[i + 1], s.images[i]] = [s.images[i], s.images[i + 1]]; touch(); draw(); } }, "→") : null,
-          !String(src).startsWith("/media/") ? null : el("button", { type: "button", class: "ghost small", "aria-label": "Mark up this picture",
+          !String(src).startsWith("/media/") ? null : isVideoLink(src)
+            ? el("button", { type: "button", class: "ghost small", "aria-label": "Edit this video",
+                        onclick: () => window.Studio.openVideoEditor({ video: src, onDone: (r) => { s.images[i] = r.video; touch(); draw(); drawRail(); } }) }, "✂ Edit")
+            : el("button", { type: "button", class: "ghost small", "aria-label": "Mark up this picture",
                         onclick: () => openImageEditor({ src, onDone: (link) => { s.images[i] = link; touch(); draw(); drawRail(); } }) }, "✏️ Mark up"),
           el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove this picture",
                         onclick: () => { s.images.splice(i, 1); touch(); draw(); drawRail(); } }, "Remove"))));
@@ -347,10 +367,10 @@
         n ? el("div", { class: "pic-grid n" + Math.min(n, 4) }, ...tiles) : null,
         el("label", { class: "pic-drop upload" + (n ? " slim" : "") }, file,
           n ? null : el("span", { class: "drop-ico", "aria-hidden": "true" }, "🖼️"),
-          el("span", {}, el("b", {}, n ? "+ Add more pictures" : "Drag pictures here"), ...(n ? [" (drag them here or tap)"] : [el("br"), "or tap to choose. You can add several."])),
-          n ? null : el("span", { class: "help" }, "JPG, PNG, WebP or GIF")),
-        libraryButton(["image"], true, (picked) => { s.images = [...s.images, ...picked.map((x) => x.link)]; touch(); draw(); drawRail(); }, "Choose pictures from the media library"),
-        driveButton(["image"], true, (k, v) => { s.images = [...s.images, v]; touch(); }, (m) => { if (m) draw(m); else { draw(); drawRail(); } }, "Choose pictures from Google Drive"),
+          el("span", {}, el("b", {}, n ? "+ Add more pictures or videos" : "Drag pictures or videos here"), ...(n ? [" (drag them here or tap)"] : [el("br"), "or tap to choose. You can add several."])),
+          n ? null : el("span", { class: "help" }, "Pictures (JPG, PNG, WebP, GIF) or videos (MP4, MOV)")),
+        libraryButton(["image", "video"], true, (picked) => { s.images = [...s.images, ...picked.map((x) => x.link)]; touch(); draw(); drawRail(); }, "From the media library"),
+        driveButton(["image", "video"], true, (k, v) => { s.images = [...s.images, v]; touch(); }, (m) => { if (m) draw(m); else { draw(); drawRail(); } }, "From Google Drive"),
         drive,
         msg ? el("p", { class: "muted" }, msg) : null].filter(Boolean));
     };
@@ -359,7 +379,7 @@
       try {
         for (const [i, f] of files.entries()) {
           draw(`Uploading ${files.length > 1 ? `${i + 1} of ${files.length}: ` : ""}${f.name}…`);
-          await uploadPicture(s, f);
+          await uploadPicture(s, f, (pct) => draw(`Uploading ${files.length > 1 ? `${i + 1} of ${files.length}: ` : ""}${f.name}… ${pct}%`));
         }
         draw();
         drawRail();
@@ -368,8 +388,8 @@
       }
     }
     box.upload = upload;
-    box.wrong = () => draw("That isn't a picture. Drop a JPG, PNG, WebP or GIF.");
-    dropZone(box, "image", upload, box.wrong);
+    box.wrong = () => draw("That isn't a picture or video. Drop a JPG, PNG, MP4 or MOV.");
+    dropZone(box, ["image", "video"], upload, box.wrong);
     draw();
     return box;
   }

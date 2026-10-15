@@ -78,15 +78,24 @@
   }
 
   // One picture fills the width; two or more sit side by side (tap any to zoom).
+  // A slide's pictures and videos: each video full width with its own controls, pictures below.
+  const isVideo = (src) => /\.(mp4|m4v|webm|mov)(\?|#|$)/i.test(String(src || ""));
   function pictures(list) {
     if (!list || !list.length) return null;
-    if (list.length === 1) return el("img", { class: "slide-img", src: list[0], alt: "" });
-    return el("div", { class: "slide-gallery n" + Math.min(list.length, 4) }, ...list.map((src) => el("img", { class: "slide-img", src, alt: "" })));
+    const vids = list.filter(isVideo).map((src) => el("video", { class: "slide-img slide-video", src, controls: true, playsinline: true, preload: "metadata" }));
+    const imgs = list.filter((src) => !isVideo(src));
+    const pics = !imgs.length ? null : imgs.length === 1 ? el("img", { class: "slide-img", src: imgs[0], alt: "" })
+      : el("div", { class: "slide-gallery n" + Math.min(imgs.length, 4) }, ...imgs.map((src) => el("img", { class: "slide-img", src, alt: "" })));
+    if (!vids.length) return pics;
+    return el("div", { class: "slide-media" }, ...vids, pics);
   }
 
   // ---- Listen: a natural voice reads the screen aloud (server-side Piper, in the worker's language) ----
   let speaking = null;
-  function hush() { if (speaking) { speaking.pause(); speaking = null; } }
+  function hush() {
+    if (speaking) { speaking.pause(); speaking = null; }
+    for (const v of document.querySelectorAll("video.slide-video")) v.pause();   // a slide's own video stops when you move on
+  }
   function listenButton(text) {
     if (!window.SPEECH) return null;
     const label = () => "🔊 " + tr("listen");

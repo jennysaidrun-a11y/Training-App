@@ -19,7 +19,8 @@ Cal/OSHA (8 CCR, Title 8) apply.
   arrow, box, circle, numbers, text, blur, crop, turn, undo; saves a new copy), video editor and Google Drive.
 - Video editor ("✂ Edit video": trim, cut out parts, slice a clip in two, join clips, mute, turn, "📸 Draw on this frame":
   `/api/manage/video/frame` takes the frame, the picture editor marks it up, and it goes in as a still between the slices).
-  Effects are toggle buttons that change the preview at once (CSS filters/turn, Web Audio filters); "Exact preview"
+  Play/Pause and Undo (every clip change; Ctrl+Z) sit under the picture; frames are taken from the player when the browser
+  shows the video, else by the server. Effects are toggle buttons that change the preview at once (CSS filters/turn, Web Audio filters); "Exact preview"
   renders 5 s with `preview: true` (not kept in the library). `trainer/video.py`
   runs ffmpeg from the `imageio-ffmpeg` pip package (no other install) and makes a new 720p MP4; routes
   `/api/manage/video/edit` and `/api/manage/video/info`. Only files already in `data/media` can be edited.
@@ -42,6 +43,11 @@ Cal/OSHA (8 CCR, Title 8) apply.
   "Choose from Google Drive" (Google's sign-in + Picker, scope `drive.file`) shows once `GOOGLE_CLIENT_ID` and
   `GOOGLE_API_KEY` are set (GitHub secrets, staged to Fly by the deploy workflow); the browser's short-lived
   Google token is sent with the picked file id, used once by the server and never stored.
+  The picker picks several files (list view; tabs for My Drive, Shared with me, shared drives; the signed-in account in
+  its title), then a check step plays each video in Google's own preview (`drive.google.com/file/d/<id>/preview`) before
+  anything is copied. Several files (or pictures) picked for the lesson video open the video editor to join them.
+- Reading slides take videos as well as pictures: both live in the slide's `images` list (video by file extension);
+  the player shows videos full width with their own controls and pauses them when the slide changes.
 - iPad/iPhone: `static/manifest.json` + `icon-*.png` (from `app.ico`) so Add to Home Screen opens it full screen.
 - `content/lessons/*.yaml`: one lesson per file. `version` = last change that makes
   everyone retake it; `reviewed_on` = last time it was checked against its rules.
