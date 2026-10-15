@@ -758,6 +758,13 @@
         if (!res.ok) throw new Error(r.error || "The voice couldn't be made.");
         vo.audio = r.audio; vo.on = true; voAudio.src = r.audio; voAudio.hidden = false;
         voPanel.lastChild.hidden = false; fx.voice.setAttribute("aria-pressed", "true"); voSync();
+        // A video made only of pictures: give the pictures enough time for the whole voice.
+        const shown = clips.reduce((n, c) => n + (c.seconds || 0), 0);
+        if (clips.length && clips.every((c) => c.still) && r.duration > shown) {
+          const each = Math.min(120, Math.ceil((r.duration + 0.5) / clips.length * 2) / 2);
+          for (const c of clips) c.seconds = c.duration = each;
+          drawClips();
+        }
         say(`Voice ready (${clock(r.duration)}). Play the video to hear them together; it goes in when you make the video.`);
       } catch (e) { say(e.message); } finally { voMake.disabled = false; }
     });
@@ -837,6 +844,8 @@
     document.body.append(back);
     applyPreview();
     load(0);
+    // Opened for a slide's voiceover: its text is ready in the script box.
+    if (o.script) { voScript.value = String(o.script).replace(/^\s*\d+\.\s*/gm, ""); voPanel.hidden = false; say("The slide's words are in the voiceover box below. Tap Make the voice, then Make the video."); }
   }
 
   // ---- Picture editor -------------------------------------------------------------

@@ -43,6 +43,15 @@ Cal/OSHA (8 CCR, Title 8) apply.
   "Choose from Google Drive" (Google's sign-in + Picker, scope `drive.file`) shows once `GOOGLE_CLIENT_ID` and
   `GOOGLE_API_KEY` are set (GitHub secrets, staged to Fly by the deploy workflow); the browser's short-lived
   Google token is sent with the picked file id, used once by the server and never stored.
+  The Drive button opens the app's own Drive browser (`studio.js` `browseDrive`: scope `drive.readonly`, the browser calls the
+  Drive API itself; folders, Shared with me, Recent, search, Drive thumbnails, ▶ plays a video in Google's preview, tick videos
+  and pictures together); Google's picker (`pickFromDrive` + `reviewPicked`) is the backup under ⋯. iPhone HEIC photos are
+  turned into JPG on the way in (`app.heic_to_jpg`, pillow-heif) for uploads and Drive copies.
+- Reading slides take videos (uploaded, Drive, library or YouTube links) as well as pictures, all in the slide's `images`
+  list. Each reading slide has the same "🎬 Video ▾" menu as the cover, plus "🎙 Voiceover: read this slide aloud" (opens
+  the video editor with the slide's words in the voiceover box; pictures stretch to fit the voice).
+- Preview: the top bar's Preview and each slide's "👁 Preview slide" open `previewDeck` on the editor's current (unsaved)
+  lesson; "Saved copy ↗" opens the saved one.
   The picker picks several files (list view; tabs for My Drive, Shared with me, shared drives; the signed-in account in
   its title), then a check step plays each video in Google's own preview (`drive.google.com/file/d/<id>/preview`) before
   anything is copied. Several files (or pictures) picked for the lesson video open the video editor to join them.

@@ -73,7 +73,11 @@
   };
   // Pictures and videos both go on a reading slide (videos play on the slide with their own controls).
   const isVideoFile = (f) => f.type.startsWith("video/") || /\.(mp4|m4v|webm|mov)$/i.test(f.name || "");
-  const isVideoLink = (src) => /\.(mp4|m4v|webm|mov)(\?|#|$)/i.test(String(src || ""));
+  const isYouTube = (src) => /^https:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(String(src || ""));
+  const isVideoLink = (src) => /\.(mp4|m4v|webm|mov)(\?|#|$)/i.test(String(src || "")) || isYouTube(src);
+  const ytEmbed = (src) => { const m = String(src).match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([\w-]{11})/); return m ? `https://www.youtube-nocookie.com/embed/${m[1]}?rel=0` : ""; };
+  const videoEl = (src, cls) => (isYouTube(src) ? el("iframe", { class: cls, src: ytEmbed(src), title: "Video", allow: "encrypted-media; picture-in-picture; fullscreen", allowfullscreen: "" })
+    : el("video", { class: cls, src, controls: true, playsinline: true, preload: "metadata" }));
   async function uploadPicture(slide, f, onProgress) {
     if (isVideoFile(f)) {
       const r = await window.Studio.upload(f, onProgress);
@@ -198,6 +202,7 @@
     return el("div", { class: "slide-tools" },
       el("span", { class: "eyebrow" }, `Slide ${index} of ${n}`),
       el("span", { class: "grow" }),
+      el("button", { type: "button", class: "ghost small", onclick: () => previewDeck(payload(), null, index, true), title: "See this slide the way workers will" }, "👁 Preview slide"),
       el("button", { type: "button", class: "ghost small", disabled: index <= 1, onclick: () => move(index, index - 1), title: "Move earlier" }, "↑ Earlier"),
       el("button", { type: "button", class: "ghost small", disabled: index >= n, onclick: () => move(index, index + 1), title: "Move later" }, "↓ Later"),
       el("button", { type: "button", class: "ghost small", onclick: () => { D.slides.splice(index, 0, JSON.parse(JSON.stringify(D.slides[index - 1]))); touch(); show(index + 1); } }, "Duplicate"),
@@ -325,7 +330,7 @@
 
   function galleryOf(list) {
     if (!list || !list.length) return null;
-    const vids = list.filter(isVideoLink).map((src) => el("video", { class: "slide-img slide-video", src, controls: true, playsinline: true, preload: "metadata" }));
+    const vids = list.filter(isVideoLink).map((src) => videoEl(src, "slide-img slide-video"));
     const imgs = list.filter((src) => !isVideoLink(src));
     const pics = !imgs.length ? null : imgs.length === 1 ? el("img", { class: "slide-img", src: imgs[0], alt: "" })
       : el("div", { class: "slide-gallery n" + Math.min(imgs.length, 4) }, ...imgs.map((src) => el("img", { class: "slide-img", src, alt: "" })));
@@ -349,7 +354,7 @@
       });
       const n = s.images.length;
       const tiles = s.images.map((src, i) => el("figure", { class: "pic-tile" + (isVideoLink(src) ? " vid" : "") },
-        isVideoLink(src) ? el("video", { class: "slide-img", src, preload: "metadata", muted: true, playsinline: true, controls: true })
+        isVideoLink(src) ? videoEl(src, "slide-img")
           : el("img", { class: "slide-img", src, alt: "" }),
         el("div", { class: "pic-tools" },
           n > 1 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move picture earlier", disabled: i === 0 ? true : null,
@@ -369,11 +374,53 @@
           n ? null : el("span", { class: "drop-ico", "aria-hidden": "true" }, "🖼️"),
           el("span", {}, el("b", {}, n ? "+ Add more pictures or videos" : "Drag pictures or videos here"), ...(n ? [" (drag them here or tap)"] : [el("br"), "or tap to choose. You can add several."])),
           n ? null : el("span", { class: "help" }, "Pictures (JPG, PNG, WebP, GIF) or videos (MP4, MOV)")),
-        libraryButton(["image", "video"], true, (picked) => { s.images = [...s.images, ...picked.map((x) => x.link)]; touch(); draw(); drawRail(); }, "From the media library"),
-        driveButton(["image", "video"], true, (k, v) => { s.images = [...s.images, v]; touch(); }, (m) => { if (m) draw(m); else { draw(); drawRail(); } }, "From Google Drive"),
+        slideVideoMenu(),
         drive,
         msg ? el("p", { class: "muted" }, msg) : null].filter(Boolean));
     };
+    // The same video choices as the cover (upload, Drive, library, make, edit, paste a link),
+    // plus a voiceover that reads this slide aloud.
+    function slideVideoMenu() {
+      const vfile = el("input", { type: "file", multiple: true, accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*", hidden: true });
+      vfile.addEventListener("change", () => vfile.files.length && upload([...vfile.files]));
+      const lib = libraryButton(["image", "video"], true, (picked) => { s.images = [...s.images, ...picked.map((x) => x.link)]; touch(); draw(); drawRail(); }, "From the media library");
+      const drv = driveButton(["image", "video"], true, (k, v) => { s.images = [...s.images, v]; touch(); }, (m) => { if (m) draw(m); else { draw(); drawRail(); } }, "From Google Drive");
+      const own = s.images.filter((x) => isVideoLink(x) && x.startsWith("/media/"));
+      const pics = s.images.filter((x) => !isVideoLink(x) && x.startsWith("/media/"));
+      const menu = el("details", { class: "more-menu down" });
+      const item = (label, fn, cls = "") => el("button", { type: "button", class: cls, onclick: () => { menu.removeAttribute("open"); fn(); } }, label);
+      // A new or edited video replaces the one it came from, or goes after the pictures.
+      const editor = (opts, replace) => window.Studio.openVideoEditor({ ...opts, onDone: (r) => {
+        const i = replace ? s.images.indexOf(replace) : -1;
+        if (i >= 0) s.images[i] = r.video; else s.images = [...s.images, r.video];
+        touch(); draw(`Video ready (${window.Studio.clock(r.duration)}). Save the lesson to keep it.`); drawRail();
+      } });
+      const script = [s.heading, s.text].filter((x) => String(x || "").trim()).join(".\n\n");
+      async function pasteLink() {
+        const v = (window.prompt("Paste a YouTube or Google Drive link") || "").trim();
+        if (!v) return;
+        if (isYouTube(v)) { s.images = [...s.images, v]; touch(); draw(); drawRail(); return; }
+        if (!isDrive(v)) { draw("That link isn't YouTube or Google Drive."); return; }
+        draw("Copying from Google Drive… a big video can take a few minutes.");
+        try { const r = await fromDrive(v); s.images = [...s.images, r[r.kind]]; touch(); draw(); drawRail(); } catch (e) { draw(e.message); }
+      }
+      menu.append(el("summary", { class: "btn small" }, own.length ? "🎬 Video ▾" : "🎬 Add a video ▾"),
+        el("div", { class: "menu" },
+          item("⬆ Upload a video", () => vfile.click()),
+          drv ? item("☁ Videos or pictures from Google Drive", () => drv.click()) : null,
+          item("🗂 From the media library", () => lib.click()),
+          own.length ? item("✂ Edit this slide's video", () => editor({ video: own[0] }, own[0])) : null,
+          item(pics.length && !own.length ? "🎬 Make a video from these pictures" : "🎬 Make a video",
+            () => editor(own.length ? {} : { videos: pics.map((link) => ({ kind: "image", link })) })),
+          item("🎙 Voiceover: read this slide aloud", () => {
+            if (!script) { draw("Write the heading and text first; the voice reads them."); return; }
+            if (own.length) editor({ video: own[0], script }, own[0]);
+            else editor({ videos: pics.map((link) => ({ kind: "image", link })), script });
+          }),
+          item("🔗 Paste a YouTube or Drive link", pasteLink)));
+      return el("div", { class: "row slide-video-row" }, menu, vfile,
+        el("span", { class: "help" }, pics.length || own.length ? "" : "or drag pictures and videos onto the box above"));
+    }
     async function upload(files) {
       files = [].concat(files);
       try {
@@ -549,8 +596,107 @@
     show(firstBad != null ? firstBad : current);
   }
   saveBtn.addEventListener("click", save);
+  const deckBtn = document.getElementById("preview-deck");
+  if (deckBtn) deckBtn.addEventListener("click", () => previewDeck(payload(), null, 0, false));
   document.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save(); } });
   window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+  // A lesson in a pop-up, one slide at a time as a worker sees it (answers can be tried):
+  // the whole deck or one slide of the lesson being edited (unsaved changes too), or Claude's
+  // draft, which changes nothing in the editor until "Use this draft". start: slide to open on.
+  function previewDeck(lesson, useBtn, start = 0, only = false) {
+    const reads = lesson.slides.filter((x) => x.type === "reading").length;
+    const pages = [{ kind: "cover" }, ...lesson.slides.map((sl) => ({ kind: sl.type, sl })), { kind: "rules" }];
+    let at = 0;
+    const body = el("div", { class: "pv-body" });
+    const count = el("span", { class: "pv-count" });
+    const bar = el("div", { class: "meter light pv-meter" }, el("span", {}));
+    const back = el("button", { type: "button", class: "ghost small" }, "‹ Back");
+    const next = el("button", { type: "button", class: "small" }, "Next ›");
+    const use = useBtn ? el("button", { type: "button", class: "small" }, useBtn.disabled ? "In the editor ✓" : "Use this draft") : null;
+    if (use) use.disabled = useBtn.disabled;
+    const pauseAll = () => dlg.querySelectorAll("video").forEach((v) => v.pause());
+    const close = () => { pauseAll(); dlg.close(); dlg.remove(); document.removeEventListener("keydown", keys); };
+    if (use) use.addEventListener("click", () => { useBtn.click(); if (useBtn.disabled) close(); });
+    const whole = only ? el("button", { type: "button", class: "ghost small", onclick: () => { only = false; go(at); } }, "See the whole lesson") : null;
+    const dlg = el("dialog", { class: "preview", "aria-label": useBtn ? "Preview of Claude's draft" : "Preview of the lesson" },
+      el("div", { class: "pv-head" }, el("b", {}, "Preview"), count, whole,
+        !useBtn && lesson.id ? el("a", { class: "small", href: `/lesson/${encodeURIComponent(lesson.id)}`, target: "_blank", rel: "noopener", title: "The saved lesson, exactly as workers get it" }, "Saved copy ↗") : null,
+        el("button", { type: "button", class: "ghost small x", "aria-label": "Close preview", onclick: close }, "✕")),
+      bar, body,
+      el("div", { class: "pv-foot" }, back, el("span", { class: "grow" }), use, next));
+    dlg.addEventListener("click", (e) => { if (e.target === dlg) close(); });   // click outside
+    dlg.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
+    back.addEventListener("click", () => go(at - 1));
+    next.addEventListener("click", () => go(at + 1));
+    const keys = (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+      if (e.key === "ArrowRight") go(at + 1);
+      if (e.key === "ArrowLeft") go(at - 1);
+    };
+    document.addEventListener("keydown", keys);
+
+    function readingBox(text) {
+      const box = el("div", { class: "reading" });
+      for (const para of (text || "").trim().split(/\n\s*\n/)) {
+        const lines = para.split("\n").map((x) => x.trim()).filter(Boolean);
+        if (lines.length && lines.every((x) => /^\d+\.\s/.test(x))) box.append(el("ol", {}, ...lines.map((x) => el("li", {}, el("span", {}, x.replace(/^\d+\.\s*/, ""))))));
+        else if (lines.length) box.append(el("p", {}, lines.join(" ")));
+      }
+      return box;
+    }
+    function go(n) {
+      pauseAll();
+      at = Math.max(0, Math.min(n, pages.length - 1));
+      const pg = pages[at];
+      count.textContent = `${at + 1} of ${pages.length}`;
+      bar.firstElementChild.style.width = `${(100 * (at + 1)) / pages.length}%`;
+      for (const x of [back, next, bar, count]) x.style.display = only ? "none" : "";
+      if (whole) whole.style.display = only ? "" : "none";
+      dlg.querySelector(".pv-head b").textContent = only ? "Preview of this slide" : "Preview";
+      back.disabled = at === 0;
+      next.disabled = at === pages.length - 1;
+      body.scrollTop = 0;
+      if (pg.kind === "cover") {
+        body.replaceChildren(el("div", { class: "pv-cover" },
+          el("p", { class: "eyebrow" }, "Lesson"), el("h1", {}, lesson.title || "Untitled"),
+          el("p", { class: "muted" }, lesson.summary || ""),
+          lesson.video ? (isVideoLink(lesson.video) ? videoEl(lesson.video, "slide-img slide-video") : el("p", { class: "muted" }, "Plays the video: ", lesson.video)) : "",
+          el("p", { class: "muted" }, `${reads} part${reads === 1 ? "" : "s"}, ${lesson.slides.length - reads} question${lesson.slides.length - reads === 1 ? "" : "s"} · for ${lesson.roles.map((r) => r === "all" ? "everyone" : (ROLES.find((x) => x.id === r) || { name: r }).name).join(", ")}`)));
+      } else if (pg.kind === "reading") {
+        const part = lesson.slides.slice(0, lesson.slides.indexOf(pg.sl) + 1).filter((x) => x.type === "reading").length;
+        body.replaceChildren(...[el("p", { class: "eyebrow" }, `Part ${part} of ${reads}`), el("h1", {}, pg.sl.heading),
+          galleryOf(pg.sl.images), readingBox(pg.sl.text)].filter(Boolean));
+      } else if (pg.kind === "question") {
+        const sl = pg.sl;
+        const verdict = el("div", { class: "pv-verdict", hidden: true });
+        const buttons = sl.choices.map((c, ci) => {
+          const b = el("button", { type: "button", class: "choice" }, el("span", { class: "key" }, String(ci + 1)), el("span", {}, c));
+          b.addEventListener("click", () => {
+            buttons.forEach((x) => x.classList.remove("right", "wrong"));
+            const ok = ci === sl.answer;
+            b.classList.add(ok ? "right" : "wrong");
+            verdict.hidden = false;
+            verdict.className = "pv-verdict " + (ok ? "good" : "bad");
+            verdict.replaceChildren(el("b", {}, ok ? "Nice job!" : "Not quite"), sl.why ? el("span", {}, " " + sl.why) : "");
+          });
+          return b;
+        });
+        body.replaceChildren(el("p", { class: "eyebrow" }, "Check what you read"), el("p", { class: "q" }, sl.q),
+          el("div", { class: "choices" }, ...buttons), verdict,
+          el("p", { class: "help" }, "Try an answer: this is what workers see."));
+      } else {
+        body.replaceChildren(...[el("p", { class: "eyebrow" }, "Rules & sources"), el("h2", {}, "Based on"),
+          lesson.citations.length ? el("div", { class: "cites" }, ...lesson.citations.map((ref) => el("div", { class: "cite" }, badge(ref), el("span", {}, ref, checks[ref]?.name ? ` · ${checks[ref].name}` : ""))))
+            : el("p", { class: "pill warn" }, "No rules cited yet"),
+          lesson.sources.length ? el("div", {}, el("h2", { style: "margin-top:20px" }, "Sources"),
+            el("ul", {}, ...lesson.sources.map((x) => el("li", {}, el("a", { href: x.url, target: "_blank", rel: "noopener" }, x.title || x.url))))) : null].filter(Boolean));
+      }
+    }
+    document.body.append(dlg);
+    dlg.showModal();
+    go(start);
+  }
 
   // ---- Claude panel -----------------------------------------------------------
   const assist = document.getElementById("assist");
@@ -664,93 +810,6 @@
         el("div", { class: "draft-actions" }, look, use));
     }
 
-    // Claude's draft in a pop-up, one slide at a time as a worker sees it.
-    // Answers can be tried; nothing here changes the editor until "Use this draft".
-    function previewDeck(lesson, useBtn) {
-      const reads = lesson.slides.filter((x) => x.type === "reading").length;
-      const pages = [{ kind: "cover" }, ...lesson.slides.map((sl) => ({ kind: sl.type, sl })), { kind: "rules" }];
-      let at = 0;
-      const body = el("div", { class: "pv-body" });
-      const count = el("span", { class: "pv-count" });
-      const bar = el("div", { class: "meter light pv-meter" }, el("span", {}));
-      const back = el("button", { type: "button", class: "ghost small" }, "‹ Back");
-      const next = el("button", { type: "button", class: "small" }, "Next ›");
-      const use = el("button", { type: "button", class: "small" }, useBtn.disabled ? "In the editor ✓" : "Use this draft");
-      use.disabled = useBtn.disabled;
-      const close = () => { dlg.close(); dlg.remove(); document.removeEventListener("keydown", keys); };
-      use.addEventListener("click", () => { useBtn.click(); if (useBtn.disabled) close(); });
-      const dlg = el("dialog", { class: "preview", "aria-label": "Preview of Claude's draft" },
-        el("div", { class: "pv-head" }, el("b", {}, "Preview"), count,
-          el("button", { type: "button", class: "ghost small x", "aria-label": "Close preview", onclick: close }, "✕")),
-        bar, body,
-        el("div", { class: "pv-foot" }, back, el("span", { class: "grow" }), use, next));
-      dlg.addEventListener("click", (e) => { if (e.target === dlg) close(); });   // click outside
-      dlg.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
-      back.addEventListener("click", () => go(at - 1));
-      next.addEventListener("click", () => go(at + 1));
-      const keys = (e) => {
-        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-        if (e.key === "ArrowRight") go(at + 1);
-        if (e.key === "ArrowLeft") go(at - 1);
-      };
-      document.addEventListener("keydown", keys);
-
-      function readingBox(text) {
-        const box = el("div", { class: "reading" });
-        for (const para of (text || "").trim().split(/\n\s*\n/)) {
-          const lines = para.split("\n").map((x) => x.trim()).filter(Boolean);
-          if (lines.length && lines.every((x) => /^\d+\.\s/.test(x))) box.append(el("ol", {}, ...lines.map((x) => el("li", {}, el("span", {}, x.replace(/^\d+\.\s*/, ""))))));
-          else if (lines.length) box.append(el("p", {}, lines.join(" ")));
-        }
-        return box;
-      }
-      function go(n) {
-        at = Math.max(0, Math.min(n, pages.length - 1));
-        const pg = pages[at];
-        count.textContent = `${at + 1} of ${pages.length}`;
-        bar.firstElementChild.style.width = `${(100 * (at + 1)) / pages.length}%`;
-        back.disabled = at === 0;
-        next.disabled = at === pages.length - 1;
-        body.scrollTop = 0;
-        if (pg.kind === "cover") {
-          body.replaceChildren(el("div", { class: "pv-cover" },
-            el("p", { class: "eyebrow" }, "Lesson"), el("h1", {}, lesson.title || "Untitled"),
-            el("p", { class: "muted" }, lesson.summary || ""),
-            el("p", { class: "muted" }, `${reads} part${reads === 1 ? "" : "s"}, ${lesson.slides.length - reads} question${lesson.slides.length - reads === 1 ? "" : "s"} · for ${lesson.roles.map((r) => r === "all" ? "everyone" : (ROLES.find((x) => x.id === r) || { name: r }).name).join(", ")}`)));
-        } else if (pg.kind === "reading") {
-          const part = lesson.slides.slice(0, lesson.slides.indexOf(pg.sl) + 1).filter((x) => x.type === "reading").length;
-          body.replaceChildren(...[el("p", { class: "eyebrow" }, `Part ${part} of ${reads}`), el("h1", {}, pg.sl.heading),
-            galleryOf(pg.sl.images), readingBox(pg.sl.text)].filter(Boolean));
-        } else if (pg.kind === "question") {
-          const sl = pg.sl;
-          const verdict = el("div", { class: "pv-verdict", hidden: true });
-          const buttons = sl.choices.map((c, ci) => {
-            const b = el("button", { type: "button", class: "choice" }, el("span", { class: "key" }, String(ci + 1)), el("span", {}, c));
-            b.addEventListener("click", () => {
-              buttons.forEach((x) => x.classList.remove("right", "wrong"));
-              const ok = ci === sl.answer;
-              b.classList.add(ok ? "right" : "wrong");
-              verdict.hidden = false;
-              verdict.className = "pv-verdict " + (ok ? "good" : "bad");
-              verdict.replaceChildren(el("b", {}, ok ? "Nice job!" : "Not quite"), sl.why ? el("span", {}, " " + sl.why) : "");
-            });
-            return b;
-          });
-          body.replaceChildren(el("p", { class: "eyebrow" }, "Check what you read"), el("p", { class: "q" }, sl.q),
-            el("div", { class: "choices" }, ...buttons), verdict,
-            el("p", { class: "help" }, "Try an answer: this is what workers see."));
-        } else {
-          body.replaceChildren(...[el("p", { class: "eyebrow" }, "Rules & sources"), el("h2", {}, "Based on"),
-            lesson.citations.length ? el("div", { class: "cites" }, ...lesson.citations.map((ref) => el("div", { class: "cite" }, badge(ref), el("span", {}, ref, checks[ref]?.name ? ` · ${checks[ref].name}` : ""))))
-              : el("p", { class: "pill warn" }, "No rules cited yet"),
-            lesson.sources.length ? el("div", {}, el("h2", { style: "margin-top:20px" }, "Sources"),
-              el("ul", {}, ...lesson.sources.map((x) => el("li", {}, el("a", { href: x.url, target: "_blank", rel: "noopener" }, x.title || x.url))))) : null].filter(Boolean));
-        }
-      }
-      document.body.append(dlg);
-      dlg.showModal();
-      go(0);
-    }
     async function ask(text) {
       text = (text || "").trim();
       const file = attachment;

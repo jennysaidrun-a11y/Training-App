@@ -82,8 +82,12 @@
   const isVideo = (src) => /\.(mp4|m4v|webm|mov)(\?|#|$)/i.test(String(src || ""));
   function pictures(list) {
     if (!list || !list.length) return null;
-    const vids = list.filter(isVideo).map((src) => el("video", { class: "slide-img slide-video", src, controls: true, playsinline: true, preload: "metadata" }));
-    const imgs = list.filter((src) => !isVideo(src));
+    const yt = (src) => /^https:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(src) && youtubeId(src);
+    const vids = list.filter((src) => isVideo(src) || yt(src)).map((src) => yt(src)
+      ? el("iframe", { class: "slide-img slide-yt", src: `https://www.youtube-nocookie.com/embed/${yt(src)}?rel=0`, title: "Video",
+          allow: "accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen", allowfullscreen: "" })
+      : el("video", { class: "slide-img slide-video", src, controls: true, playsinline: true, preload: "metadata" }));
+    const imgs = list.filter((src) => !isVideo(src) && !yt(src));
     const pics = !imgs.length ? null : imgs.length === 1 ? el("img", { class: "slide-img", src: imgs[0], alt: "" })
       : el("div", { class: "slide-gallery n" + Math.min(imgs.length, 4) }, ...imgs.map((src) => el("img", { class: "slide-img", src, alt: "" })));
     if (!vids.length) return pics;
