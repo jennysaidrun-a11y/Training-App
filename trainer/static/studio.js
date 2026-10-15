@@ -257,9 +257,47 @@
     const status = el("p", { class: "muted vedit-status", role: "status", "aria-live": "polite" });
     const makeBtn = el("button", { type: "button", class: "btn" }, "Make the video");
     const close = () => { if (!busy) { player.pause(); back.remove(); document.removeEventListener("keydown", onKey); } };
-    const onKey = (e) => { if (e.key === "Escape") close(); };
+    const onKey = (e) => {
+      if (e.key === "Escape") close();
+      if (document.querySelector(".iedit-canvas") || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undo(); }
+      else if (e.key === " " && e.target.tagName !== "BUTTON") { e.preventDefault(); playBtn.click(); }
+    };
 
     const say = (m) => { status.textContent = m || ""; };
+    // Undo: each change to the clips (trim, cut, slice, add, remove, move, picture seconds) is
+    // remembered; lengths still loading don't count as changes.
+    const undoBtn = el("button", { type: "button", class: "ghost small", disabled: true, title: "Undo (Ctrl+Z)" }, "↶ Undo");
+    const past = [];
+    const keyOf = (cs) => JSON.stringify(cs.map(({ duration, asked, ...rest }) => (rest.still ? { ...rest, duration } : rest)));
+    let lastKey = null, lastCopy = null, lastActive = 0;
+    function remember() {
+      const key = keyOf(clips);
+      if (lastKey !== null && key !== lastKey) { past.push({ copy: lastCopy, active: lastActive }); if (past.length > 50) past.shift(); }
+      lastKey = key; lastCopy = structuredClone(clips); lastActive = active;
+      undoBtn.disabled = !past.length;
+    }
+    function undo() {
+      const prev = past.pop();
+      if (!prev) return;
+      const known = Object.fromEntries(clips.filter((c) => c.duration && !c.still).map((c) => [c.video, c.duration]));
+      clips.splice(0, clips.length, ...prev.copy.map((c) => (c.still || c.duration ? c : { ...c, duration: known[c.video] || 0 })));
+      lastKey = keyOf(clips); lastCopy = structuredClone(clips);
+      cutFrom = null;
+      load(Math.max(0, Math.min(prev.active, clips.length - 1)));
+      say("Undone.");
+    }
+    undoBtn.addEventListener("click", undo);
+    // Play / pause, plus where you are, under the picture.
+    const playBtn = el("button", { type: "button", class: "btn small vedit-play" }, "▶ Play");
+    const timeLbl = el("span", { class: "muted vedit-time" }, "0:00.0");
+    playBtn.addEventListener("click", () => {
+      const c = clips[active];
+      if (!c || c.still) return;
+      if (player.paused) player.play().catch(() => say("This browser can't play this video. You can still trim it by its times.")); else player.pause();
+    });
+    const showPlay = () => { playBtn.textContent = player.paused ? "▶ Play" : "⏸ Pause"; timeLbl.textContent = clock(player.currentTime); };
+    for (const ev of ["play", "pause", "ended", "timeupdate", "seeked"]) player.addEventListener(ev, showPlay);
     // Slice: one clip becomes two at second t (same video, each keeps its own part and cuts).
     function sliceAt(i, t) {
       const c = clips[i], end = c.end == null ? c.duration : c.end;
@@ -277,12 +315,26 @@
       const c = clips[i];
       player.pause(); say("Taking the picture…");
       try {
-        const res = await fetch("/api/manage/video/frame", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ video: c.video, t, lesson: lessonName() }) });
-        const r = await res.json().catch(() => ({}));
-        if (!res.ok || !r.image) throw new Error(r.error || "That frame couldn't be taken.");
-        say("");
-        openImageEditor({ src: r.image, label: `${o.label || "Video"} frame at ${clock(t)}`, onDone: (link) => {
+        // The picture on screen, straight from the player (instant); the server takes it when
+        // this browser can't show the video.
+        let src = "";
+        if (player.getAttribute("src") === c.video && player.videoWidth && Math.abs(player.currentTime - t) < 0.25) {
+          try {
+            const k = Math.min(1, 1920 / player.videoWidth), cv = document.createElement("canvas");
+            cv.width = Math.round(player.videoWidth * k); cv.height = Math.round(player.videoHeight * k);
+            cv.getContext("2d").drawImage(player, 0, 0, cv.width, cv.height);
+            src = cv.toDataURL("image/jpeg", 0.92);
+          } catch (e) { src = ""; }
+        }
+        if (!src) {
+          const res = await fetch("/api/manage/video/frame", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ video: c.video, t, lesson: lessonName() }) });
+          const r = await res.json().catch(() => ({}));
+          if (!res.ok || !r.image) throw new Error(r.error || "That frame couldn't be taken.");
+          src = r.image;
+        }
+        say("Draw on the picture, then save it.");
+        openImageEditor({ src, label: `${o.label || "Video"} frame at ${clock(t)}`, onDone: (link) => {
           if (clips.length >= 19) { say("That's too many clips for one video. Remove one first."); return; }
           const at = sliceAt(i, t) ? i + 1 : (t <= (c.start || 0) + 0.1 ? i : i + 1);
           clips.splice(at, 0, { video: link, still: true, seconds: 4, duration: 4, start: 0, end: null, cuts: [] });
@@ -346,6 +398,7 @@
       return b;
     }
     function drawClips() {
+      remember();
       makeBtn.disabled = busy || !clips.length;
       if (!clips.length) list.replaceChildren(el("p", { class: "muted" }, "Add a video or a picture below to start."));
       else list.replaceChildren(...clips.map((c, i) => {
@@ -599,7 +652,7 @@
 
     makeBtn.addEventListener("click", async () => {
       if (busy || !clips.length || !clips.every((c) => c.duration)) return;
-      busy = true; makeBtn.disabled = true; player.pause();
+      busy = true; makeBtn.disabled = true; makeBtn.textContent = "Making… keep this open"; player.pause();
       status.textContent = "Making the video… this can take a minute or two for a long video. Keep this open.";
       try {
         const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -612,7 +665,8 @@
         busy = false; close();
         if (o.onDone) o.onDone(r, kept);
       } catch (e) {
-        busy = false; makeBtn.disabled = false; status.textContent = e.message;
+        busy = false; makeBtn.disabled = false; makeBtn.textContent = "Make the video"; status.textContent = e.message;
+        status.scrollIntoView({ block: "center", behavior: "smooth" });
       }
     });
 
@@ -621,12 +675,18 @@
         el("div", { class: "row vedit-top" }, el("h2", {}, clips.length ? "Edit video" : "Make a video"), el("span", { class: "grow" }),
           el("button", { type: "button", class: "ghost small", onclick: close }, "Close")),
         el("div", { class: "vedit-stage" }, player, still),
+        el("div", { class: "row vedit-transport" }, playBtn, timeLbl,
+          el("button", { type: "button", class: "ghost small", title: "Take this picture from the video, draw on it, and show it here for a few seconds",
+            onclick: () => { const c = clips[active]; if (!c || c.still) say("Pick a video clip first."); else grabFrame(active, player.currentTime); } }, "📸 Draw on this frame"),
+          el("button", { type: "button", class: "ghost small", title: "Split this clip in two here",
+            onclick: () => { if (!clips[active] || !sliceAt(active, player.currentTime)) say("Stop the video somewhere in the middle of a clip, then slice."); else load(active + 1); } }, "⧸ Slice here"),
+          el("span", { class: "grow" }), undoBtn),
+        status,
         effectsBar,
         el("p", { class: "help" }, "Stop the video where you want, then tap a button: trim, cut out a part, slice it in two, or draw on that frame. The gold bar is what stays."),
         list, addBox, driveRow,
         el("div", { class: "row vedit-foot" }, total, el("span", { class: "grow" }),
-          el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), makeBtn),
-        status));
+          el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), makeBtn)));
     back.addEventListener("click", (e) => { if (e.target === back) close(); });
     document.addEventListener("keydown", onKey);
     document.body.append(back);

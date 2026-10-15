@@ -959,3 +959,6 @@ details.more-menu.down .menu { bottom: auto; top: calc(100% + 4px); left: 0; rig
 .drive-pick-main { margin: 0; font-weight: inherit; justify-content: flex-start; }
 .drive-pick-main input[type=checkbox] { width: 20px; height: 20px; flex: none; margin: 0; }
 .drive-pick-name { flex: 1; text-align: left; }
+.vedit-transport { align-items: center; gap: 8px; margin: 8px 0 2px; flex-wrap: wrap; }
+.vedit-transport .vedit-play { min-width: 104px; }
+.vedit-time { font-variant-numeric: tabular-nums; }
