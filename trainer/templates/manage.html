@@ -73,7 +73,7 @@
 
 <section class="section" id="managers">
   <div class="section-head"><h2>Managers</h2></div>
-  <p class="muted">Managers sign in with their work email and a 6-digit PIN. If one forgets their PIN, they can use their recovery code on the sign-in page, or any manager can set a new one here.</p>
+  <p class="muted">Sign in with a work email and a 6-digit PIN. {{ info("If a manager forgets their PIN, they can use their recovery code on the sign-in page, or any manager can set a new one here.") }}</p>
   {% if current_manager and not current_manager.email %}
   <form method="post" action="/manage/managers/{{ current_manager.id }}/email" class="note row">
     <b>Add your work email</b> so you can sign in with it:

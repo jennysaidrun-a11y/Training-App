@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Media studio · Training · United Bakery{% endblock %}
+{% block title %}Media · Training · United Bakery{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block body %}
 {% include "_manager_nav.html" %}
-<div class="page-head"><h1>Media studio</h1></div>
-<p class="muted">Every video and picture for your lessons, in one place. Edit videos (trim, cut, join, clean up the sound), mark up pictures (markers, arrows, numbers, text, blur, crop), and pull files in from your device or Google Drive. Edits save as new copies, so the original stays here. Files stay until you delete them.</p>
+<div class="page-head"><h1>Media</h1><div class="actions" id="studio-actions"></div></div>
+<p class="muted">Every video and picture for your lessons. {{ info("Edit videos (trim, cut, join, clean up the sound) and mark up pictures (markers, arrows, numbers, text, blur, crop). Edits save as new copies, so the original stays. Files stay until you delete them; a file a lesson uses can't be deleted.") }}</p>
 <div id="studio"></div>
 <script>window.DRIVE = {{ drive | tojson }};</script>
 <script src="/static/studio.js?v={{ asset_v }}"></script>

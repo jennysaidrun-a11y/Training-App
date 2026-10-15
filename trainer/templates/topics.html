@@ -7,7 +7,7 @@
 <div class="page-head"><h1>Lessons</h1>
   <a class="btn" href="/manage/lesson/new">{{ icon("plus") }} New lesson</a></div>
 {% if request.query_params.get('saved') %}<p class="note">Saved. Everyone sees the new version now.</p>{% endif %}
-{% if request.query_params.get('trashed') %}<p class="note">Lesson moved to the trash. You can put it back from the Trash list below.</p>{% endif %}
+{% if request.query_params.get('trashed') %}<p class="note">Lesson moved to the trash. You can put it back from Trash below.</p>{% endif %}
 {% if request.query_params.get('checking') %}<p class="note">Checking the rules now. Refresh in a minute to see the results.</p>{% endif %}
 {% if rule_msg %}<p class="note{{ ' bad' if rule_bad }}">{% if rule_ref %}<b>{{ rule_ref }}</b>: {% endif %}{{ rule_msg }}</p>{% endif %}
 {% for name, err in broken %}<p class="note bad">The lesson file {{ name }} can't be read ({{ err }}). It's hidden until it's fixed.</p>{% endfor %}
@@ -16,7 +16,7 @@
     <h2>Needs your review {% if needs or loose %}<span class="pill warn">{{ needs | length + loose | length }}</span>{% else %}<span class="pill done">All current</span>{% endif %}</h2>
     <form method="post" action="/manage/check"><button class="ghost small">{{ icon("refresh") }} Check now</button></form>
   </div>
-  <p class="muted">Rules last checked {{ status.checked_at[:16].replace("T", " at ") ~ " UTC" if status.checked_at else "not yet" }}. The app checks every day by itself.</p>
+  <p class="muted">Rules last checked {{ status.checked_at[:16].replace("T", " at ") ~ " UTC" if status.checked_at else "not yet" }}. {{ info("The app checks every rule at the official source each day by itself. Lessons whose rules changed show up here.") }}</p>
   <div class="stack">
   {% for lid in needs %}{% set l = lessons[lid] %}
   <div class="card flag">
@@ -42,10 +42,7 @@
 
 <section class="section" id="folders-sec">
 <div class="section-head"><h2>Folders</h2><span class="save-note muted" id="save-note" role="status" aria-live="polite"></span></div>
-<p class="muted">Folders that group the lessons and the rules they're based on. Workers see their lessons in this order, under these headings.
-  Rules a lesson cites are added to its folder by themselves; add your own with <b>+ Add rule</b>, and file, rename or delete them here.
-  Drag the <span class="grip-inline">{{ icon("grip") }}</span> handle to reorder folders and lessons, or to move a lesson into another folder.
-  Turn on <b>Do in order</b> for a folder when its lessons must be taken one after another; otherwise workers can take them in any order.</p>
+<p class="muted">Drag <span class="grip-inline">{{ icon("grip") }}</span> to reorder or move lessons. {{ info("Folders group the lessons and the rules they're based on. Workers see their lessons in this order, under these headings. Rules a lesson cites are added to its folder by themselves; add your own with Add rule. Turn on Do in order when a folder's lessons must be taken one after another.") }}</p>
 <div class="row topic-tools">
   <label class="search-box">{{ icon("search") }}<input type="search" id="lesson-search" placeholder="Find a lesson" aria-label="Find a lesson" autocomplete="off"></label>
   <form method="post" class="row add-folder">
@@ -98,8 +95,8 @@
     </ol>
     <p class="muted empty-note">Empty. Drag lessons here.</p>
     {% set frules = rule_groups.get(topic.id, []) %}
-    <div class="folder-rules">
-      <h3 class="rules-head">{{ icon("rules") }} Rules <span class="muted">({{ frules | length }})</span></h3>
+    <details class="folder-rules"{{ ' open' if frules | selectattr('state', 'in', ['warn', 'bad']) | list }}>
+      <summary class="rules-head">{{ icon("rules") }} Rules <span class="muted">({{ frules | length }})</span></summary>
       {% if frules %}<ul class="rule-list">
       {% for r in frules %}
       <li class="rule-row">
@@ -126,7 +123,7 @@
         <input name="name" placeholder="What it covers (optional)" maxlength="120" aria-label="What the new rule covers">
         <button class="small">{{ icon("plus") }} Add rule</button>
       </form>
-    </div>
+    </details>
   </section>
 {% endfor %}
 </div>
@@ -153,9 +150,10 @@
 </section>
 
 <section class="section" id="trash">
-  <div class="section-head"><h2>{{ icon("trash") }} Trash</h2></div>
+  <details{{ ' open' if request.query_params.get('trashed') }}>
+  <summary><h2 style="display:inline">Trash <span class="muted">({{ trash | length }})</span></h2></summary>
   {% if trash %}
-  <p class="muted">Deleted lessons wait here. Workers' past results for them are kept either way.</p>
+  <p class="muted">Workers' past results for these lessons are kept either way.</p>
   <div class="list">
     {% for t in trash %}
     <div class="item">
@@ -171,8 +169,9 @@
     {% endfor %}
   </div>
   {% else %}
-  <p class="muted">The trash is empty. Deleted lessons show up here so you can put them back.</p>
+  <p class="muted">The trash is empty.</p>
   {% endif %}
+  </details>
 </section>
 
 <script>

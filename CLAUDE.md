@@ -13,7 +13,7 @@ Cal/OSHA (8 CCR, Title 8) apply.
   `research.py` (web search/fetch + a strict `propose_lesson` tool; citations are then
   checked live with `rules.check_rule`). Uses the API when `ANTHROPIC_API_KEY` is set, else
   Claude Code (`claude -p`, the user's signed-in account; `update.sh` installs it). Tests stub both.
-- Media studio (Lessons > Media studio, `/manage/studio`, `static/studio.js`, shared by the lesson editor): media
+- Media studio (Lessons > Media, `/manage/studio`, `static/studio.js`, shared by the lesson editor): media
   library (`data/media/library.json`: every upload, Drive copy and edit is kept until a manager deletes it, never swept;
   files used by a lesson can't be deleted; `/api/manage/media*`), picture editor (canvas: marker, highlighter,
   arrow, box, circle, numbers, text, blur, crop, turn, undo; saves a new copy), video editor and Google Drive.
@@ -43,6 +43,8 @@ Cal/OSHA (8 CCR, Title 8) apply.
 ## Rules
 - Lesson facts come from the cited government rule; every lesson cites at least one.
   Verify a new citation exists at the source (eCFR / dir.ca.gov) before adding it.
+- Screens: one tab style (`.subnav` underline tabs) in Manager and Lessons; one short line per page, longer help behind
+  `{{ info("...") }}` (ⓘ, hover or tap); one main button per page or item, extras in a `details.more-menu` (⋯); long lists fold in `<details>`.
 - Drag and drop: every place a manager adds a file (slide pictures, videos, attached training files)
   must take a dragged-in file as well as tap-to-choose, with a visible drop area. Keep it that way in new screens.
 - Videos: only add ones the user picks or that are clearly public domain / openly

@@ -942,7 +942,7 @@ def test_photos_are_found_and_matched_to_slides(client):
 def test_manager_tab_only_for_managers(client, anon):
     with db.connect() as con:
         wid = db.add_worker(con, "Ivy Stone", "baking", __import__("trainer.auth", fromlist=["x"]).hash_pin("1357"))
-    tab = 'href="/manage">'
+    tab = 'href="/manage/dashboard">'
     assert tab not in anon.get("/").text and 'href="/manage/signin"' in anon.get("/").text   # just a small sign-in link
     worker = TestClient(app)
     worker.post(f"/signin/{wid}", data={"pin": "1357"})
@@ -1073,10 +1073,11 @@ def test_lessons_tab_and_manager_tabs(client):
     top = client.get("/manage/topics").text.split('class="tabs"')[1].split("</nav>")[0]
     assert "<span>Lessons</span>" in top and "<span>Rules</span>" not in top
     page = client.get("/manage/topics").text
-    assert "Folders &amp; lessons" in page and "Who takes what" in page and 'id="trash"' in page and "New lesson" in page
-    assert 'class="chips-nav"' in client.get("/manage/requirements").text
-    assert 'class="chips-nav"' not in client.get("/manage").text
-    assert 'class="subnav"' not in page and 'id="federal"' in page
+    assert ">Lessons</a>" in page and "Who takes what" in page and 'id="trash"' in page and "New lesson" in page
+    # one tab style everywhere: the Lessons section uses the same underline tabs as Manager
+    lnav = page.split('aria-label="Lessons"')[1].split("</nav>")[0]
+    assert [a.split(">")[1].split("<")[0].strip() for a in lnav.split("<a ")[1:]] == ["Lessons", "Who takes what", "Languages", "Media"]
+    assert 'class="chips-nav"' not in page and 'id="federal"' in page
 
 
 def test_safety_headers_and_forged_posts(client):
@@ -1366,7 +1367,7 @@ def test_video_editor_touch_ups(client, env):
 
 def test_media_studio_library(client, anon, env):
     from trainer import app as app_module
-    assert "Media studio" in client.get("/manage/studio").text
+    assert "<h1>Media</h1>" in client.get("/manage/studio").text
     pic = client.post("/api/manage/image", data={"lesson": "allergens", "label": "Mixer guard"},
                       files={"image_file": ("IMG_1.jpg", b"\xff\xd8\xff\xe0" + b"j" * 100, "image/jpeg")}).json()["image"]
     items = client.get("/api/manage/media").json()["items"]

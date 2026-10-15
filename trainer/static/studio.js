@@ -579,7 +579,7 @@
     let items = [];
     listMedia().then((r) => {
       items = r.items.filter((x) => !o.kinds || o.kinds.includes(x.kind));
-      if (!items.length) { grid.replaceChildren(el("p", { class: "muted" }, "Nothing here yet. Add videos and pictures in Lessons › Media studio, or upload them here in the lesson.")); return; }
+      if (!items.length) { grid.replaceChildren(el("p", { class: "muted" }, "Nothing here yet. Add videos and pictures in Lessons › Media, or upload them here in the lesson.")); return; }
       grid.replaceChildren(...items.map((it) => {
         const tile = el("button", { type: "button", class: "media-tile pick", "aria-pressed": "false" }, preview(it),
           el("span", { class: "media-name" }, it.label), el("span", { class: "muted small" }, `${it.kind === "video" ? "Video" : "Picture"} · ${sizeText(it.size)}`));
@@ -625,21 +625,26 @@
       const shown = data.items.filter((it) => (filter === "all" || it.kind === filter) && (!q || it.label.toLowerCase().includes(q) || it.used_by.join(" ").toLowerCase().includes(q)));
       if (!shown.length) { grid.replaceChildren(el("p", { class: "muted" }, data.items.length ? "Nothing matches." : "No videos or pictures yet. Add some above.")); return; }
       grid.replaceChildren(...shown.map((it) => {
+        const closeMenu = (e) => e.target.closest("details").removeAttribute("open");
         const actions = el("div", { class: "pic-tools" },
           it.kind === "video"
             ? el("button", { type: "button", class: "ghost small", onclick: () => openVideoEditor({ video: it.link, label: it.label, onDone: () => refresh("Saved as a new video. The original is still here.") }) }, "✂ Edit")
             : el("button", { type: "button", class: "ghost small", onclick: () => openImageEditor({ src: it.link, label: it.label, onDone: () => refresh("Saved as a new picture. The original is still here.") }) }, "✏️ Mark up"),
-          el("button", { type: "button", class: "ghost small", onclick: async () => {
-            const name = (window.prompt("Name", it.label) || "").trim();
-            if (!name || name === it.label) return;
-            await post("/api/manage/media/rename", { link: it.link, label: name }); refresh("");
-          } }, "Rename"),
-          el("a", { class: "btn ghost small", href: it.link, download: it.label }, "Download"),
-          el("button", { type: "button", class: "ghost small danger", title: it.used_by.length ? "Used in a lesson" : "Delete",
-            disabled: it.used_by.length ? true : null, onclick: async () => {
-              if (!window.confirm(`Delete "${it.label}"? This can't be undone.`)) return;
-              try { await post("/api/manage/media/delete", { link: it.link }); refresh("Deleted."); } catch (e) { say(e.message); }
-            } }, "Delete"));
+          el("details", { class: "more-menu" }, el("summary", { class: "btn ghost small", "aria-label": `More for ${it.label}` }, "⋯"),
+            el("div", { class: "menu" },
+              el("button", { type: "button", onclick: async (e) => {
+                closeMenu(e);
+                const name = (window.prompt("Name", it.label) || "").trim();
+                if (!name || name === it.label) return;
+                await post("/api/manage/media/rename", { link: it.link, label: name }); refresh("");
+              } }, "Rename"),
+              el("a", { href: it.link, download: it.label, onclick: closeMenu }, "Download"),
+              el("button", { type: "button", class: "danger", title: it.used_by.length ? "Used in a lesson, so it can't be deleted" : "Delete",
+                disabled: it.used_by.length ? true : null, onclick: async (e) => {
+                  closeMenu(e);
+                  if (!window.confirm(`Delete "${it.label}"? This can't be undone.`)) return;
+                  try { await post("/api/manage/media/delete", { link: it.link }); refresh("Deleted."); } catch (err) { say(err.message); }
+                } }, "Delete"))));
         return el("figure", { class: "media-tile" }, preview(it),
           el("figcaption", {}, el("span", { class: "media-name" }, it.label),
             el("span", { class: "muted small" }, `${it.kind === "video" ? "Video" : "Picture"} · ${sizeText(it.size)} · ${it.added || ""}`),
@@ -662,10 +667,10 @@
     }
     const pick = el("input", { type: "file", multiple: true, accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*,image/jpeg,image/png,image/webp,image/gif" });
     pick.addEventListener("change", () => { if (pick.files.length) addFiles([...pick.files]); pick.value = ""; });
-    const drop = el("label", { class: "pic-drop upload studio-drop" }, pick, el("span", { class: "drop-ico", "aria-hidden": "true" }, "🎞️"),
-      el("b", {}, "Drag videos and pictures here"), el("span", {}, "or tap to choose. You can add several."));
+    const drop = el("label", { class: "pic-drop upload studio-drop" }, pick,
+      el("span", {}, el("b", {}, "Drop videos and pictures here"), " or tap to choose"));
     dropZone(drop, ["video", "image"], addFiles, () => say("Only videos and pictures can go in the library."));
-    const driveLink = el("input", { placeholder: "or paste a Google Drive link", "aria-label": "Google Drive link" });
+    const driveLink = el("input", { placeholder: "Paste a Google Drive link", "aria-label": "Google Drive link" });
     const driveAdd = el("button", { type: "button", class: "ghost small" }, "Add link");
     driveAdd.addEventListener("click", async () => {
       if (!driveLink.value.trim()) { driveLink.focus(); return; }
@@ -679,11 +684,15 @@
     }));
     const search = el("input", { type: "search", placeholder: "Search by name or lesson", "aria-label": "Search the library" });
     search.addEventListener("input", () => { query = search.value; draw(); });
+    // Page header: one main button (Add files), the rest beside it, like a normal files app.
+    const head = document.getElementById("studio-actions") || el("div", { class: "row" });
+    head.replaceChildren(
+      el("button", { type: "button", class: "ghost small", onclick: () => openVideoEditor({ onDone: () => refresh("New video saved.") }) }, "🎬 Make a video"),
+      driveButton(["video", "image"], true, () => {}, (m) => { if (m) say(m); else refresh("Copied from Google Drive."); }, "From Google Drive") || "",
+      el("button", { type: "button", class: "small", onclick: () => pick.click() }, "+ Add files"));
     root.replaceChildren(
-      el("div", { class: "studio-add" }, drop,
-        el("div", { class: "row" }, driveButton(["video", "image"], true, () => {}, (m) => { if (m) say(m); else refresh("Copied from Google Drive."); }),
-          el("button", { type: "button", class: "btn small", onclick: () => openVideoEditor({ onDone: () => refresh("New video saved.") }) }, "🎬 Make a video")),
-        el("div", { class: "row vedit-drive" }, driveLink, driveAdd)),
+      ...(head.isConnected ? [] : [head]),
+      el("div", { class: "studio-add" }, drop, el("div", { class: "row vedit-drive" }, driveLink, driveAdd)),
       status,
       el("div", { class: "row studio-bar" }, chips, search, el("span", { class: "grow" }), storage),
       grid);

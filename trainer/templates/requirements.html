@@ -5,7 +5,7 @@
 {% include "_manager_nav.html" %}
 <div class="page-head"><h1>Requirements by position</h1></div>
 {% if saved %}<p class="note">Saved. Each person's lesson list follows these now.</p>{% endif %}
-<p class="muted">Tick the lessons each position must pass. A lesson ticked for every position is required for everyone, including positions you add later.</p>
+<p class="muted">Tick the lessons each position must pass. {{ info("A lesson ticked for every position is required for everyone, including positions you add later.") }}</p>
 <form method="post">
   <div class="table-wrap"><table class="grid req">
     <thead><tr><th class="sticky">Lesson</th>{% for r in roles %}<th>{{ r.name }}</th>{% endfor %}</tr></thead>

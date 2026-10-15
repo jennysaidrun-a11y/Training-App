@@ -35,6 +35,16 @@ def _asset_version():
 
 templates.env.globals["asset_v"] = _asset_version()
 
+
+def _info(text):
+    """A small ⓘ that shows the longer explanation on hover or tap, so pages keep one short line."""
+    from markupsafe import Markup, escape
+    return Markup('<span class="info" tabindex="0" role="button" aria-label="More info: {0}">ⓘ'
+                  '<span class="tip" role="tooltip">{0}</span></span>').format(escape(text))
+
+
+templates.env.globals["info"] = _info
+
 # Uploaded videos live next to the database (never in git: the repo is public
 # and videos are big). Served with range requests so the player can seek.
 VIDEO_TYPES = {".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime"}

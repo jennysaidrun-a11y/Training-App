@@ -7,11 +7,11 @@
   <a class="{{ 'on' if here.startswith('/manage/records') else '' }}" href="/manage/records">Records</a>
 </nav>
 {% else %}
-<nav class="chips-nav" aria-label="Lessons">
-  <a class="{{ 'on' if here.startswith('/manage/topics') else '' }}" href="/manage/topics">Folders &amp; lessons</a>
+<nav class="subnav" aria-label="Lessons">
+  <a class="{{ 'on' if here.startswith('/manage/topics') or here.startswith('/manage/lesson') else '' }}" href="/manage/topics">Lessons</a>
   <a class="{{ 'on' if here.startswith('/manage/requirements') else '' }}" href="/manage/requirements">Who takes what</a>
   <a class="{{ 'on' if here.startswith('/manage/translations') else '' }}" href="/manage/translations">Languages</a>
-  <a class="{{ 'on' if here.startswith('/manage/studio') else '' }}" href="/manage/studio">Media studio</a>
+  <a class="{{ 'on' if here.startswith('/manage/studio') else '' }}" href="/manage/studio">Media</a>
 </nav>
 {% endif %}
-<script>document.querySelector(".subnav a.on, .chips-nav a.on")?.scrollIntoView({ inline: "center", block: "nearest" });</script>
+<script>document.querySelector(".subnav a.on")?.scrollIntoView({ inline: "center", block: "nearest" });</script>

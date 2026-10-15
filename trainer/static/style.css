@@ -879,9 +879,34 @@ body:has(.vedit-back) { overflow: hidden; }
 .media-tile.pick[aria-pressed="true"] { border-color: var(--gold); outline: 3px solid var(--gold); }
 .vedit .media-grid { max-height: 60vh; overflow-y: auto; }
 .studio-add { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
-.studio-drop { min-height: 110px; }
+.studio-drop.pic-drop { min-height: 0; padding: 18px 16px; flex-direction: row; }
 .studio-bar { margin-top: 14px; }
 .studio-bar input[type=search] { flex: 1 1 220px; min-height: 44px; }
 .media-filter { margin: 0; }
 .media-filter button { min-height: 40px; padding: 6px 16px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); font-weight: 600; font-size: .9rem; box-shadow: none; }
 .media-filter button.on { background: var(--crust); border-color: var(--crust); color: #fff; }
+
+/* ⓘ: the longer explanation, on hover or tap, so pages keep one short line */
+.info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.15em; height: 1.15em; margin-left: 2px;
+  color: var(--muted); cursor: help; font-style: normal; font-weight: 600; vertical-align: baseline; border-radius: 50%; }
+.info:hover, .info:focus { color: var(--crust); outline: none; }
+.info .tip { display: none; position: absolute; z-index: 30; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  width: max-content; max-width: min(320px, 80vw); padding: 10px 12px; border-radius: 10px; background: var(--crust); color: #fff;
+  font-size: 0.85rem; font-weight: 400; line-height: 1.4; text-align: left; text-transform: none; letter-spacing: 0; box-shadow: 0 6px 18px rgba(67,39,11,.25); white-space: normal; }
+.info:hover .tip, .info:focus .tip, .info:focus-within .tip { display: block; }
+/* Folded sections (rules in a folder, trash) */
+details.folder-rules > summary, #trash > details > summary, #federal > details > summary { cursor: pointer; list-style: none; }
+details.folder-rules > summary::-webkit-details-marker, #trash > details > summary::-webkit-details-marker, #federal > details > summary::-webkit-details-marker { display: none; }
+details.folder-rules > summary::after, #trash > details > summary::after, #federal > details > summary::after { content: "›"; display: inline-block; margin-left: 8px; color: var(--muted); transition: transform .15s; }
+details.folder-rules[open] > summary::after, #trash > details[open] > summary::after, #federal > details[open] > summary::after { transform: rotate(90deg); }
+@media (max-width: 600px) { .info .tip { position: fixed; left: 16px; right: 16px; top: auto; bottom: 96px; transform: none; width: auto; max-width: none; } }
+/* "⋯" menu: one main button per item, the rest tucked in here */
+details.more-menu { position: relative; }
+details.more-menu > summary { list-style: none; cursor: pointer; }
+details.more-menu > summary::-webkit-details-marker { display: none; }
+details.more-menu .menu { position: absolute; right: 0; bottom: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; min-width: 150px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 6px 18px rgba(67,39,11,.15); }
+details.more-menu .menu > * { all: unset; box-sizing: border-box; display: block; padding: 9px 12px; border-radius: 6px; cursor: pointer; color: var(--text, #2b1a08); font-weight: 600; font-size: 0.92rem; }
+details.more-menu .menu > *:hover, details.more-menu .menu > *:focus-visible { background: var(--blue-soft); }
+details.more-menu .menu > .danger { color: var(--bad, #b3261e); }
+details.more-menu .menu > [disabled] { opacity: .45; cursor: not-allowed; }
