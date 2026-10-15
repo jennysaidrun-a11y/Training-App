@@ -7,12 +7,13 @@ package (pip installs a ready-made copy on Windows, Mac and Linux, so nothing el
 set up). Every edit makes a new 720p MP4 (H.264 + AAC) that plays on iPads, phones and
 computers; the clips it came from are left as they were.
 """
+import pathlib
 import re
 import subprocess
 import threading
 from pathlib import Path
 
-MAX_CLIPS = 10
+MAX_CLIPS = 20          # slicing a video makes more clips, so leave room
 MAX_PIECES = 40          # kept pieces across all clips
 MIN_PIECE = 0.05         # seconds; shorter slivers are dropped
 STILL_SECONDS = 5        # how long a picture shows unless the manager picks another time
@@ -46,6 +47,18 @@ def probe(path, runner=subprocess.run):
         raise EditError("That video couldn't be read. Try uploading it again.")
     h, mi, s = m.groups()
     return {"duration": int(h) * 3600 + int(mi) * 60 + float(s), "audio": bool(re.search(r"Stream #.*Audio:", r.stderr))}
+
+
+def frame(src, t, out_path, runner=subprocess.run):
+    """Saves the picture at second t of a video as a JPG (for drawing on it), at most 1920 wide."""
+    t = max(0.0, float(t))
+    r = runner([ffmpeg_exe(), "-hide_banner", "-y", "-ss", f"{t:.3f}", "-i", str(src), "-frames:v", "1",
+                "-vf", "scale='min(1920,iw)':-2", "-q:v", "2", str(out_path)],
+               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+    if r.returncode != 0 or not pathlib.Path(out_path).is_file() or pathlib.Path(out_path).stat().st_size == 0:
+        pathlib.Path(out_path).unlink(missing_ok=True)
+        raise EditError("That frame couldn't be taken. Try a moment a little earlier.")
+    return out_path
 
 
 def keep_pieces(start, end, cuts, duration):

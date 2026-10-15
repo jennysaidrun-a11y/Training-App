@@ -1379,6 +1379,26 @@ async def video_info(v: str = ""):
         return JSONResponse({"error": str(e)}, status_code=400)
 
 
+@app.post("/api/manage/video/frame")
+async def video_frame(request: Request):
+    """One frame of an uploaded video as a picture, so the editor can draw on it and put it
+    in the video (a freeze frame). Not added to the library: the marked-up copy is."""
+    try:
+        body = await request.json()
+        t = float(body.get("t") or 0)
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"error": "That time couldn't be read."}, status_code=400)
+    path = _media_file(body.get("video"))
+    if not path:
+        return JSONResponse({"error": "Only videos uploaded to the app can be used."}, status_code=400)
+    out = f"{content.slugify(str(body.get('lesson') or 'lesson'))}-frame-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}.jpg"
+    try:
+        await run_in_threadpool(video.frame, path, t, media_dir() / out)
+    except video.EditError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return {"image": f"/media/{out}"}
+
+
 @app.post("/api/manage/video/edit")
 async def edit_video(request: Request):
     """The editor's video editor: makes a new MP4 from one or more uploaded clips
@@ -1406,7 +1426,13 @@ async def edit_video(request: Request):
         paths.append(path)
     if turn not in video.TURNS:
         return JSONResponse({"error": "Turn the video by 90, 180 or 270 degrees."}, status_code=400)
-    out = f"{content.slugify(str(body.get('lesson') or 'lesson'))}-edited-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}.mp4"
+    # An "exact preview" is a few seconds made the same way; it isn't kept in the library
+    # (the daily sweep removes it).
+    preview = bool(body.get("preview"))
+    if preview and sum(c["seconds"] if "seconds" in c else (c["end"] - c["start"] if c["end"] is not None else 99) for c in clips) > 6:
+        return JSONResponse({"error": "A preview is at most 5 seconds."}, status_code=400)
+    kind = "preview" if preview else "edited"
+    out = f"{content.slugify(str(body.get('lesson') or 'lesson'))}-{kind}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}.mp4"
     try:
         extras = [x for x in (body.get("extras") or []) if x in video.EXTRAS] if isinstance(body.get("extras"), list) else []
         made = await run_in_threadpool(lambda: video.make(clips, paths, media_dir() / out, bool(body.get("mute")), turn,
@@ -1414,7 +1440,8 @@ async def edit_video(request: Request):
     except video.EditError as e:
         (media_dir() / out).unlink(missing_ok=True)
         return JSONResponse({"error": str(e)}, status_code=400)
-    _library_add(f"/media/{out}", str(body.get("label") or "") or "Edited video " + dt.date.today().isoformat())
+    if not preview:
+        _library_add(f"/media/{out}", str(body.get("label") or "") or "Edited video " + dt.date.today().isoformat())
     return {"video": f"/media/{out}", **made}
 
 

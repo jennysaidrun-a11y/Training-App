@@ -910,3 +910,15 @@ details.more-menu .menu > * { all: unset; box-sizing: border-box; display: block
 details.more-menu .menu > *:hover, details.more-menu .menu > *:focus-visible { background: var(--blue-soft); }
 details.more-menu .menu > .danger { color: var(--bad, #b3261e); }
 details.more-menu .menu > [disabled] { opacity: .45; cursor: not-allowed; }
+/* Video editor effects: toggle buttons that change the preview at once */
+.vedit-fx { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.fx-row { gap: 6px; flex-wrap: wrap; }
+.fx-toggle { background: var(--bg); color: var(--muted); border: 2px solid var(--line); border-radius: 999px; padding: 8px 14px; font-weight: 600;
+  font-size: 0.9rem; min-height: 44px; box-shadow: none; }
+.fx-toggle[aria-pressed="true"] { background: var(--crust); border-color: var(--crust); color: #fff; }
+.fx-toggle:disabled { opacity: .4; }
+.vedit-fx select { min-height: 44px; border-radius: 999px; width: auto; flex: 0 0 auto; }
+.vedit-stage { overflow: hidden; border-radius: var(--radius); background: #000; display: flex; justify-content: center; }
+.vedit-stage .vedit-player { border-radius: 0; }
+.vedit-sample { width: 100%; max-height: 40vh; background: #000; border-radius: var(--radius); }
+.vedit-sample[hidden] { display: none; }

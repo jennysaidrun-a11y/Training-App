@@ -1241,6 +1241,29 @@ def test_video_editor_reads_the_length(client, env):
     assert client.get("/api/manage/video/info", params={"v": "/media/../t.db"}).status_code == 400
 
 
+def test_video_editor_grabs_a_frame(client, anon, env):
+    from trainer import app as app_module
+    a = app_module.media_dir() / "allergens-20990101000000.mp4"
+    _clip(a, 3)
+    r = client.post("/api/manage/video/frame", json={"video": "/media/" + a.name, "t": 1.5, "lesson": "allergens"})
+    assert r.status_code == 200, r.text
+    pic = app_module.media_dir() / r.json()["image"].rsplit("/", 1)[-1]
+    assert r.json()["image"].startswith("/media/allergens-frame-") and pic.read_bytes()[:3] == b"\xff\xd8\xff"
+    # It can go straight into a new video as a freeze frame between two halves of the clip.
+    r = client.post("/api/manage/video/edit", json={"clips": [
+        {"video": "/media/" + a.name, "end": 1.5}, {"video": "/media/" + pic.name, "seconds": 2},
+        {"video": "/media/" + a.name, "start": 1.5}]})
+    assert r.status_code == 200 and abs(r.json()["duration"] - 5) < 0.01
+    # Exact preview: a few seconds with the effects, not kept in the library.
+    r = client.post("/api/manage/video/edit", json={"preview": True, "extras": ["bright", "clean"], "clips": [{"video": "/media/" + a.name, "start": 0.5, "end": 2.5}]})
+    assert r.status_code == 200 and "-preview-" in r.json()["video"]
+    assert r.json()["video"] not in [i["link"] for i in client.get("/api/manage/media").json()["items"]]
+    assert client.post("/api/manage/video/edit", json={"preview": True, "clips": [{"video": "/media/" + a.name}]}).status_code == 400
+    assert client.post("/api/manage/video/frame", json={"video": "/media/../t.db", "t": 1}).status_code == 400
+    assert client.post("/api/manage/video/frame", json={"video": "/media/" + a.name, "t": "soon"}).status_code == 400
+    assert anon.post("/api/manage/video/frame", json={"video": "/media/" + a.name, "t": 1}).status_code in (303, 401, 403)
+
+
 def test_video_editor_shows_pictures(client, env):
     from trainer import app as app_module, video
     a = app_module.media_dir() / "allergens-20990101000000.mp4"

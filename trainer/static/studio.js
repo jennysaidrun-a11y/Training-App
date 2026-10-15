@@ -151,6 +151,39 @@
     const close = () => { if (!busy) { player.pause(); back.remove(); document.removeEventListener("keydown", onKey); } };
     const onKey = (e) => { if (e.key === "Escape") close(); };
 
+    const say = (m) => { status.textContent = m || ""; };
+    // Slice: one clip becomes two at second t (same video, each keeps its own part and cuts).
+    function sliceAt(i, t) {
+      const c = clips[i], end = c.end == null ? c.duration : c.end;
+      if (c.still || !c.duration || t <= (c.start || 0) + 0.1 || t >= end - 0.1) return false;
+      if (clips.length >= 20) { say("That's 20 clips, the most one video can have."); return true; }
+      const first = { ...c, end: t, cuts: c.cuts.filter(([a]) => a < t).map(([a, b]) => [a, Math.min(b, t)]) };
+      const second = { ...c, start: t, cuts: c.cuts.filter(([, b]) => b > t).map(([a, b]) => [Math.max(a, t), b]) };
+      clips.splice(i, 1, first, second);
+      say(`Sliced at ${clock(t)}. Each part is its own clip now: move it with ↑ ↓, remove it with ✕, or add something between.`);
+      return true;
+    }
+    // Freeze frame: the server takes the picture at t, the picture editor draws on it, and the
+    // marked-up picture goes into the video right there (the clip is sliced around it).
+    async function grabFrame(i, t) {
+      const c = clips[i];
+      player.pause(); say("Taking the picture…");
+      try {
+        const res = await fetch("/api/manage/video/frame", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ video: c.video, t, lesson: lessonName() }) });
+        const r = await res.json().catch(() => ({}));
+        if (!res.ok || !r.image) throw new Error(r.error || "That frame couldn't be taken.");
+        say("");
+        openImageEditor({ src: r.image, label: `${o.label || "Video"} frame at ${clock(t)}`, onDone: (link) => {
+          if (clips.length >= 19) { say("That's too many clips for one video. Remove one first."); return; }
+          const at = sliceAt(i, t) ? i + 1 : (t <= (c.start || 0) + 0.1 ? i : i + 1);
+          clips.splice(at, 0, { video: link, still: true, seconds: 4, duration: 4, start: 0, end: null, cuts: [] });
+          load(at);
+          say("Your drawing shows there for 4 seconds; change the seconds on the picture if you like.");
+        } });
+      } catch (e) { say(e.message); }
+    }
+
     function load(i) {
       active = i; cutFrom = null;
       const c = clips[i];
@@ -158,6 +191,9 @@
       if (!c) { player.pause(); drawClips(); return; }
       if (c.still) { player.pause(); still.src = c.video; drawClips(); return; }
       if (player.getAttribute("src") !== c.video) player.src = c.video;
+      const end = c.end == null ? Infinity : c.end;
+      if (player.currentTime < (c.start || 0) || player.currentTime > end) player.currentTime = c.start || 0;
+      sample.hidden = true; sample.pause();
       if (!c.duration && !c.asked) {   // the server reads the length too, in case this browser can't
         c.asked = true;
         fetch("/api/manage/video/info?v=" + encodeURIComponent(c.video)).then((r) => r.json()).then((r) => {
@@ -216,7 +252,11 @@
           cutFrom == null
             ? el("button", { type: "button", class: "ghost small", onclick: () => { cutFrom = here(); drawClips(); } }, "✂ Cut from here…")
             : el("button", { type: "button", class: "small", onclick: () => { const a = Math.min(cutFrom, here()), b = Math.max(cutFrom, here()); if (b - a >= 0.1) c.cuts.push([a, b]); cutFrom = null; drawClips(); } }, `…to here (from ${clock(cutFrom)})`),
-          cutFrom != null ? el("button", { type: "button", class: "ghost small", onclick: () => { cutFrom = null; drawClips(); } }, "Never mind") : null)
+          cutFrom != null ? el("button", { type: "button", class: "ghost small", onclick: () => { cutFrom = null; drawClips(); } }, "Never mind") : null,
+          el("button", { type: "button", class: "ghost small", title: "Split this clip in two here, so you can move, remove or put something between the parts",
+            onclick: () => { if (!sliceAt(i, here())) say("Stop the video somewhere in the middle of the clip, then slice."); else load(i + 1); } }, "⧸ Slice here"),
+          el("button", { type: "button", class: "ghost small", title: "Take this picture from the video, draw on it, and show it here for a few seconds",
+            onclick: () => grabFrame(i, here()) }, "📸 Draw on this frame"))
           : el("button", { type: "button", class: "ghost small", onclick: () => load(i) }, "Edit this clip");
         const cuts = c.cuts.length ? el("div", { class: "vedit-cuts" }, ...c.cuts.map(([a, b], k) => el("span", { class: "pill" }, `Cut ${clock(a)}–${clock(b)} `,
           el("button", { type: "button", class: "x", "aria-label": "Put this part back", onclick: () => { c.cuts.splice(k, 1); drawClips(); } }, "✕")))) : null;
@@ -289,22 +329,93 @@
       xhr.send(form);
     }
 
-    const mute = el("input", { type: "checkbox" });
-    // Touch-ups (free ffmpeg filters on the server): sound ones are off when there's no sound.
-    const touchUps = [["clean", "Clean up the sound", "Less background noise, hum and hiss", true],
-      ["level", "Even out the volume", "Quiet and loud parts end up the same loudness", true],
-      ["fade", "Fade in and out", "A gentle start and finish"],
-      ["bright", "Brighter, sharper picture", "Helps dim factory lighting"],
-      ["steady", "Steady a shaky video", "For phone videos filmed by hand; takes longer"]].map(([key, label, help, sound]) => {
-      const box = el("input", { type: "checkbox", checked: opts.extras.has(key) ? true : null });
-      box.addEventListener("change", () => { if (box.checked) opts.extras.add(key); else opts.extras.delete(key); });
-      return { sound, box, row: el("label", { class: "check" }, box, el("span", {}, el("b", {}, label), el("br"), el("span", { class: "muted small" }, help))) };
-    });
-    const syncSound = () => touchUps.forEach((t) => { if (t.sound) { t.box.disabled = opts.mute; t.row.classList.toggle("off", opts.mute); } });
-    mute.addEventListener("change", () => { opts.mute = mute.checked; syncSound(); });
+    // Effects: toggle buttons right under the player. Each one changes the preview at once
+    // (picture filters, turning and sound filters in the browser), so you can see and hear it
+    // before making the video. "Exact preview" makes 5 real seconds on the server with ffmpeg.
+    const EFFECTS = [["mute", "🔇 No sound", "Removes all sound"],
+      ["clean", "🎧 Clean up sound", "Less background noise, hum and hiss"],
+      ["level", "🔊 Even volume", "Quiet and loud parts end up the same loudness"],
+      ["fade", "🌅 Fade in and out", "A gentle start and finish"],
+      ["bright", "☀️ Brighter, sharper", "Helps dim factory lighting"],
+      ["steady", "🤚 Steady shaky video", "For phone videos filmed by hand. Shows in the exact preview and the final video only."]];
+    let compare = false, audio = null;
+    const fx = {};
+    const isOn = (k) => (k === "mute" ? opts.mute : opts.extras.has(k));
+    function soundChain() {        // built on the first tap (browsers need a tap before sound filters)
+      if (audio || !window.AudioContext) return;
+      try {
+        const ctx = new AudioContext(), src = ctx.createMediaElementSource(player);
+        const hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), comp = ctx.createDynamicsCompressor(), gain = ctx.createGain();
+        hp.type = "highpass"; lp.type = "lowpass";
+        src.connect(hp).connect(lp).connect(comp).connect(gain).connect(ctx.destination);
+        audio = { ctx, hp, lp, comp, gain };
+      } catch (e) { audio = null; }
+    }
+    function applyPreview() {
+      const on = (k) => !compare && isOn(k);
+      const deg = opts.turn && !compare ? opts.turn : 0;
+      const t = deg ? `rotate(${deg}deg)${deg % 180 ? " scale(0.56)" : ""}` : "";
+      player.style.transform = still.style.transform = t;
+      player.style.filter = still.style.filter = on("bright") ? "brightness(1.08) contrast(1.1) saturate(1.15)" : "";
+      player.muted = on("mute");
+      if (audio) {
+        audio.hp.frequency.value = on("clean") ? 80 : 10;
+        audio.lp.frequency.value = on("clean") ? 12000 : 22000;
+        const lv = on("level");
+        audio.comp.threshold.value = lv ? -30 : 0; audio.comp.ratio.value = lv ? 6 : 1;
+        audio.gain.gain.value = lv ? 1.8 : 1;
+        if (audio.ctx.state === "suspended") audio.ctx.resume();
+      }
+      for (const [k, btn] of Object.entries(fx)) btn.setAttribute("aria-pressed", isOn(k) ? "true" : "false");
+      fx.clean.disabled = fx.level.disabled = opts.mute;
+      compareBtn.textContent = compare ? "👁 Showing: original" : "👁 Showing: with effects";
+      compareBtn.setAttribute("aria-pressed", compare ? "true" : "false");
+    }
+    for (const [k, label, help] of EFFECTS) {
+      fx[k] = el("button", { type: "button", class: "fx-toggle", title: help, "aria-pressed": "false", onclick: () => {
+        if (k === "mute") opts.mute = !opts.mute; else if (opts.extras.has(k)) opts.extras.delete(k); else opts.extras.add(k);
+        soundChain(); compare = false; applyPreview();
+        say(`${label.replace(/^\S+ /, "")}: ${isOn(k) ? "on" : "off"}. ${k === "steady" ? "Tap Exact preview to see it." : "Play to see and hear it."}`);
+      } }, label);
+    }
     const turn = el("select", { "aria-label": "Turn the video" },
-      ...[[0, "Don't turn"], [90, "Turn right"], [180, "Upside down"], [270, "Turn left"]].map(([v, t]) => el("option", { value: v }, t)));
-    turn.addEventListener("change", () => { opts.turn = +turn.value; });
+      ...[[0, "↻ Don't turn"], [90, "↻ Turn right"], [180, "↻ Upside down"], [270, "↺ Turn left"]].map(([v, t]) => el("option", { value: v }, t)));
+    turn.addEventListener("change", () => { opts.turn = +turn.value; compare = false; applyPreview(); });
+    const compareBtn = el("button", { type: "button", class: "ghost small", title: "Switch between your effects and the original to compare",
+      onclick: () => { soundChain(); compare = !compare; applyPreview(); } });
+    // Fade: dim the start of the first clip and the end of the last one while playing.
+    player.addEventListener("timeupdate", () => {
+      const c = clips[active];
+      if (!c || c.still) return;
+      let k = 1;
+      if (!compare && opts.extras.has("fade")) {
+        const end = c.end == null ? c.duration : c.end, t = player.currentTime;
+        if (active === 0) k = Math.min(k, Math.max(0, (t - (c.start || 0)) / 0.6));
+        if (active === clips.length - 1 && end) k = Math.min(k, Math.max(0, (end - t) / 0.6));
+      }
+      player.style.opacity = k;
+      if (audio) audio.gain.gain.value = (opts.extras.has("level") && !compare ? 1.8 : 1) * k;
+    });
+    const sample = el("video", { class: "vedit-sample", controls: true, playsinline: true, hidden: true });
+    const sampleBtn = el("button", { type: "button", class: "ghost small", title: "Makes 5 real seconds from where the video is stopped, with every effect, exactly as the final video will be" }, "▶ Exact preview (5 s)");
+    sampleBtn.addEventListener("click", async () => {
+      const c = clips[active];
+      if (!c || busy) return;
+      const t = c.still ? 0 : player.currentTime;
+      sampleBtn.disabled = true; say("Making a 5-second preview with your effects…");
+      try {
+        const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ preview: true, mute: opts.mute, turn: opts.turn, extras: [...opts.extras],
+            clips: [c.still ? { video: c.video, seconds: Math.min(5, c.seconds || 5) } : { video: c.video, start: t, end: Math.min(t + 5, c.end == null ? c.duration : c.end) }] }) });
+        const r = await res.json().catch(() => ({}));
+        if (!res.ok || !r.video) throw new Error(r.error || "The preview couldn't be made.");
+        player.pause(); sample.hidden = false; sample.src = r.video; sample.play().catch(() => {});
+        say("This is exactly how it will look and sound.");
+      } catch (e) { say(e.message); } finally { sampleBtn.disabled = false; }
+    });
+    const effectsBar = el("div", { class: "vedit-fx" },
+      el("div", { class: "row fx-row" }, ...Object.values(fx), turn),
+      el("div", { class: "row" }, compareBtn, sampleBtn), sample);
 
     makeBtn.addEventListener("click", async () => {
       if (busy || !clips.length || !clips.every((c) => c.duration)) return;
@@ -328,17 +439,17 @@
       el("div", { class: "vedit card" },
         el("div", { class: "row vedit-top" }, el("h2", {}, clips.length ? "Edit video" : "Make a video"), el("span", { class: "grow" }),
           el("button", { type: "button", class: "ghost small", onclick: close }, "Close")),
-        player, still,
-        el("p", { class: "help" }, "Play the video and stop where you want, then tap a button. The gold bar is what stays; tap the bar to jump."),
+        el("div", { class: "vedit-stage" }, player, still),
+        effectsBar,
+        el("p", { class: "help" }, "Stop the video where you want, then tap a button: trim, cut out a part, slice it in two, or draw on that frame. The gold bar is what stays."),
         list, addBox, driveRow,
-        el("div", { class: "row vedit-opts" }, el("label", { class: "check" }, mute, " No sound"), turn),
-        el("fieldset", { class: "vedit-touch" }, el("legend", {}, "Touch-ups"), ...touchUps.map((t) => t.row)),
         el("div", { class: "row vedit-foot" }, total, el("span", { class: "grow" }),
           el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), makeBtn),
         status));
     back.addEventListener("click", (e) => { if (e.target === back) close(); });
     document.addEventListener("keydown", onKey);
     document.body.append(back);
+    applyPreview();
     load(0);
   }
 
