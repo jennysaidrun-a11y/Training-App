@@ -77,44 +77,144 @@
   });
   const driveReady = window.DRIVE ? Promise.all([loadScript("https://apis.google.com/js/api.js"), loadScript("https://accounts.google.com/gsi/client")])
     .then(() => new Promise((ok) => window.gapi.load("picker", ok))).catch(() => null) : null;
-  function driveSignIn() {
-    if (driveToken && Date.now() - driveTokenAt < 50 * 60 * 1000) return Promise.resolve(driveToken);
+  let driveEmail = "";
+  function driveSignIn(force) {
+    if (!force && driveToken && Date.now() - driveTokenAt < 50 * 60 * 1000) return Promise.resolve(driveToken);
     return new Promise((ok, bad) => {
       window.google.accounts.oauth2.initTokenClient({
-        client_id: window.DRIVE.clientId, scope: "https://www.googleapis.com/auth/drive.file",
-        callback: (r) => { if (r.error || !r.access_token) bad(new Error("Google sign-in didn't finish.")); else { driveToken = r.access_token; driveTokenAt = Date.now(); ok(driveToken); } },
+        client_id: window.DRIVE.clientId, scope: "https://www.googleapis.com/auth/drive.file openid email",
+        ...(force ? { prompt: "select_account" } : {}),
+        callback: async (r) => {
+          if (r.error || !r.access_token) { bad(new Error("Google sign-in didn't finish.")); return; }
+          driveToken = r.access_token; driveTokenAt = Date.now();
+          // Which Google account this is, so it's clear whose Drive the picker shows.
+          try {
+            const u = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { Authorization: `Bearer ${driveToken}` } });
+            driveEmail = u.ok ? ((await u.json()).email || "") : "";
+          } catch (e) { driveEmail = ""; }
+          ok(driveToken);
+        },
         error_callback: () => bad(new Error("Google sign-in was closed before it finished.")),
       }).requestAccessToken();   // straight from the tap, so the sign-in window isn't blocked
     });
   }
-  // Opens the picker; resolves to [{id, name}] (empty if closed).
-  async function pickFromDrive(kinds, multi) {
+  // Opens the picker (several files at once, shown as a list with names and dates, with tabs for
+  // My Drive, Shared with me and shared drives); resolves to [{id, name}] (empty if closed).
+  async function pickFromDrive(kinds, force) {
     if (!(window.google && window.google.picker && window.google.accounts)) throw new Error("Google Drive is still loading. Tap again in a moment.");
-    const token = await driveSignIn();
+    const token = await driveSignIn(force);
     return new Promise((ok) => {
-      const P = window.google.picker;
-      const view = new P.DocsView(P.ViewId.DOCS).setMimeTypes(kinds.map((k) => DRIVE_TYPES[k]).join(",")).setIncludeFolders(true).setSelectFolderEnabled(false);
-      const b = new P.PickerBuilder().addView(view).setOAuthToken(token).setDeveloperKey(window.DRIVE.apiKey).setAppId(window.DRIVE.appId)
-        .setTitle("Choose from Google Drive")
-        .setCallback((d) => { if (d.action === P.Action.PICKED) ok(d.docs.map((x) => ({ id: x.id, name: x.name }))); else if (d.action === P.Action.CANCEL) ok([]); });
-      if (multi) b.enableFeature(P.Feature.MULTISELECT_ENABLED);
+      const P = window.google.picker, types = kinds.map((k) => DRIVE_TYPES[k]).join(",");
+      const view = (label) => {
+        const v = new P.DocsView(P.ViewId.DOCS).setMimeTypes(types).setMode(P.DocsViewMode.LIST);
+        if (label && v.setLabel) v.setLabel(label);
+        return v;
+      };
+      const b = new P.PickerBuilder()
+        .addView(view(kinds.length > 1 ? "Videos and pictures" : kinds[0] === "video" ? "All videos" : "All pictures").setIncludeFolders(false))
+        .addView(view("My Drive").setParent("root").setIncludeFolders(true).setSelectFolderEnabled(false))
+        .addView(view("Shared with me").setOwnedByMe(false).setIncludeFolders(true).setSelectFolderEnabled(false))
+        .addView(view("Shared drives").setEnableDrives(true).setIncludeFolders(true).setSelectFolderEnabled(false))
+        .enableFeature(P.Feature.MULTISELECT_ENABLED).enableFeature(P.Feature.SUPPORT_DRIVES)
+        .setOAuthToken(token).setDeveloperKey(window.DRIVE.apiKey).setAppId(window.DRIVE.appId)
+        .setTitle(driveEmail ? `Google Drive · ${driveEmail}` : "Choose from Google Drive")
+        .setCallback((d) => {
+          if (d.action === P.Action.PICKED) ok(d.docs.map((x) => ({ id: x.id, name: x.name, url: x.url, mimeType: x.mimeType, sizeBytes: x.sizeBytes, edited: x.lastEditedUtc })));
+          else if (d.action === P.Action.CANCEL) ok([]);
+        });
       b.build().setVisible(true);
     });
   }
-  // A "Choose from Google Drive" button: picks, copies each file in, calls onCopied(kind, link).
-  function driveButton(kinds, multi, onCopied, say, label = "Choose from Google Drive") {
+  // After picking: see each file before it's copied in. Google's own player shows the video
+  // (the app copies nothing until "Use"), with its length, date, owner and an "Open in Drive" link
+  // so you can find where it lives. Resolves to the docs to copy, "again", "switch" or null.
+  function reviewPicked(docs, kinds) {
+    return new Promise((done) => {
+      const chosen = new Set(docs.map((d) => d.id));
+      const viewer = el("div", { class: "drive-viewer", hidden: true });
+      const useBtn = el("button", { type: "button", class: "btn" });
+      const count = () => { useBtn.textContent = chosen.size ? `Use ${chosen.size} ${chosen.size === 1 ? "file" : "files"}` : "Pick at least one"; useBtn.disabled = !chosen.size; };
+      const finish = (v) => { back.remove(); document.removeEventListener("keydown", onKey); done(v); };
+      const onKey = (e) => { if (e.key === "Escape") finish(null); };
+      function watch(d, row) {
+        for (const r of list.querySelectorAll(".drive-pick.on")) r.classList.remove("on");
+        row.classList.add("on");
+        viewer.hidden = false;
+        viewer.replaceChildren(
+          el("iframe", { src: `https://drive.google.com/file/d/${encodeURIComponent(d.id)}/preview`, allow: "autoplay; fullscreen", allowfullscreen: "", title: d.name }),
+          el("p", { class: "help" }, "Google's player. If it says the video is still being processed, Google hasn't made a preview yet; you can still use it."));
+      }
+      const list = el("div", { class: "drive-picks" }, ...docs.map((d) => {
+        const meta = el("span", { class: "muted" }, [d.sizeBytes ? `${(d.sizeBytes / 1048576).toFixed(d.sizeBytes > 1e8 ? 0 : 1)} MB` : "", d.edited ? new Date(d.edited).toLocaleDateString() : ""].filter(Boolean).join(" · "));
+        const thumb = el("span", { class: "drive-thumb", "aria-hidden": "true" }, String(d.mimeType || "").startsWith("image/") ? "🖼" : "🎬");
+        const box = el("input", { type: "checkbox", checked: true, "aria-label": `Use ${d.name}` });
+        box.addEventListener("change", () => { box.checked ? chosen.add(d.id) : chosen.delete(d.id); count(); });
+        const row = el("div", { class: "drive-pick" },
+          el("label", { class: "drive-pick-main" }, box, thumb, el("span", { class: "drive-pick-name" }, el("b", {}, d.name), meta)),
+          el("button", { type: "button", class: "ghost small" }, "▶ Watch"),
+          d.url ? el("a", { href: d.url, target: "_blank", rel: "noopener", class: "small" }, "Open in Drive") : "");
+        row.querySelector("button").addEventListener("click", () => watch(d, row));
+        // Fill in the length, owner and a real thumbnail from Drive (the token only reaches files you picked).
+        fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(d.id)}?supportsAllDrives=true&fields=thumbnailLink,size,modifiedTime,owners(emailAddress,me),videoMediaMetadata(durationMillis),webViewLink`,
+          { headers: { Authorization: `Bearer ${driveToken}` } })
+          .then((r) => (r.ok ? r.json() : null)).then((f) => {
+            if (!f) return;
+            const ms = f.videoMediaMetadata && f.videoMediaMetadata.durationMillis;
+            const owner = (f.owners || [])[0];
+            meta.textContent = [ms ? clock(ms / 1000) : "", f.size ? `${(f.size / 1048576).toFixed(f.size > 1e8 ? 0 : 1)} MB` : "",
+              f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString() : "",
+              owner && !owner.me ? `shared by ${owner.emailAddress}` : ""].filter(Boolean).join(" · ");
+            if (f.thumbnailLink) {
+              const img = el("img", { src: f.thumbnailLink, alt: "", referrerpolicy: "no-referrer" });
+              img.onerror = () => img.remove();
+              thumb.replaceChildren(img);
+            }
+          }).catch(() => {});
+        return row;
+      }));
+      count();
+      useBtn.addEventListener("click", () => finish(docs.filter((d) => chosen.has(d.id))));
+      const back = modal("Check what you picked",
+        el("div", { class: "row between" }, el("h2", {}, `Check what you picked (${docs.length})`),
+          el("button", { type: "button", class: "ghost small", onclick: () => finish(null), "aria-label": "Close" }, "✕")),
+        el("p", { class: "muted" }, driveEmail ? `From the Google Drive of ${driveEmail}. Tap ▶ Watch to see a video, untick anything you don't want.` : "Tap ▶ Watch to see a video, untick anything you don't want."),
+        list, viewer,
+        el("div", { class: "row" }, useBtn,
+          el("button", { type: "button", class: "ghost small", onclick: () => finish("again") }, "← Back to Drive"),
+          el("details", { class: "more-menu" }, el("summary", { class: "ghost small", "aria-label": "More" }, "⋯"),
+            el("div", { class: "menu" }, el("button", { type: "button", onclick: () => finish("switch") }, "Switch Google account")))));
+      back.classList.add("drive-review");
+      document.body.append(back);
+      document.addEventListener("keydown", onKey);
+      if (docs.length === 1 && !String(docs[0].mimeType || "").startsWith("image/")) watch(docs[0], list.firstChild);
+    });
+  }
+  // A "Choose from Google Drive" button: picks (several at once), shows them to check, then copies
+  // each one in and calls onCopied(kind, link); onFinish([{kind, link}]) once all are in.
+  function driveButton(kinds, multi, onCopied, say, label = "Choose from Google Drive", onFinish) {
     if (!window.DRIVE) return null;
     const btn = el("button", { type: "button", class: "ghost small drive-btn" }, label);
     btn.addEventListener("click", async () => {
       try {
-        const docs = await pickFromDrive(kinds, multi);
+        let docs = await pickFromDrive(kinds, false);
+        for (;;) {
+          if (!docs.length) return;
+          const r = await reviewPicked(docs, kinds);
+          if (r === "again") docs = await pickFromDrive(kinds, false);
+          else if (r === "switch") docs = await pickFromDrive(kinds, true);
+          else { docs = r || []; break; }
+        }
+        if (!docs.length) return;
         btn.disabled = true;
+        const got = [];
         for (const [i, d] of docs.entries()) {
           say(`Copying ${docs.length > 1 ? `${i + 1} of ${docs.length}: ` : ""}${d.name} from Google Drive…`);
           const r = await fromDrive("", kinds.length === 1 ? kinds[0] : undefined, { file_id: d.id, token: driveToken, name: d.name });
+          got.push({ kind: r.kind, link: r[r.kind] });
           onCopied(r.kind, r[r.kind]);
         }
-        if (docs.length) say("");
+        say("");
+        if (onFinish) onFinish(got);
       } catch (e) { say(e.message); }
       finally { btn.disabled = false; }
     });
@@ -140,6 +240,14 @@
   function openVideoEditor(o = {}) {
     const original = String(o.video || "").startsWith("/media/") ? o.video : "";
     const clips = original ? [{ video: original, start: 0, end: null, cuts: [], duration: 0 }] : [];
+    // Several videos or pictures to start with (e.g. picked together from Google Drive): one clip
+    // each, to join. Items are /media links (videos) or {kind, link}.
+    for (const v of (o.videos || []).slice(0, 20)) {
+      const link = typeof v === "string" ? v : v.link, image = typeof v === "object" && v.kind === "image";
+      if (!String(link).startsWith("/media/")) continue;
+      clips.push(image ? { video: link, still: true, seconds: 5, duration: 5, start: 0, end: null, cuts: [] }
+        : { video: link, start: 0, end: null, cuts: [], duration: 0 });
+    }
     let active = 0, cutFrom = null, busy = false;
     const opts = { mute: false, turn: 0, extras: new Set(["clean", "level"]) };
     const player = el("video", { class: "vedit-player", controls: true, playsinline: true, preload: "metadata" });

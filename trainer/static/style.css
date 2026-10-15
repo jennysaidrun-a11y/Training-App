@@ -943,3 +943,19 @@ button.listen.on { background: var(--crust); color: #fff; border-color: var(--cr
 .proj-tpl-label { display: block; margin: 8px 0; font-weight: 600; }
 .proj-tpl-label input, .proj-tpl-label textarea { display: block; width: 100%; margin-top: 4px; }
 details.more-menu.down .menu { bottom: auto; top: calc(100% + 4px); left: 0; right: auto; min-width: 240px; }
+
+/* Google Drive: check picked files before they're copied in */
+.drive-review .vedit { max-width: 760px; }
+.drive-picks { display: grid; gap: 6px; max-height: 38vh; overflow: auto; margin: 8px 0; }
+.drive-pick { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line, #ddd); border-radius: 10px; }
+.drive-pick.on { border-color: var(--accent, #2563eb); background: rgba(37, 99, 235, .06); }
+.drive-pick-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; cursor: pointer; }
+.drive-pick-name { display: grid; min-width: 0; }
+.drive-pick-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drive-thumb { width: 64px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 6px; background: #eef1f5; overflow: hidden; font-size: 20px; }
+.drive-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.drive-viewer iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 10px; background: #000; }
+@media (max-width: 600px) { .drive-pick { flex-wrap: wrap; } .drive-viewer iframe { aspect-ratio: 9 / 12; } }
+.drive-pick-main { margin: 0; font-weight: inherit; justify-content: flex-start; }
+.drive-pick-main input[type=checkbox] { width: 20px; height: 20px; flex: none; margin: 0; }
+.drive-pick-name { flex: 1; text-align: left; }

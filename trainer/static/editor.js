@@ -230,7 +230,15 @@
       const meter = el("div", { class: "meter light", hidden: true }, el("span", { style: "width:0%" }));
       const note = el("p", { class: "muted", hidden: true });
       const say = (m) => { note.hidden = !m; note.textContent = m || ""; };
-      const drive = driveButton(["video"], false, (k, v) => { D.video = v; touch(); draw(); saveNote.textContent = "Video copied from Google Drive. Save the lesson to keep it."; }, say, "From Google Drive");
+      // Videos and pictures can be picked together: one video goes straight in; several, or any
+      // pictures, open in the video editor ready to join (pictures show as stills).
+      const drive = driveButton(["video", "image"], true, () => {}, say, "From Google Drive", (got) => {
+        if (got.length === 1 && got[0].kind === "video") { D.video = got[0].link; touch(); draw(); saveNote.textContent = "Video copied from Google Drive. Save the lesson to keep it."; }
+        else if (got.length) window.Studio.openVideoEditor({ videos: got, onDone: (r) => {
+          D.video = r.video; touch(); draw(); drawRail();
+          saveNote.textContent = `New video ready (${window.Studio.clock(r.duration)}). Save the lesson to keep it.`;
+        } });
+      });
       const lib = libraryButton(["video"], false, ([p]) => { D.video = p.link; touch(); draw(); saveNote.textContent = "Video chosen from the media library. Save the lesson to keep it."; }, "From the media library");
       const menu = el("details", { class: "more-menu down" });
       const item = (label, fn, cls = "") => el("button", { type: "button", class: cls, onclick: () => { menu.removeAttribute("open"); fn(); } }, label);
@@ -247,7 +255,7 @@
       menu.append(el("summary", { class: "btn small" }, D.video ? "🎬 Video ▾" : "🎬 Add a video ▾"),
         el("div", { class: "menu" },
           item(D.video ? "⬆ Upload a different video" : "⬆ Upload a video", () => file.click()),
-          drive ? item("☁ From Google Drive", () => drive.click()) : null,
+          drive ? item("☁ Videos or pictures from Google Drive", () => drive.click()) : null,
           item("🗂 From the media library", () => lib.click()),
           item(hasOwn ? "✂ Edit this video" : "🎬 Make a video", () => openVideoEditor(draw)),
           item("🔗 Paste a YouTube or Drive link", pasteLink),
