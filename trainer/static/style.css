@@ -940,3 +940,6 @@ button.listen.on { background: var(--crust); color: #fff; border-color: var(--cr
 .vo-panel { border: 2px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .vo-panel textarea { width: 100%; font: inherit; }
 .vo-panel audio { width: 100%; }
+.proj-tpl-label { display: block; margin: 8px 0; font-weight: 600; }
+.proj-tpl-label input, .proj-tpl-label textarea { display: block; width: 100%; margin-top: 4px; }
+details.more-menu.down .menu { bottom: auto; top: calc(100% + 4px); left: 0; right: auto; min-width: 240px; }

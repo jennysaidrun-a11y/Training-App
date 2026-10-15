@@ -10,6 +10,7 @@
   <span class="grow"></span>
   {% if not is_new %}<a class="btn ghost small" href="/lesson/{{ lesson.id }}" target="_blank" rel="noopener">{{ icon("play") }} Preview</a>{% endif %}
   {% if not is_new %}<form method="post" action="/manage/lesson/{{ lesson.id }}/delete" onsubmit="return confirm('Move this lesson to the trash? You can put it back from the Trash on the Lessons page.')"><button class="ghost small danger" title="Delete lesson">{{ icon("trash") }} Delete</button></form>{% endif %}
+  <button type="button" class="ghost small" id="save-template" title="Save how this lesson's slides go, to build new lessons the same way">📋 Save as a template</button>
   <button type="button" class="small blue ask-toggle" id="ask-open">{{ icon("star") }} Ask Claude</button>
 </div>
 

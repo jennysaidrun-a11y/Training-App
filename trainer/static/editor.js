@@ -224,30 +224,36 @@
       const kids = [];
       if (D.video && D.video.startsWith("/media/")) kids.push(el("video", { class: "preview", src: D.video, controls: true, preload: "metadata" }));
       else if (D.video) kids.push(el("p", { class: "muted" }, "Plays from: ", el("a", { href: D.video, target: "_blank", rel: "noopener" }, D.video)));
-      const file = el("input", { type: "file", accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" });
+      // Every way to add or change the video, in one "Video ▾" menu.
+      const file = el("input", { type: "file", accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*", hidden: true });
       file.addEventListener("change", () => file.files[0] && upload(file.files[0]));
-      kids.push(el("div", { class: "row" },
-        el("label", { class: "upload" }, file, el("span", { class: "btn blue small" }, D.video ? "Replace video" : "Upload a video")),
-        driveButton(["video"], false, (k, v) => { D.video = v; touch(); draw(); saveNote.textContent = "Video copied from Google Drive. Save the lesson to keep it."; },
-          (m) => { note.hidden = !m; note.textContent = m; }, "From Google Drive"),
-        libraryButton(["video"], false, ([p]) => { D.video = p.link; touch(); draw(); saveNote.textContent = "Video chosen from the media library. Save the lesson to keep it."; }, "From library"),
-        el("button", { type: "button", class: "btn small", onclick: () => openVideoEditor(draw) },
-          D.video && D.video.startsWith("/media/") ? "✂ Edit video" : "🎬 Make a video"),
-        D.video ? el("button", { type: "button", class: "ghost small danger", onclick: () => { D.video = ""; touch(); draw(); } }, "Remove") : null));
       const meter = el("div", { class: "meter light", hidden: true }, el("span", { style: "width:0%" }));
       const note = el("p", { class: "muted", hidden: true });
-      kids.push(meter, note);
-      const link = el("input", { value: D.video.startsWith("/media/") ? "" : D.video, placeholder: "or paste a YouTube or Google Drive link" });
-      link.addEventListener("change", async () => {
-        const v = link.value.trim();
+      const say = (m) => { note.hidden = !m; note.textContent = m || ""; };
+      const drive = driveButton(["video"], false, (k, v) => { D.video = v; touch(); draw(); saveNote.textContent = "Video copied from Google Drive. Save the lesson to keep it."; }, say, "From Google Drive");
+      const lib = libraryButton(["video"], false, ([p]) => { D.video = p.link; touch(); draw(); saveNote.textContent = "Video chosen from the media library. Save the lesson to keep it."; }, "From the media library");
+      const menu = el("details", { class: "more-menu down" });
+      const item = (label, fn, cls = "") => el("button", { type: "button", class: cls, onclick: () => { menu.removeAttribute("open"); fn(); } }, label);
+      const hasOwn = D.video && D.video.startsWith("/media/");
+      async function pasteLink() {
+        const v = (window.prompt("Paste a YouTube or Google Drive link", hasOwn ? "" : D.video) || "").trim();
+        if (!v) return;
         if (!isDrive(v)) { D.video = v; touch(); draw(); return; }
-        note.hidden = false; note.textContent = "Copying the video from Google Drive…"; saveBtn.disabled = true; link.disabled = true;
+        say("Copying the video from Google Drive…"); saveBtn.disabled = true;
         try { D.video = (await fromDrive(v, "video")).video; touch(); draw(); saveNote.textContent = "Video copied from Google Drive. Save the lesson to keep it."; }
-        catch (e) { note.textContent = e.message; link.disabled = false; }
+        catch (e) { say(e.message); }
         finally { saveBtn.disabled = false; }
-      });
-      kids.push(link, el("span", { class: "help" }, "MP4 plays everywhere. On iPhone: Settings › Camera › Formats › Most Compatible."));
-      kids.splice(kids.length - 2, 0, el("span", { class: "help" }, "Or drag a video file onto this box."));
+      }
+      menu.append(el("summary", { class: "btn small" }, D.video ? "🎬 Video ▾" : "🎬 Add a video ▾"),
+        el("div", { class: "menu" },
+          item(D.video ? "⬆ Upload a different video" : "⬆ Upload a video", () => file.click()),
+          drive ? item("☁ From Google Drive", () => drive.click()) : null,
+          item("🗂 From the media library", () => lib.click()),
+          item(hasOwn ? "✂ Edit this video" : "🎬 Make a video", () => openVideoEditor(draw)),
+          item("🔗 Paste a YouTube or Drive link", pasteLink),
+          D.video ? item("✕ Remove the video", () => { D.video = ""; touch(); draw(); }, "danger") : null));
+      kids.push(el("div", { class: "row" }, menu, file, el("span", { class: "help" }, "or drag a video onto this box")));
+      kids.push(meter, note);
       box.replaceChildren(el("span", { class: "lbl" }, "Video (optional)"), ...kids);
       box.upload = upload;
 
@@ -276,7 +282,7 @@
         xhr.send(form);
       }
     };
-    dropZone(box, "video", (f) => box.upload(f), () => alert("That isn't a video file. MP4 works best."));
+    dropZone(box, "video", (fs) => box.upload([].concat(fs)[0]), () => alert("That isn't a video file. MP4 works best."));
     draw();
     return box;
   }
@@ -901,6 +907,56 @@
     document.getElementById("project-open")?.addEventListener("click", openProject);
     if (new URLSearchParams(location.search).get("project")) openProject();
   }
+
+  // ---- Save as a template: this lesson's slide order becomes a template for "Build from a project" ----
+  function outlineOf() {
+    const lines = [];
+    const timed = D.slides.filter((x) => x.type === "question" && x.at != null && x.at !== "");
+    if (D.video && timed.length) lines.push(`The video: ${timed.length} question${timed.length === 1 ? "" : "s"} that pause it right after the key moments.`);
+    let reads = 0;
+    for (const x of D.slides) {
+      if (x.type === "reading") {
+        reads++;
+        const steps = /^\s*\d+\.\s/m.test(x.text || "");
+        const pics = (x.images || []).length;
+        lines.push(`Reading slide like "${(x.heading || "Untitled").trim()}"${steps ? ": numbered steps" : ": 2-5 short sentences"}${pics ? `, ${pics} photo${pics === 1 ? "" : "s"}` : ""}.`);
+      } else if (x.type === "question" && (x.at == null || x.at === "")) {
+        lines.push(`Question checking the slide before (${(x.choices || []).length || 3} answers).`);
+      }
+    }
+    if (!reads) return "";
+    return lines.map((l, i) => `${i + 1}. ${l}`).join("\n");
+  }
+  document.getElementById("save-template")?.addEventListener("click", () => {
+    const outline = outlineOf();
+    if (!outline) { alert("Add at least one reading slide first; the template follows this lesson's slides."); return; }
+    const name = el("input", { maxlength: "80", "aria-label": "Template name" });
+    name.value = `${(D.title || "My lesson").trim()} template`;
+    const text = el("textarea", { rows: "10", class: "proj-outline", "aria-label": "How the slides go" });
+    text.value = outline;
+    const status = el("p", { class: "muted vedit-status", role: "status" });
+    const save = el("button", { type: "button", class: "btn" }, "Save template");
+    const cancel = el("button", { type: "button", class: "ghost" }, "Cancel");
+    const back = window.Studio.modal("Save as a template",
+      el("h2", {}, "Save as a template"),
+      el("p", { class: "muted" }, "New lessons from \"📦 Build from a project\" will follow these slides. Change any line you like."),
+      el("label", { class: "proj-tpl-label" }, "Name", name), el("label", { class: "proj-tpl-label" }, "How the slides go", text),
+      el("div", { class: "row vedit-foot" }, el("span", { class: "grow" }), cancel, save), status);
+    const close = () => back.remove();
+    cancel.addEventListener("click", close);
+    back.addEventListener("click", (e) => { if (e.target === back) close(); });
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      try {
+        const res = await fetch("/api/manage/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.value, outline: text.value }) });
+        const r = await res.json();
+        if (!res.ok) throw new Error(r.error || "The template couldn't be saved.");
+        close(); saveNote.textContent = `Saved the template "${name.value.trim()}". Pick it in 📦 Build from a project.`;
+      } catch (e) { status.textContent = e.message; save.disabled = false; }
+    });
+    document.body.append(back);
+    name.focus(); name.select();
+  });
 
   show(D.slides.length ? 1 : 0);
   if (!D.slides.length && window.DECK_NEW) {
