@@ -18,6 +18,9 @@
   let lessonName = () => "studio";      // the lesson a new file is named after
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
   // Every place a file can be added takes a dropped file as well as a tap (app rule).
+  // "image" or "video" for a file (iPhone .heic photos often come with no type on Windows).
+  const fileKind = (f) => (f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name || "") ? "image"
+    : f.type.startsWith("video/") || /\.(mp4|m4v|mov|webm)$/i.test(f.name || "") ? "video" : "");
   function dropZone(target, kind, onFile, onWrong) {
     target.addEventListener("dragover", (e) => { if (!hasFiles(e)) return; e.preventDefault(); e.stopPropagation(); target.classList.add("drop-on"); });
     target.addEventListener("dragleave", (e) => { if (!target.contains(e.relatedTarget)) target.classList.remove("drop-on"); });
@@ -25,13 +28,13 @@
       if (!hasFiles(e)) return;
       e.preventDefault(); e.stopPropagation();
       target.classList.remove("drop-on");
-      const fs = [...e.dataTransfer.files].filter((x) => [].concat(kind).some((k) => x.type.startsWith(k + "/")));
+      const fs = [...e.dataTransfer.files].filter((x) => [].concat(kind).some((k) => fileKind(x) === k));
       if (fs.length) onFile(fs); else if (onWrong) onWrong();
     });
   }
   // Uploads one video or picture; resolves to {kind, link}. onProgress(percent) for big files.
   function upload(f, onProgress, label) {
-    const image = f.type.startsWith("image/");
+    const image = fileKind(f) === "image";
     return new Promise((ok, bad) => {
       const form = new FormData();
       form.append(image ? "image_file" : "video_file", f, f.name || (image ? "picture.jpg" : "video.mp4"));
@@ -69,7 +72,7 @@
   // "Choose from Google Drive": Google's own sign-in and file picker, shown once it's set up
   // (window.DRIVE). Google keeps the sign-in; the app only gets a short-lived pass to copy
   // the files you pick (drive.file), which the server uses once and doesn't store.
-  const DRIVE_TYPES = { video: "video/mp4,video/quicktime,video/webm,video/x-m4v", image: "image/jpeg,image/png,image/webp,image/gif" };
+  const DRIVE_TYPES = { video: "video/mp4,video/quicktime,video/webm,video/x-m4v", image: "image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif" };
   let driveToken = null, driveTokenAt = 0;
   const loadScript = (src) => new Promise((ok, bad) => {
     const t = document.createElement("script"); t.src = src; t.async = true; t.onload = ok;
@@ -438,7 +441,7 @@
 
     // Another clip or picture at the end: tap to choose or drag one onto the box (app rule),
     // or paste a Google Drive link.
-    const pick = el("input", { type: "file", accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*,image/jpeg,image/png,image/webp,image/gif" });
+    const pick = el("input", { type: "file", accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif" });
     const addBox = el("label", { class: "pic-drop upload vedit-add" }, pick, el("span", {}, "+ Add a video or picture at the end"),
       el("span", { class: "help" }, "Tap to choose one, or drag it here. A picture shows for 5 seconds; you can change that."));
     pick.addEventListener("change", () => { if (pick.files[0]) addClip(pick.files[0]); pick.value = ""; });
@@ -463,7 +466,7 @@
       el("div", { class: "row" }, pickBtn, libraryButton(["video", "image"], true, (picked) => picked.forEach((p) => pushClip(p.kind, p.link)))),
       el("div", { class: "row vedit-drive" }, driveLink, driveBtn));
     function addClip(f) {
-      if (f.type.startsWith("image/")) {
+      if (fileKind(f) === "image") {
         const form = new FormData();
         form.append("image_file", f);
         form.append("lesson", lessonName());
@@ -1017,7 +1020,7 @@
       }
       refresh(`Added ${files.length} file${files.length === 1 ? "" : "s"}.`);
     }
-    const pick = el("input", { type: "file", multiple: true, accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*,image/jpeg,image/png,image/webp,image/gif" });
+    const pick = el("input", { type: "file", multiple: true, accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif" });
     pick.addEventListener("change", () => { if (pick.files.length) addFiles([...pick.files]); pick.value = ""; });
     const drop = el("label", { class: "pic-drop upload studio-drop" }, pick,
       el("span", {}, el("b", {}, "Drop videos and pictures here"), " or tap to choose"));

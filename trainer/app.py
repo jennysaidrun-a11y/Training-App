@@ -1,10 +1,12 @@
 """The training app: worker pages, the lesson player and the manager pages."""
 import datetime as dt
 import json
+import pathlib
 import os
 import re
 import secrets
 import shutil
+import tempfile
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -1281,8 +1283,11 @@ DRIVE_LINK = re.compile(r"^https://(?:drive|docs)\.google\.com/[^\s]*?(?:/d/|[?&
 DRIVE_DOWNLOAD = "https://drive.usercontent.google.com/download"
 MAGIC = {".mp4": [(4, b"ftyp")], ".m4v": [(4, b"ftyp")], ".mov": [(4, b"ftyp"), (4, b"moov"), (4, b"wide"), (4, b"mdat")],
          ".webm": [(0, b"\x1a\x45\xdf\xa3")], ".jpg": [(0, b"\xff\xd8")], ".jpeg": [(0, b"\xff\xd8")],
-         ".png": [(0, b"\x89PNG")], ".gif": [(0, b"GIF8")], ".webp": [(8, b"WEBP")]}
-EXT_OF_TYPE = {"video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm", "video/x-m4v": ".m4v",
+         ".png": [(0, b"\x89PNG")], ".gif": [(0, b"GIF8")], ".webp": [(8, b"WEBP")],
+         ".heic": [(4, b"ftyp")], ".heif": [(4, b"ftyp")]}
+# iPhone photos (HEIC/HEIF) are turned into JPG as they come in (pillow-heif), so every browser shows them.
+HEIC_TYPES = {".heic", ".heif"}
+EXT_OF_TYPE = {"image/heic": ".heic", "image/heif": ".heif", "video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm", "video/x-m4v": ".m4v",
                "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
 
 
@@ -1320,10 +1325,10 @@ def _drive_copy(link, lesson_id, get=None, file_id=None, token=None, name=""):
                              "\"Anyone with the link\", then try again.")
         fname = re.findall(r'filename="?([^";]+)"?', r.headers.get("Content-Disposition") or "") or [str(name or "")]
         ext = os.path.splitext(fname[-1])[1].lower() if fname[-1] else ""
-        if ext not in MEDIA_TYPES:
+        if ext not in MEDIA_TYPES and ext not in HEIC_TYPES:
             ext = EXT_OF_TYPE.get(ctype, ext)
-        if ext not in MEDIA_TYPES:
-            raise ValueError("That file isn't a video or picture the app can use (MP4, MOV, WebM, JPG, PNG, WebP or GIF).")
+        if ext not in MEDIA_TYPES and ext not in HEIC_TYPES:
+            raise ValueError("That file isn't a video or picture the app can use (MP4, MOV, WebM, JPG, PNG, WebP, GIF or iPhone HEIC).")
         kind = "video" if ext in VIDEO_TYPES else "image"
         cap = MAX_VIDEO_BYTES if kind == "video" else MAX_IMAGE_BYTES
         name = f"{content.slugify(lesson_id)}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}{ext}"
@@ -1339,6 +1344,11 @@ def _drive_copy(link, lesson_id, get=None, file_id=None, token=None, name=""):
                     out.write(chunk)
             if not any(head[i:i + len(sig)] == sig for i, sig in MAGIC[ext]):
                 raise ValueError("That file doesn't look like the video or picture its name says. Try another copy.")
+            if ext in HEIC_TYPES:   # iPhone photo: keep a JPG instead
+                jpg = path.with_suffix(".jpg")
+                heic_to_jpg(path, jpg)
+                path.unlink(missing_ok=True)
+                path, name = jpg, jpg.name
         except BaseException:
             path.unlink(missing_ok=True)
             raise
@@ -1526,12 +1536,14 @@ async def upload_image(request: Request):
     if not getattr(upload, "filename", None):
         raise HTTPException(400, "Choose a picture.")
     ext = os.path.splitext(upload.filename)[1].lower()
-    if ext not in IMAGE_TYPES:
-        hint = " iPhone photos (.heic): share them as JPEG first, or take a screenshot." if ext == ".heic" else ""
-        return JSONResponse({"error": f"'{upload.filename}' isn't a picture the app can show. Use a .jpg, .png, .webp or .gif.{hint}"}, status_code=400)
+    if ext not in IMAGE_TYPES and ext not in HEIC_TYPES:
+        return JSONResponse({"error": f"'{upload.filename}' isn't a picture the app can show. Use a .jpg, .png, .webp, .gif or iPhone .heic."}, status_code=400)
     if (upload.size or 0) > MAX_IMAGE_BYTES:
         return JSONResponse({"error": "That picture is over 15 MB. Please use a smaller copy."}, status_code=400)
-    return {"image": _save_upload(upload, str(form.get("lesson") or "lesson"), str(form.get("label") or ""))}
+    try:
+        return {"image": await run_in_threadpool(_save_upload, upload, str(form.get("lesson") or "lesson"), str(form.get("label") or ""))}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
 
 
 def _verify(citations):
@@ -1827,8 +1839,35 @@ def media(name: str):
     return FileResponse(path, media_type=MEDIA_TYPES["." + name.rsplit(".", 1)[1]])
 
 
+def heic_to_jpg(src, dst):
+    """An iPhone photo (HEIC/HEIF) as a JPG, turned the right way up. Raises ValueError if it can't be read."""
+    try:
+        import pillow_heif
+        from PIL import Image, ImageOps
+        pillow_heif.register_heif_opener()
+        with Image.open(src) as im:
+            im = ImageOps.exif_transpose(im).convert("RGB")
+            im.thumbnail((4096, 4096))
+            im.save(dst, "JPEG", quality=90)
+    except ImportError:
+        raise ValueError("iPhone photos (.heic) can't be read on this copy yet. Share them as JPEG, or try again after the next update.")
+    except Exception:
+        pathlib.Path(dst).unlink(missing_ok=True)
+        raise ValueError("That iPhone photo couldn't be read. Share it as JPEG and try again.")
+    return dst
+
+
 def _save_upload(upload, lesson_id, label=""):
     ext = os.path.splitext(upload.filename)[1].lower()
+    if ext in HEIC_TYPES:
+        name = f"{content.slugify(lesson_id)}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}.jpg"
+        with tempfile.NamedTemporaryFile(suffix=ext, dir=media_dir(), delete=False) as tmp:
+            shutil.copyfileobj(upload.file, tmp, 1024 * 1024)
+        try:
+            heic_to_jpg(tmp.name, media_dir() / name)
+        finally:
+            os.unlink(tmp.name)
+        return _library_add(f"/media/{name}", label or os.path.splitext(upload.filename)[0])
     name = f"{content.slugify(lesson_id)}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}{ext}"
     with open(media_dir() / name, "wb") as out:
         shutil.copyfileobj(upload.file, out, 1024 * 1024)

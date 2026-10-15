@@ -338,7 +338,7 @@
     const box = el("div", { class: "field picture-field" });
     s.images = s.images || [];
     const draw = (msg) => {
-      const file = el("input", { type: "file", multiple: true, accept: "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" });
+      const file = el("input", { type: "file", multiple: true, accept: "image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif,video/mp4,video/quicktime,video/webm,video/x-m4v,video/*" });
       file.addEventListener("change", () => file.files.length && upload([...file.files]));
       const drive = el("input", { placeholder: "or paste a Google Drive link to a picture or video", "aria-label": "Google Drive link to a picture or video" });
       drive.addEventListener("change", async () => {
@@ -805,7 +805,7 @@
       const list = el("div", { class: "proj-files" });
       const status = el("p", { class: "muted vedit-status", role: "status", "aria-live": "polite" });
       const say = (m) => { status.textContent = m || ""; };
-      const pick = el("input", { type: "file", multiple: true, accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*,image/jpeg,image/png,image/webp,image/gif" });
+      const pick = el("input", { type: "file", multiple: true, accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif" });
       const dropBox = el("label", { class: "pic-drop upload studio-drop" }, pick,
         el("span", {}, el("b", {}, "Drop the project's videos and photos here"), " or tap to choose"));
       const add = (kind, link, label) => { files.push({ kind, link, label: label || link.split("/").pop() }); drawFiles(); };

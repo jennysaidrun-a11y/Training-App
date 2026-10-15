@@ -566,8 +566,8 @@ def test_pictures_on_reading_slides(client, env):
     client.post("/api/manage/lesson/allergens", json=deck)
     assert client.get(image).status_code == 200
 
-    bad = client.post("/api/manage/image", files={"image_file": ("IMG_1.HEIC", b"x", "image/heic")})
-    assert bad.status_code == 400 and "JPEG" in bad.json()["error"]
+    bad = client.post("/api/manage/image", files={"image_file": ("notes.pdf", b"%PDF", "application/pdf")})
+    assert bad.status_code == 400 and ".jpg" in bad.json()["error"]
     deck["slides"][1]["images"] = ["javascript:alert(1)"]
     assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 400
 
@@ -584,6 +584,34 @@ def test_videos_on_reading_slides(client, env):
     assert clip in client.get("/lesson/allergens").text
     r = client.post("/api/manage/media/delete", json={"link": clip})   # in use, so it can't be deleted
     assert r.status_code == 400 and "still used" in r.json()["error"]
+
+
+def test_iphone_photos_become_jpg(client, env):
+    """iPhone .heic photos (upload or Google Drive) are kept as JPG so every browser shows them."""
+    import io
+    import pillow_heif
+    from PIL import Image
+    pillow_heif.register_heif_opener()
+    buf = io.BytesIO()
+    Image.new("RGB", (40, 30), (200, 30, 30)).save(buf, format="HEIF")
+    heic = buf.getvalue()
+    r = client.post("/api/manage/image", data={"lesson": "allergens"}, files={"image_file": ("IMG_5818.HEIC", heic, "")})
+    assert r.status_code == 200, r.text
+    link = r.json()["image"]
+    assert link.endswith(".jpg") and client.get(link).content[:2] == b"\xff\xd8"
+
+    from trainer import app as app_module
+
+    class Resp:
+        status_code = 200
+        headers = {"Content-Type": "image/heic", "Content-Disposition": 'attachment; filename="IMG_5819.HEIC"'}
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def iter_content(self, n): yield heic
+    kind, link = app_module._drive_copy("", "allergens", get=lambda *a, **k: Resp(), file_id="A" * 25, token="t")
+    assert kind == "image" and link.endswith(".jpg") and client.get(link).content[:2] == b"\xff\xd8"
+    bad = client.post("/api/manage/image", files={"image_file": ("x.heic", b"\x00\x00\x00\x18ftypheic" + b"0" * 50, "image/heic")})
+    assert bad.status_code == 400 and "iPhone photo" in bad.json()["error"]
 
 
 def test_static_links_are_versioned(client):
