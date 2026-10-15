@@ -407,6 +407,8 @@
       if (document.querySelector(".iedit-canvas") || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
       if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undo(); }
       else if (e.key === " " && e.target.tagName !== "BUTTON") { e.preventDefault(); playBtn.click(); }
+      else if ((e.key === "ArrowLeft" || e.key === ",") && !e.target.closest(".tl-say")) { e.preventDefault(); frameStep(-1); }
+      else if ((e.key === "ArrowRight" || e.key === ".") && !e.target.closest(".tl-say")) { e.preventDefault(); frameStep(1); }
     };
 
     const say = (m) => { status.textContent = m || ""; };
@@ -443,6 +445,97 @@
     });
     const showPlay = () => { playBtn.textContent = player.paused ? "▶ Play" : "⏸ Pause"; timeLbl.textContent = clock(player.currentTime); };
     for (const ev of ["play", "pause", "ended", "timeupdate", "seeked"]) player.addEventListener(ev, showPlay);
+
+    // ---- Timeline, like video apps: the whole new video left to right, a video track (one block
+    // per clip) and a voice track (one block per voiceover line). Drag anywhere on it to scrub (the
+    // picture follows as you drag); drag a voice block to move that line, watching the picture.
+    const FRAME = 1 / 30;
+    let voiceItems = () => [];              // set once the voiceover lines exist (below)
+    let onVoiceMoved = () => {};
+    const tlVideo = el("div", { class: "tl-track tl-video" });
+    const tlVoice = el("div", { class: "tl-track tl-voice" });
+    const tlRuler = el("div", { class: "tl-ruler" });
+    const tlHead = el("div", { class: "tl-head" }, el("span", { class: "tl-head-time" }));
+    const tlBody = el("div", { class: "tl-body" }, tlRuler, tlVideo, tlVoice, tlHead);
+    const timeline = el("div", { class: "tl", "aria-label": "Timeline" },
+      el("div", { class: "tl-labels" }, el("span", {}, ""), el("span", {}, "🎬"), el("span", {}, "🎙")), tlBody);
+    const lenOf = (c) => keepPieces(c).reduce((n, [a, b]) => n + b - a, 0);
+    const totalLen = () => clips.reduce((n, c) => n + lenOf(c), 0);
+    const pct = (t, T) => `${Math.max(0, Math.min(100, 100 * t / (T || 1)))}%`;
+    function drawTimeline() {
+      const T = Math.max(totalLen(), ...voiceItems().map((v) => v.at + v.dur), 0.1);
+      tlBody.dataset.total = T;
+      const step = T > 120 ? 30 : T > 40 ? 10 : T > 12 ? 5 : 1;
+      const ticks = [];
+      for (let t = 0; t <= T + 0.001; t += step) ticks.push(el("span", { class: "tl-tick", style: `left:${pct(t, T)}` }, clock(t).replace(/\.\d$/, "")));
+      tlRuler.replaceChildren(...ticks);
+      let x = 0;
+      tlVideo.replaceChildren(...clips.map((c, i) => {
+        const len = lenOf(c), b = el("button", { type: "button", class: "tl-clip" + (i === active ? " on" : "") + (c.still ? " still" : ""),
+          style: `left:${pct(x, T)};width:${pct(len, T)}`, title: c.still ? `Picture, ${clock(len)}` : `Clip ${i + 1}, ${clock(len)}` },
+          c.still ? "🖼" : `${i + 1}`);
+        b.addEventListener("click", () => load(i));   // a press-and-drag on it scrubs, like the rest of the timeline
+        x += len;
+        return b;
+      }));
+      tlVoice.replaceChildren(...voiceItems().map((v) => {
+        const b = el("div", { class: "tl-say" + (v.overlap ? " overlap" : ""), style: `left:${pct(v.at, T)};width:${pct(Math.max(v.dur, 0.4), T)}`,
+          title: `${v.line.text} (starts ${clock(v.at)}). Drag to move it.`, tabindex: "0", role: "button" }, v.line.text || "…");
+        b.addEventListener("pointerdown", (e) => dragVoice(e, b, v));
+        b.addEventListener("keydown", (e) => {
+          if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); e.stopPropagation(); v.line.at = Math.max(0, Math.round((v.at + (e.key === "ArrowLeft" ? -0.1 : 0.1)) * 10) / 10); onVoiceMoved(); }
+        });
+        return b;
+      }));
+      moveHead();
+    }
+    function moveHead() {
+      const T = +tlBody.dataset.total || 1, t = timelinePos();
+      tlHead.style.left = pct(t, T);
+      tlHead.firstChild.textContent = clock(t);
+    }
+    const timeAt = (clientX) => { const r = tlBody.getBoundingClientRect(); return Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (+tlBody.dataset.total || 0); };
+    // Scrub: press anywhere on the timeline and drag; the picture follows.
+    tlBody.addEventListener("pointerdown", (e) => {
+      if (e.button) return;
+      player.pause();
+      tlBody.setPointerCapture(e.pointerId);
+      const go = (ev) => { seekTimeline(timeAt(ev.clientX)); moveHead(); };
+      go(e);
+      const up = () => { tlBody.removeEventListener("pointermove", go); tlBody.removeEventListener("pointerup", up); tlBody.removeEventListener("pointercancel", up); };
+      tlBody.addEventListener("pointermove", go); tlBody.addEventListener("pointerup", up); tlBody.addEventListener("pointercancel", up);
+    });
+    function dragVoice(e, b, v) {
+      e.stopPropagation(); e.preventDefault();
+      player.pause();
+      b.setPointerCapture(e.pointerId);
+      const grab = timeAt(e.clientX) - v.at;
+      let at = v.at, raf = 0;
+      b.classList.add("dragging");
+      const move = (ev) => {
+        at = Math.max(0, Math.round((timeAt(ev.clientX) - grab) * 10) / 10);
+        b.style.left = pct(at, +tlBody.dataset.total);
+        b.dataset.time = clock(at);
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => { seekTimeline(at); moveHead(); });   // see the picture where the line now starts
+      };
+      const up = () => {
+        b.removeEventListener("pointermove", move); b.removeEventListener("pointerup", up); b.removeEventListener("pointercancel", up);
+        b.classList.remove("dragging");
+        if (at !== v.at) { v.line.at = at; onVoiceMoved(); }
+      };
+      b.addEventListener("pointermove", move); b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
+    }
+    function frameStep(d) {
+      const c = clips[active];
+      if (!c || c.still) return;
+      player.pause();
+      player.currentTime = Math.max(0, Math.min(player.duration || 0, player.currentTime + d * FRAME));
+    }
+    const frameBack = el("button", { type: "button", class: "ghost small", title: "Back one frame (← or ,)", "aria-label": "Back one frame", onclick: () => frameStep(-1) }, "◀︎|");
+    const frameFwd = el("button", { type: "button", class: "ghost small", title: "Forward one frame (→ or .)", "aria-label": "Forward one frame", onclick: () => frameStep(1) }, "|▶︎");
+    for (const ev of ["timeupdate", "seeked"]) player.addEventListener(ev, moveHead);
+    player.addEventListener("play", function tick() { moveHead(); if (!player.paused) requestAnimationFrame(tick); });
     // Slice: one clip becomes two at second t (same video, each keeps its own part and cuts).
     function sliceAt(i, t) {
       const c = clips[i], end = c.end == null ? c.duration : c.end;
@@ -552,17 +645,9 @@
         secs.addEventListener("change", () => { c.seconds = c.duration = Math.min(120, Math.max(0.5, +secs.value || 5)); setTimeout(drawClips); });
         const tools = c.still ? el("div", { class: "row vedit-tools" }, el("label", {}, "Show this picture for ", secs, " seconds"),
             el("button", { type: "button", class: "ghost small", onclick: () => openImageEditor({ src: c.video, onDone: (link) => { c.video = link; load(i); } }) }, "✏️ Mark up"))
-          : i === active ? el("div", { class: "row vedit-tools" },
-          el("button", { type: "button", class: "ghost small", onclick: () => { c.start = here(); if (c.end != null && c.end < c.start) c.end = null; drawClips(); } }, "⇤ Start here"),
-          el("button", { type: "button", class: "ghost small", onclick: () => { c.end = Math.max(here(), c.start || 0); drawClips(); } }, "End here ⇥"),
-          cutFrom == null
-            ? el("button", { type: "button", class: "ghost small", onclick: () => { cutFrom = here(); drawClips(); } }, "✂ Cut from here…")
-            : el("button", { type: "button", class: "small", onclick: () => { const a = Math.min(cutFrom, here()), b = Math.max(cutFrom, here()); if (b - a >= 0.1) c.cuts.push([a, b]); cutFrom = null; drawClips(); } }, `…to here (from ${clock(cutFrom)})`),
-          cutFrom != null ? el("button", { type: "button", class: "ghost small", onclick: () => { cutFrom = null; drawClips(); } }, "Never mind") : null,
-          el("button", { type: "button", class: "ghost small", title: "Split this clip in two here, so you can move, remove or put something between the parts",
-            onclick: () => { if (!sliceAt(i, here())) say("Stop the video somewhere in the middle of the clip, then slice."); else load(i + 1); } }, "⧸ Slice here"),
-          el("button", { type: "button", class: "ghost small", title: "Take this picture from the video, draw on it, and show it here for a few seconds",
-            onclick: () => grabFrame(i, here()) }, "📸 Draw on this frame"))
+          : i === active ? (cutFrom == null ? null : el("div", { class: "row vedit-tools" },   // the side toolbox does the rest
+            el("button", { type: "button", class: "small", onclick: () => { const a = Math.min(cutFrom, here()), b = Math.max(cutFrom, here()); if (b - a >= 0.1) c.cuts.push([a, b]); cutFrom = null; drawClips(); } }, `…to here (from ${clock(cutFrom)})`),
+            el("button", { type: "button", class: "ghost small", onclick: () => { cutFrom = null; drawClips(); } }, "Never mind")))
           : el("button", { type: "button", class: "ghost small", onclick: () => load(i) }, "Edit this clip");
         const cuts = c.cuts.length ? el("div", { class: "vedit-cuts" }, ...c.cuts.map(([a, b], k) => el("span", { class: "pill" }, `Cut ${clock(a)}–${clock(b)} `,
           el("button", { type: "button", class: "x", "aria-label": "Put this part back", onclick: () => { c.cuts.splice(k, 1); drawClips(); } }, "✕")))) : null;
@@ -579,6 +664,7 @@
       }));
       const all = clips.reduce((n, c) => n + keepPieces(c).reduce((m, [a, b]) => m + b - a, 0), 0);
       total.textContent = clips.length && clips.every((c) => c.duration) ? `New video: ${clock(all)} long` : "";
+      drawTimeline();
     }
 
     // Another clip or picture at the end: tap to choose or drag one onto the box (app rule),
@@ -743,12 +829,24 @@
     const voMix = el("button", { type: "button", class: "fx-toggle", "aria-pressed": "false" }, "Play over it (sound quieter)");
     const voStale = () => { if (vo.audio) { vo.audio = ""; vo.on = false; voAudio.hidden = true; voAudio.removeAttribute("src"); fx.voice.setAttribute("aria-pressed", "false"); voSync(); voMake.textContent = "Make the voice again"; } };
     const setLines = (texts, ats = []) => { voLines = texts.map((text, i) => ({ text, at: ats[i] == null ? null : ats[i], dur: 0 })); voStale(); drawLines(); };
+    voiceItems = () => {
+      let t = 0;
+      return voLines.filter((l) => l.text.trim()).map((l, i, all) => {
+        const at = l.at != null ? l.at : l.placed != null ? l.placed : t + (i ? 0.3 : 0);
+        const dur = l.dur || Math.max(0.8, l.text.trim().split(/\s+/).length / 2.6);
+        t = at + dur;
+        const next = all[i + 1];
+        return { line: l, at, dur, overlap: !!(next && next.at != null && at + dur > next.at + 0.05) };
+      });
+    };
+    // A line dragged on the timeline: keep the new start, and remake the voice if there was one.
+    onVoiceMoved = () => { const had = !!vo.audio; voStale(); drawLines(); if (had) voMake.click(); };
     function drawLines() {
       voList.replaceChildren(...voLines.map((l, i) => {
         const next = voLines[i + 1];
         const overlap = l.dur && next && next.at != null && l.at != null && l.at + l.dur > next.at + 0.05;
         const input = el("input", { value: l.text, "aria-label": `Line ${i + 1}`, placeholder: "What the voice says here" });
-        input.addEventListener("input", () => { l.text = input.value; voStale(); });
+        input.addEventListener("input", () => { l.text = input.value; voStale(); drawTimeline(); });
         const nudge = (d) => { l.at = Math.max(0, Math.round(((l.at == null ? timelinePos() : l.at) + d) * 10) / 10); voStale(); drawLines(); };
         return el("div", { class: "vo-line" + (overlap ? " overlap" : "") },
           el("button", { type: "button", class: "ghost small vo-at", title: "Start this line where the video is now",
@@ -760,6 +858,7 @@
           el("button", { type: "button", class: "ghost small x", "aria-label": "Remove line", onclick: () => { voLines.splice(i, 1); voStale(); drawLines(); } }, "✕"),
           overlap ? el("span", { class: "vo-warn" }, "Runs into the next line: move the next one later, or shorten this one.") : null);
       }));
+      drawTimeline();
     }
     // Jump the player to second t of the new video (finds the clip and the spot in it).
     function seekTimeline(t) {
@@ -863,6 +962,40 @@
       voPanel,
       el("div", { class: "row" }, compareBtn, sampleBtn), sample);
 
+    // The quick toolbox down the side: one tap, it works where the video is now.
+    function toolbox() {
+      const tool = (icon, label, help, fn) => el("button", { type: "button", class: "tb-btn", title: help, "aria-label": label, onclick: fn },
+        el("span", { class: "tb-ico", "aria-hidden": "true" }, icon), el("span", { class: "tb-lbl" }, label));
+      const clip = () => { const c = clips[active]; if (!c || c.still) { say("Tap a video clip on the timeline first."); return null; } return c; };
+      const cutBtn = tool("⛔", "Cut", "Cut out a part: tap here at the start of the part, then again at its end", () => {
+        const c = clip(); if (!c) return;
+        const t = player.currentTime;
+        if (cutFrom == null) { cutFrom = t; cutBtn.classList.add("on"); say(`Cut starts at ${clock(t)}. Go to where it ends and tap Cut again.`); return; }
+        const a = Math.min(cutFrom, t), b = Math.max(cutFrom, t);
+        cutFrom = null; cutBtn.classList.remove("on");
+        if (b - a >= 0.1) { c.cuts.push([a, b]); say(`Cut out ${clock(a)} to ${clock(b)}.`); } else say("That part was too short to cut.");
+        drawClips();
+      });
+      return el("div", { class: "vedit-toolbox", role: "toolbar", "aria-label": "Tools", "aria-orientation": "vertical" },
+        tool("✂️", "Slice", "Split the clip in two here", () => { if (!clip()) return; if (!sliceAt(active, player.currentTime)) say("Stop the video somewhere in the middle of a clip, then slice."); else load(active + 1); }),
+        tool("⇤", "Start", "Start the clip here (trim the beginning)", () => { const c = clip(); if (!c) return; c.start = player.currentTime; if (c.end != null && c.end < c.start) c.end = null; drawClips(); }),
+        tool("⇥", "End", "End the clip here (trim the end)", () => { const c = clip(); if (!c) return; c.end = Math.max(player.currentTime, c.start || 0); drawClips(); }),
+        cutBtn,
+        tool("📸", "Draw", "Draw on this frame; it shows here for a few seconds", () => { if (clip()) grabFrame(active, player.currentTime); }),
+        tool("🎙", "Voice", "Add a voiceover line that starts here", () => {
+          voPanel.hidden = false;
+          voLines.push({ text: "", at: Math.round(timelinePos() * 10) / 10, dur: 0 });
+          voLines.sort((a, b) => (a.at == null ? 1e9 : a.at) - (b.at == null ? 1e9 : b.at));
+          voStale(); drawLines();
+          const empty = [...voList.querySelectorAll("input")].find((x) => !x.value);
+          if (empty) { empty.scrollIntoView({ block: "center", behavior: "smooth" }); empty.focus(); }
+          say("Type what the voice says from here, then Make the voice. Drag its block on the timeline to move it.");
+        }),
+        tool("➕", "Add", "Add a video or picture at the end", () => pick.click()),
+        tool("🔇", "Sound", "Turn the video's own sound off or on", () => fx.mute && fx.mute.click()),
+        tool("↶", "Undo", "Undo the last change (Ctrl+Z)", undo));
+    }
+
     makeBtn.addEventListener("click", async () => {
       if (busy || !clips.length || !clips.every((c) => c.duration)) return;
       busy = true; makeBtn.disabled = true; makeBtn.textContent = "Making… keep this open"; player.pause();
@@ -887,16 +1020,14 @@
       el("div", { class: "vedit card" },
         el("div", { class: "row vedit-top" }, el("h2", {}, clips.length ? "Edit video" : "Make a video"), el("span", { class: "grow" }),
           el("button", { type: "button", class: "ghost small", onclick: close }, "Close")),
-        el("div", { class: "vedit-stage" }, player, still),
-        el("div", { class: "row vedit-transport" }, playBtn, timeLbl,
-          el("button", { type: "button", class: "ghost small", title: "Take this picture from the video, draw on it, and show it here for a few seconds",
-            onclick: () => { const c = clips[active]; if (!c || c.still) say("Pick a video clip first."); else grabFrame(active, player.currentTime); } }, "📸 Draw on this frame"),
-          el("button", { type: "button", class: "ghost small", title: "Split this clip in two here",
-            onclick: () => { if (!clips[active] || !sliceAt(active, player.currentTime)) say("Stop the video somewhere in the middle of a clip, then slice."); else load(active + 1); } }, "⧸ Slice here"),
-          el("span", { class: "grow" }), undoBtn),
+        el("div", { class: "vedit-work" }, toolbox(),
+          el("div", { class: "vedit-center" },
+            el("div", { class: "vedit-stage" }, player, still),
+            el("div", { class: "row vedit-transport" }, frameBack, playBtn, frameFwd, timeLbl, el("span", { class: "grow" }), undoBtn),
+            timeline)),
         status,
         effectsBar,
-        el("p", { class: "help" }, "Stop the video where you want, then tap a button: trim, cut out a part, slice it in two, or draw on that frame. The gold bar is what stays."),
+        el("p", { class: "help" }, "Drag on the timeline to find the spot, then tap a tool on the left. The gold bar is what stays."),
         list, addBox, driveRow,
         el("div", { class: "row vedit-foot" }, total, el("span", { class: "grow" }),
           el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), makeBtn)));

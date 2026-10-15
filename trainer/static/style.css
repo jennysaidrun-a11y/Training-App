@@ -1007,3 +1007,43 @@ details.more-menu.down .menu { bottom: auto; top: calc(100% + 4px); left: 0; rig
 .vo-warn { flex-basis: 100%; color: var(--bad, #c0392b); font-size: 13px; }
 .vo-paste summary { cursor: pointer; font-weight: 600; }
 .vo-paste textarea { margin: 6px 0; }
+
+/* Video editor: side toolbox + timeline */
+.vedit-work { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; align-items: start; }
+.vedit-center { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.vedit-toolbox { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 8px; }
+.tb-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; min-height: 0;
+          background: var(--bg); color: var(--text); border: 2px solid var(--line); border-radius: 12px;
+          box-shadow: 0 3px 0 var(--line); font-weight: 700; cursor: pointer; }
+.tb-btn:hover { border-color: var(--blue-line); }
+.tb-btn.on { background: var(--blue-soft); border-color: var(--gold); box-shadow: 0 3px 0 var(--gold-edge); }
+.tb-ico { font-size: 1.3rem; line-height: 1; }
+.tb-lbl { font-size: 0.72rem; }
+.tl { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 4px; user-select: none; -webkit-user-select: none; }
+.tl-labels { display: grid; grid-template-rows: 16px 42px 34px; gap: 4px; font-size: 1rem; text-align: center; align-items: center; }
+.tl-body { position: relative; display: grid; grid-template-rows: 16px 42px 34px; gap: 4px; touch-action: none; cursor: col-resize; }
+.tl-ruler { position: relative; border-bottom: 1px solid var(--line); }
+.tl-tick { position: absolute; top: 0; font-size: 0.65rem; color: var(--muted); transform: translateX(-50%); white-space: nowrap; }
+.tl-tick::after { content: ""; position: absolute; left: 50%; bottom: -2px; height: 4px; border-left: 1px solid var(--muted); }
+.tl-track { position: relative; background: var(--soft); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.tl-clip { position: absolute; top: 2px; bottom: 2px; min-height: 0; padding: 0 6px; margin: 0; overflow: hidden; white-space: nowrap;
+           text-overflow: ellipsis; font-size: 0.72rem; font-weight: 700; text-align: left; color: var(--text);
+           background: var(--wheat); border: 1px solid var(--blue-line); border-radius: 6px; box-shadow: none; cursor: pointer; }
+.tl-clip.still { background: var(--blue-soft); }
+.tl-clip.on { background: var(--gold); color: #fff; border-color: var(--gold-edge); }
+.tl-say { position: absolute; top: 3px; bottom: 3px; min-width: 14px; min-height: 0; padding: 0 6px; margin: 0; overflow: hidden;
+          white-space: nowrap; text-overflow: ellipsis; font-size: 0.72rem; text-align: left; color: #fff;
+          background: var(--green-ink); border: 1px solid var(--green-edge); border-radius: 6px; box-shadow: none;
+          cursor: grab; touch-action: none; }
+.tl-say.overlap { background: var(--red); border-color: var(--red-edge); }
+.tl-say.dragging { cursor: grabbing; overflow: visible; z-index: 3; outline: 2px solid var(--gold); }
+.tl-say.dragging::before { content: attr(data-time); position: absolute; top: -22px; left: 0; padding: 1px 5px; border-radius: 4px;
+                           background: var(--crust); color: #fff; font-size: 0.7rem; }
+.tl-head { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--red); pointer-events: none; z-index: 4; }
+.tl-head-time { position: absolute; top: -2px; left: 3px; padding: 0 4px; border-radius: 4px; background: var(--red); color: #fff;
+                font-size: 0.65rem; white-space: nowrap; }
+@media (max-width: 600px) {
+  .vedit-work { grid-template-columns: minmax(0, 1fr); }
+  .vedit-toolbox { flex-direction: row; overflow-x: auto; position: static; padding-bottom: 4px; }
+  .tb-btn { flex: 0 0 64px; }
+}

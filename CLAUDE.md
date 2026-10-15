@@ -19,8 +19,11 @@ Cal/OSHA (8 CCR, Title 8) apply.
   arrow, box, circle, numbers, text, blur, crop, turn, undo; saves a new copy), video editor and Google Drive.
 - Video editor ("✂ Edit video": trim, cut out parts, slice a clip in two, join clips, mute, turn, "📸 Draw on this frame":
   `/api/manage/video/frame` takes the frame, the picture editor marks it up, and it goes in as a still between the slices).
-  Play/Pause and Undo (every clip change; Ctrl+Z) sit under the picture; frames are taken from the player when the browser
-  shows the video, else by the server. Effects are toggle buttons that change the preview at once (CSS filters/turn, Web Audio filters); "Exact preview"
+  Laid out like a video app: a vertical toolbox on the left (`.vedit-toolbox`: Slice, Start, End, Cut, Draw, Voice, Add,
+  Sound, Undo; a row on phones), and under the picture ◀︎| Play |▶︎ (one frame; ← → or , .), Undo (every clip change; Ctrl+Z)
+  and a timeline (`.tl`: ruler, a block per clip, a block per voiceover line). Dragging on the timeline scrubs with the
+  picture following; dragging a voice block moves that line (the picture shows where it lands) and re-makes the voice.
+  Frames are taken from the player when the browser shows the video, else by the server. Effects are toggle buttons that change the preview at once (CSS filters/turn, Web Audio filters); "Exact preview"
   renders 5 s with `preview: true` (not kept in the library). `trainer/video.py`
   runs ffmpeg from the `imageio-ffmpeg` pip package (no other install) and makes a new 720p MP4; routes
   `/api/manage/video/edit` and `/api/manage/video/info`. Only files already in `data/media` can be edited.
