@@ -10,6 +10,8 @@ same thing as an ordered deck of slides, the way workers go through it:
 A question belongs to the reading slide before it. Questions before the first
 reading only make sense with a time on the video.
 """
+import re
+
 from . import content
 
 
@@ -97,8 +99,32 @@ def editor_payload(lesson):
         "video": lesson.get("video") or "",
         "slides": to_slides(lesson),
         "citations": list(lesson.get("citations", [])),
+        "company_rules": list(lesson.get("company_rules", [])),
         "sources": [{"title": s.get("title", ""), "url": s.get("url", "")} for s in lesson.get("sources", [])],
     }
+
+
+# Looks like someone meant a government citation ("29 CFR 1910.14", "8 CCR"), as opposed to a
+# company rule written in words ("Always wear cut gloves").
+LOOKS_LIKE_CITATION = re.compile(r"\b(CFR|CCR|C\.F\.R|Title\s*\d+)\b|^\s*\d+\s*(CFR|CCR)", re.I)
+
+
+def split_rules(citations, company_rules=()):
+    """Citations that parse stay citations; plain-words rules typed in the citation box move to
+    the company rules. Returns (citations, company_rules, bad) where bad are citation attempts
+    that don't parse."""
+    cites, company, bad = [], [str(r).strip() for r in company_rules or [] if str(r).strip()], []
+    for c in citations or []:
+        c = str(c).strip()
+        if not c:
+            continue
+        if content.parse_citation(c):
+            cites.append(c)
+        elif LOOKS_LIKE_CITATION.search(c) or re.fullmatch(r"[\d.\s()§-]+", c):
+            bad.append(c)
+        elif c not in company:
+            company.append(c)
+    return cites, company, bad
 
 
 def check_meta(data):
@@ -108,12 +134,14 @@ def check_meta(data):
     video = (data.get("video") or "").strip()
     if video and not (video.startswith(("http://", "https://")) or video.startswith("/media/")):
         errors.append({"slide": 0, "error": "The video link should start with https://"})
-    if not [c for c in data.get("citations") or [] if str(c).strip()]:
-        errors.append({"slide": "rules", "error": "Add at least one rule citation, like '29 CFR 1910.147' or '8 CCR 3314'. "
-                       "Ask Claude to find it if you're not sure."})
-    for c in data.get("citations") or []:
-        if not content.parse_citation(c):
-            errors.append({"slide": "rules", "error": f"'{c}' should look like '29 CFR 1910.147' or '8 CCR 3314'."})
+    # A lesson is based on government rules, our own company rules (an in-house procedure), or both.
+    cites, company, bad = split_rules(data.get("citations"), data.get("company_rules"))
+    if not cites and not company and not bad:
+        errors.append({"slide": "rules", "error": "Add what this lesson is based on: a government rule like '29 CFR 1910.147', "
+                       "or your company's own rules in plain words."})
+    for c in bad:
+        errors.append({"slide": "rules", "error": f"'{c}' should look like '29 CFR 1910.147' or '8 CCR 3314'. "
+                       "If it's a company rule, put it under Company rules instead."})
     for s in data.get("sources") or []:
         if not str(s.get("url", "")).startswith(("http://", "https://")):
             errors.append({"slide": "rules", "error": f"The source link for '{s.get('title', '')}' should start with https://"})

@@ -1236,7 +1236,8 @@ async def save_lesson(request: Request, lesson_id: str):
         "roles": roles,
         "sections": sections,
         "questions": questions,
-        "citations": [content.parse_citation(c)["ref"] for c in data.get("citations") or []],
+        "citations": [content.parse_citation(c)["ref"] for c in editor.split_rules(data.get("citations"))[0]],
+        "company_rules": editor.split_rules(data.get("citations"), data.get("company_rules"))[1],
         "sources": [{"title": (s.get("title") or "").strip() or s["url"].strip(), "url": s["url"].strip()}
                     for s in data.get("sources") or []],
         "reviewed_on": content.now_stamp(),

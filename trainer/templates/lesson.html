@@ -32,6 +32,7 @@
     {% for c in lesson.citations_parsed %}{% set s = rule_status.get(c.ref, {}) %}
       <li>{% if c.url %}<a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.ref }}</a>{% else %}{{ c.ref }}{% endif %}{% if s.name %}: {{ s.name }}{% endif %}</li>
     {% endfor %}
+    {% for r in lesson.company_rules %}<li>{{ t("company_rule") }}: {{ r }}</li>{% endfor %}
     {% for s in lesson.sources %}<li><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a></li>{% endfor %}
     </ul>
     <p class="muted">{{ t("last_checked", date=lesson.reviewed_on[:10]) }}</p>

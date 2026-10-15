@@ -239,13 +239,13 @@ def test_manager_edits_a_lesson(client):
     assert [s["heading"] for s in l["sections"]] == ["One", "Two"]
     assert l["version"] == dt.date.today().isoformat()
 
-    bad = _deck(slides=[{"type": "question", "q": "", "choices": ["a"], "answer": 3, "at": None}], citations=["some rule"], title="")
+    bad = _deck(slides=[{"type": "question", "q": "", "choices": ["a"], "answer": 3, "at": None}], citations=["29 CFR 99"], title="")
     r = client.post("/api/manage/lesson/allergens", json=bad)
     assert r.status_code == 400
     errors = r.json()["errors"]
     by_slide = {e["slide"] for e in errors}
     assert {0, 1, "rules", None} <= by_slide
-    assert any("some rule" in e["error"] for e in errors)
+    assert any("29 CFR 99" in e["error"] for e in errors)
     assert content.load_lessons()["allergens"]["title"] == "Allergen cross-contact"  # nothing saved
 
     r = client.post("/api/manage/lesson/new", json=_deck(title="Brand new lesson"))
@@ -624,6 +624,28 @@ def test_iphone_photos_become_jpg(client, env):
     assert bad.status_code == 400 and "iPhone photo" in bad.json()["error"]
 
 
+def test_company_procedure_lessons(client, env):
+    """An in-house procedure needs no government rule: company rules in plain words are enough,
+    and plain-words rules typed into the rule box move to the company rules."""
+    deck = _deck()
+    deck["citations"] = ["Be very gentle with the knife cleaning", "Always wear cut gloves"]
+    deck["sources"] = []
+    assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 200
+    lesson = content.load_lessons()["allergens"]
+    assert lesson["citations"] == [] and lesson["company_rules"] == ["Be very gentle with the knife cleaning", "Always wear cut gloves"]
+    assert editor.editor_payload(lesson)["company_rules"] == lesson["company_rules"]
+    assert "Always wear cut gloves" in client.get("/lesson/allergens").text
+    deck.update(citations=["29 CFR 1910.147"], company_rules=["Only Asiago requires soap cleaning in addition to sanitizer"])
+    assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 200
+    lesson = content.load_lessons()["allergens"]
+    assert lesson["citations"] == ["29 CFR 1910.147"] and len(lesson["company_rules"]) == 1
+    deck.update(citations=["29 CFR 1910.14 7"], company_rules=[])          # a mistyped citation is still caught
+    assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 400
+    deck.update(citations=[], company_rules=[])
+    r = client.post("/api/manage/lesson/allergens", json=deck)
+    assert r.status_code == 400 and "company" in r.text
+
+
 def test_static_links_are_versioned(client):
     from trainer.app import templates
     v = templates.env.globals["asset_v"]
@@ -941,7 +963,7 @@ def test_drafts_must_cite_a_rule(env, client, monkeypatch):
     r = client.post("/api/manage/research", json={"history": [{"role": "user", "text": "x"}]}).json()
     assert r["lesson"]["citations"] == ["29 CFR 1910.178"] and "Took out 29 CFR 1910.9999" in r["reply"]
     # Saving a lesson needs at least one citation.
-    assert any("at least one rule citation" in e["error"] for e in editor.check_meta({"title": "x", "citations": []}))
+    assert any("based on" in e["error"] for e in editor.check_meta({"title": "x", "citations": []}))
     assert not editor.check_meta({"title": "x", "citations": ["8 CCR 3314"]})
 
 

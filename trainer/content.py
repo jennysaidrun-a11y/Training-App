@@ -154,6 +154,7 @@ def _normalize(data, path):
     data.setdefault("sections", [])
     data.setdefault("questions", [])
     data.setdefault("citations", [])
+    data.setdefault("company_rules", [])       # our own rules, in plain words (in-house procedures)
     data.setdefault("sources", [])
     data.setdefault("video", "")
     data.setdefault("summary", "")
@@ -220,7 +221,7 @@ def lessons_for_role(lessons, role):
 def save_lesson(lesson):
     keep = ["id", "title", "roles", "version", "reviewed_on", "summary", "video", "sections", "questions", "citations", "sources"]
     data = {k: lesson.get(k) for k in keep}
-    for k in ("topic", "translations"):     # optional; left out of the file when empty
+    for k in ("company_rules", "topic", "translations"):     # optional; left out of the file when empty
         if lesson.get(k):
             data[k] = lesson[k]
     LESSONS.mkdir(parents=True, exist_ok=True)   # git drops the folder once every lesson is deleted

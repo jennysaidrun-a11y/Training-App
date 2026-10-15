@@ -487,6 +487,18 @@
       verifyBtn.disabled = false; verifyBtn.textContent = "Check these rules now";
       drawCites();
     } }, "Check these rules now");
+    // Our own rules in plain words, for in-house procedures (no government rule needed).
+    D.company_rules = D.company_rules || [];
+    const ownList = el("div", { class: "cites own-rules" });
+    const drawOwn = () => {
+      ownList.replaceChildren(...D.company_rules.map((r, i) => {
+        const input = el("input", { value: r, placeholder: "e.g. Always wear cut gloves when cleaning knives", "aria-label": "Company rule" });
+        input.addEventListener("input", () => { D.company_rules[i] = input.value; touch(); });
+        return el("div", { class: "cite" }, el("span", { class: "pill" }, "Ours"), input,
+          el("button", { type: "button", class: "ghost small x", "aria-label": "Remove company rule", onclick: () => { D.company_rules.splice(i, 1); touch(); drawOwn(); } }, "✕"));
+      }));
+    };
+    drawOwn();
     const srcList = el("div", { class: "srcs" });
     const drawSources = () => {
       srcList.replaceChildren(...D.sources.map((s, i) => el("div", { class: "src" },
@@ -500,14 +512,18 @@
       ...(window.RULE_LIST || []).map((r) => el("option", { value: r.ref }, r.name || r.ref)));
     return el("div", { class: "slide rules-slide" },
       el("p", { class: "eyebrow" }, "Rules & sources"),
-      el("h2", {}, "Rules it's based on"),
-      el("p", { class: "help" }, "Every lesson cites at least one government rule. Start typing to pick one from your rules list. The app checks them every day and tells you when one changes."),
+      el("h2", {}, "Government rules"),
+      el("p", { class: "help" }, "Cite a government rule, write your company's own rules below, or both. Start typing to pick a rule from your list; the app checks them every day."),
       choices, list,
       el("div", { class: "row" },
         el("button", { type: "button", class: "ghost small", onclick: () => { D.citations.push(""); touch(); drawCites(); list.lastChild.querySelector("input").focus(); } }, "+ Rule"),
         verifyBtn),
-      el("h2", { style: "margin-top:26px" }, "Source links"),
-      el("p", { class: "help" }, "Where the material came from, for anyone who wants to read more."),
+      el("h2", { style: "margin-top:26px" }, "Company rules"),
+      el("p", { class: "help" }, "For our own procedures: one rule per line, in plain words. A lesson needs a government rule or a company rule."),
+      ownList,
+      el("button", { type: "button", class: "ghost small", onclick: () => { D.company_rules.push(""); touch(); drawOwn(); ownList.lastChild.querySelector("input").focus(); } }, "+ Company rule"),
+      el("h2", { style: "margin-top:26px" }, "Source links (optional)"),
+      el("p", { class: "help" }, "Where the material came from, if anywhere."),
       srcList,
       el("button", { type: "button", class: "ghost small", onclick: () => { D.sources.push({ title: "", url: "" }); touch(); drawSources(); } }, "+ Link"));
   }
@@ -550,6 +566,7 @@
     return {
       ...D,
       citations: D.citations.map((c) => c.trim()).filter(Boolean),
+      company_rules: (D.company_rules || []).map((c) => c.trim()).filter(Boolean),
       sources: D.sources.filter((s) => s.title.trim() || s.url.trim()),
       // Blank answers are dropped; the right answer keeps pointing at the same text.
       slides: D.slides.map((s) => (s.type === "question" ? { ...s, choices: s.choices.filter((c) => c.trim()),
@@ -687,8 +704,9 @@
           el("p", { class: "help" }, "Try an answer: this is what workers see."));
       } else {
         body.replaceChildren(...[el("p", { class: "eyebrow" }, "Rules & sources"), el("h2", {}, "Based on"),
-          lesson.citations.length ? el("div", { class: "cites" }, ...lesson.citations.map((ref) => el("div", { class: "cite" }, badge(ref), el("span", {}, ref, checks[ref]?.name ? ` · ${checks[ref].name}` : ""))))
-            : el("p", { class: "pill warn" }, "No rules cited yet"),
+          lesson.citations.length ? el("div", { class: "cites" }, ...lesson.citations.map((ref) => el("div", { class: "cite" }, badge(ref), el("span", {}, ref, checks[ref]?.name ? ` · ${checks[ref].name}` : "")))) : null,
+          (lesson.company_rules || []).length ? el("ul", {}, ...lesson.company_rules.map((r) => el("li", {}, "Company rule: ", r))) : null,
+          !lesson.citations.length && !(lesson.company_rules || []).length ? el("p", { class: "pill warn" }, "Nothing it's based on yet") : null,
           lesson.sources.length ? el("div", {}, el("h2", { style: "margin-top:20px" }, "Sources"),
             el("ul", {}, ...lesson.sources.map((x) => el("li", {}, el("a", { href: x.url, target: "_blank", rel: "noopener" }, x.title || x.url))))) : null].filter(Boolean));
       }

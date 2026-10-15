@@ -69,7 +69,9 @@ Cal/OSHA (8 CCR, Title 8) apply.
   `/media/<name>` with range requests). Gitignored; the repo is public. Never commit it.
 
 ## Rules
-- Lesson facts come from the cited government rule; every lesson cites at least one.
+- Lesson facts come from the cited government rule. A lesson cites at least one government rule, or, for an in-house
+  procedure, lists the company's own rules in plain words (`company_rules`; plain-words entries typed in the citation box
+  move there, `editor.split_rules`); sources are optional. Claude panel drafts still need a citation.
   Verify a new citation exists at the source (eCFR / dir.ca.gov) before adding it.
 - Screens: one tab style (`.subnav` underline tabs) in Manager and Lessons; one short line per page, longer help behind
   `{{ info("...") }}` (ⓘ, hover or tap); one main button per page or item, extras in a `details.more-menu` (⋯); long lists fold in `<details>`.

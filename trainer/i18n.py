@@ -106,6 +106,7 @@ S = {
     "video": {"en": "Video", "es": "Video", "zh": "视频", "vi": "Video", "ar": "فيديو"},
     "based_on": {"en": "Rules this lesson is based on", "es": "Reglas en las que se basa esta lección", "zh": "本课依据的法规",
                  "vi": "Các quy định làm cơ sở cho bài học", "ar": "القواعد التي يستند إليها هذا الدرس"},
+    "company_rule": {"en": "Company rule", "es": "Regla de la empresa", "zh": "公司规定", "vi": "Quy định của công ty", "ar": "قاعدة الشركة"},
     "last_checked": {"en": "Last checked against these rules on {date}.", "es": "Revisada según estas reglas el {date}.",
                      "zh": "最近一次按这些法规核对：{date}。", "vi": "Kiểm tra lần cuối theo các quy định này ngày {date}.",
                      "ar": "آخر مراجعة وفق هذه القواعد في {date}."},
