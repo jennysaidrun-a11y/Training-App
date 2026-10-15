@@ -47,12 +47,11 @@ def from_slides(slides):
         kind = s.get("type")
         if kind == "reading":
             heading, text = (s.get("heading") or "").strip(), (s.get("text") or "").strip()
-            if not heading:
-                errors.append({"slide": n, "error": "This reading slide needs a heading."})
-            if not text:
-                errors.append({"slide": n, "error": "This reading slide needs some text."})
-            section = {"heading": heading, "text": text + "\n"}
+            # Heading and text are optional: a slide can be just a video or pictures, but not empty.
             pics = [str(p).strip() for p in list(s.get("images") or []) + [s.get("image") or ""] if str(p or "").strip()]
+            if not (heading or text or pics):
+                errors.append({"slide": n, "error": "This slide is empty. Add a heading, some text, a picture or a video, or delete it."})
+            section = {"heading": heading, "text": (text + "\n") if text else ""}
             good = [p for p in pics if p.startswith("/media/") or p.startswith("https://")]
             if len(good) < len(pics):
                 errors.append({"slide": n, "error": "A picture link should start with https://"})

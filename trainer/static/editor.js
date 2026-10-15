@@ -188,7 +188,7 @@
   }
   function remove(index) {
     const s = D.slides[index - 1];
-    const empty = s.type === "reading" ? !s.heading && !s.text : !s.q && s.choices.every((c) => !c);
+    const empty = s.type === "reading" ? !s.heading && !s.text && !(s.images || []).length : !s.q && s.choices.every((c) => !c);
     if (!empty && !confirm("Delete this slide?")) return;
     D.slides.splice(index - 1, 1);
     slideErrors = {};
@@ -320,9 +320,9 @@
     const pic = pictureField(s);
     const slide = el("div", { class: "slide reading-slide" },
       el("p", { class: "eyebrow" }, `Part ${partNumber(index - 1)} of ${reads}`),
-      bind(el("input", { class: "as-h1", value: s.heading, placeholder: "Heading, e.g. Washing hands", "aria-label": "Heading" }), s, "heading", refreshRailSoon),
+      bind(el("input", { class: "as-h1", value: s.heading, placeholder: "Heading (optional), e.g. Washing hands", "aria-label": "Heading" }), s, "heading", refreshRailSoon),
       pic,
-      bind(area({ class: "as-body", value: s.text, rows: 6, placeholder: "2-5 short sentences.\n\nFor steps, one per line:\n1. Stop the machine\n2. Lock it out", "aria-label": "Text" }), s, "text"),
+      bind(area({ class: "as-body", value: s.text, rows: 6, placeholder: "Optional: 2-5 short sentences.\n\nFor steps, one per line:\n1. Stop the machine\n2. Lock it out", "aria-label": "Text" }), s, "text"),
       el("p", { class: "help" }, "Leave a blank line between paragraphs. Lines starting 1. 2. 3. show as numbered steps."));
     dropZone(slide, ["image", "video"], pic.upload, pic.wrong);
     return slide;

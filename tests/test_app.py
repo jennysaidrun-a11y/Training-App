@@ -582,6 +582,16 @@ def test_videos_on_reading_slides(client, env):
     assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 200
     assert content.load_lessons()["allergens"]["sections"][0]["images"] == [clip, image]
     assert clip in client.get("/lesson/allergens").text
+    # A slide can be just a video: heading and text are optional, but a slide can't be empty.
+    deck["slides"][1].update(heading="", text="", images=[clip])
+    assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 200, "video-only slide"
+    assert content.load_lessons()["allergens"]["sections"][0]["images"] == [clip]
+    assert client.get("/lesson/allergens").status_code == 200
+    deck["slides"][1].update(images=[])
+    r = client.post("/api/manage/lesson/allergens", json=deck)
+    assert r.status_code == 400 and "empty" in r.text
+    deck["slides"][1].update(images=[clip])
+    client.post("/api/manage/lesson/allergens", json=deck)
     r = client.post("/api/manage/media/delete", json={"link": clip})   # in use, so it can't be deleted
     assert r.status_code == 400 and "still used" in r.json()["error"]
 

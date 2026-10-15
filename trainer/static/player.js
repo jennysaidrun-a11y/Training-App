@@ -126,8 +126,9 @@
   function showSection(si, next) {
     const s = L.sections[si];
     hush();
-    stage.replaceChildren(...[el("p", { class: "eyebrow" }, tr("part_of", { a: si + 1, b: L.sections.length })), el("h1", {}, s.heading),
-      listenButton(`${s.heading}. ${s.text.replace(/^\s*\d+\.\s*/gm, "")}`), pictures(s.images), reading(s.text)].filter(Boolean));
+    stage.replaceChildren(...[el("p", { class: "eyebrow" }, tr("part_of", { a: si + 1, b: L.sections.length })), s.heading ? el("h1", {}, s.heading) : null,
+      (s.heading || s.text || "").trim() ? listenButton([s.heading, (s.text || "").replace(/^\s*\d+\.\s*/gm, "")].filter((x) => x && x.trim()).join(". ")) : null,
+      pictures(s.images), (s.text || "").trim() ? reading(s.text) : null].filter(Boolean));
     setFooter({ buttons: [button(tr("continue"), next)] });
     onKey = (e) => { if (e.key === "Enter") next(); };
   }
