@@ -1443,6 +1443,24 @@ async def make_speech(request: Request):
     return {"audio": f"/speech/{name}", "duration": round(secs, 2)}
 
 
+@app.post("/api/manage/speech/track")
+async def make_speech_track(request: Request):
+    """The video editor's voiceover, paced to the video: [{text, at}] lines, each spoken at its time."""
+    if not auth.manager(request):
+        raise HTTPException(403)
+    if not tts.available():
+        return JSONResponse({"error": "The voice isn't set up on this copy of the app yet."}, status_code=503)
+    body = await request.json()
+    voice = str(body.get("voice") or "en-f")
+    speed = str(body.get("speed") or "normal")
+    lines = [{"text": str(l.get("text") or ""), "at": l.get("at")} for l in body.get("lines") or [] if isinstance(l, dict)]
+    try:
+        name, secs, placed = await run_in_threadpool(tts.track, lines, voice, speed, speech_dir(), db.db_path().parent / "models")
+    except tts.SpeechError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return {"audio": f"/speech/{name}", "duration": round(secs, 2), "lines": placed}
+
+
 @app.post("/api/manage/transcribe")
 async def transcribe_video(request: Request):
     """What's said in an uploaded video, written down (to start a voiceover script from)."""
@@ -1453,7 +1471,7 @@ async def transcribe_video(request: Request):
     if not project.can_transcribe():
         return JSONResponse({"error": "Writing down speech isn't set up on this copy yet."}, status_code=503)
     segments = await run_in_threadpool(project.transcribe, path, db.db_path().parent / "models")
-    return {"text": " ".join(t for _, t in segments)}
+    return {"text": " ".join(t for _, t in segments), "segments": [{"at": round(at, 2), "text": t} for at, t in segments]}
 
 
 @app.post("/api/manage/video/frame")

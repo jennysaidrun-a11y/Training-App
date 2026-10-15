@@ -98,3 +98,49 @@ def speak(text, voice, speed, out_dir, model_dir, runner=subprocess.run):
                     raise SpeechError("The speech couldn't be made. Try again.")
                 part.replace(out)
     return name, video.probe(out)["duration"]
+
+
+MAX_LINES = 80
+
+
+def track(lines, voice, speed, out_dir, model_dir, runner=subprocess.run, speak_fn=None):
+    """A voiceover paced to the video: each line is spoken on its own and starts at its time
+    ("at", seconds on the new video); a line without a time follows the one before it.
+    Returns (file name in out_dir, seconds, [{at, duration}] per line)."""
+    speak_fn = speak_fn or speak
+    lines = [l for l in lines if " ".join(str(l.get("text") or "").split())][:MAX_LINES]
+    if not lines:
+        raise SpeechError("Write something to read out.")
+    out_dir = Path(out_dir)
+    parts, placed, t = [], [], 0.0
+    for l in lines:
+        name, secs = speak_fn(l["text"], voice, speed, out_dir, model_dir)
+        at = l.get("at")
+        try:
+            at = max(0.0, float(at)) if at not in (None, "") else None
+        except (TypeError, ValueError):
+            at = None
+        at = round(t + (0.3 if placed else 0.0), 2) if at is None else round(at, 2)
+        parts.append((out_dir / name, at))
+        placed.append({"at": at, "duration": round(secs, 2)})
+        t = at + secs
+    if len(parts) == 1 and parts[0][1] == 0:
+        return parts[0][0].name, placed[0]["duration"], placed
+    key = "|".join(f"{p.name}@{at}" for p, at in parts)
+    name = hashlib.sha1(("track|" + key).encode()).hexdigest()[:20] + ".m4a"
+    out = out_dir / name
+    with _lock:
+        if not out.exists():
+            cmd = [video.ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y"]
+            for p, _ in parts:
+                cmd += ["-i", str(p)]
+            chains = [f"[{i}:a]aresample=48000,adelay={int(at * 1000)}:all=1[a{i}]" for i, (_, at) in enumerate(parts)]
+            mix = "".join(f"[a{i}]" for i in range(len(parts))) + f"amix=inputs={len(parts)}:duration=longest:normalize=0[out]"
+            part = out.with_name(out.stem + "-part.m4a")
+            r = runner(cmd + ["-filter_complex", ";".join(chains + [mix]), "-map", "[out]", "-c:a", "aac", "-b:a", "96k",
+                              "-movflags", "+faststart", str(part)], capture_output=True, text=True, timeout=600)
+            if r.returncode != 0:
+                part.unlink(missing_ok=True)
+                raise SpeechError("The voiceover couldn't be put together. Try again.")
+            part.replace(out)
+    return name, max(p["at"] + p["duration"] for p in placed), placed

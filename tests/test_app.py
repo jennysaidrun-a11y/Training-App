@@ -66,9 +66,9 @@ def test_every_lesson_is_valid(any_lessons):
     assert not content.broken_lesson_files()
     roles = {r["id"] for r in content.load_roles()} | {"all"}
     for lid, l in lessons.items():
-        assert l["title"] and l["sections"] and l["questions"], lid
+        assert l["title"] and l["sections"], lid          # questions are optional (a show-and-tell lesson)
         assert set(l["roles"]) <= roles, lid
-        assert l["citations"], f"{lid} cites no rules"
+        assert l["citations"] or l["company_rules"], f"{lid} is based on nothing"
         for c in l["citations_parsed"]:
             assert c["kind"] in ("cfr", "ccr"), (lid, c)
         for q in l["questions"]:
@@ -257,7 +257,7 @@ def test_slides_round_trip_every_lesson(any_lessons):
         slides = editor.to_slides(lesson)
         sections, questions, errors = editor.from_slides(slides)
         assert not errors, (lid, errors)
-        assert sections == [{"heading": s["heading"], "text": s["text"].strip() + "\n",
+        assert sections == [{"heading": s["heading"], "text": s["text"].strip() + "\n" if s["text"].strip() else "",
                              **({"images": s["images"]} if s.get("images") else {})} for s in lesson["sections"]], lid
         assert [(q["q"], q["choices"], q["answer"], q.get("at")) for q in questions] == \
                [(q["q"], q["choices"], q["answer"], q.get("at")) for q in lesson["questions"]], lid
@@ -644,6 +644,34 @@ def test_company_procedure_lessons(client, env):
     deck.update(citations=[], company_rules=[])
     r = client.post("/api/manage/lesson/allergens", json=deck)
     assert r.status_code == 400 and "company" in r.text
+
+
+def test_voiceover_lines_start_at_their_times(tmp_path):
+    """Each voiceover line is spoken on its own and starts at the time set for it; untimed lines follow."""
+    from trainer import tts
+
+    def fake_speak(text, voice, speed, out_dir, model_dir):
+        name = f"{abs(hash(text)) % 10**20:020d}.m4a"
+        (out_dir / name).write_bytes(b"x")
+        return name, 2.0
+    cmds = []
+
+    class Done:
+        returncode = 0
+
+    def runner(cmd, **kw):
+        cmds.append(cmd)
+        open(cmd[-1], "wb").write(b"m4a")
+        return Done()
+    name, secs, placed = tts.track([{"text": "Lock it out.", "at": 1.5}, {"text": "Then test it.", "at": None},
+                                    {"text": "  "}, {"text": "Done.", "at": 10}], "en-f", "normal", tmp_path, tmp_path,
+                                   runner=runner, speak_fn=fake_speak)
+    assert [p["at"] for p in placed] == [1.5, 3.8, 10.0] and secs == 12.0
+    graph = cmds[0][cmds[0].index("-filter_complex") + 1]
+    assert "adelay=1500" in graph and "adelay=3800" in graph and "adelay=10000" in graph and "amix=inputs=3" in graph
+    assert (tmp_path / name).is_file()
+    one, _, _ = tts.track([{"text": "Just this."}], "en-f", "normal", tmp_path, tmp_path, runner=runner, speak_fn=fake_speak)
+    assert len(cmds) == 1 and (tmp_path / one).is_file()       # one line at the start: no mixing needed
 
 
 def test_static_links_are_versioned(client):

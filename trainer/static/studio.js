@@ -723,7 +723,13 @@
     // Voiceover: a natural voice (Piper, free, on the server) reads a script over the whole video,
     // replacing its sound or over it with the sound quieter. It plays along in the preview.
     const vo = { audio: "", mode: "replace", on: false };
-    const voScript = el("textarea", { rows: "4", placeholder: "Type or paste what the voice should say", "aria-label": "Voiceover script" });
+    // The voiceover is a list of lines. Each line can start at a time you pick while watching
+    // (⏱ sets it to where the video is now; − / + nudge it); a line without a time follows the
+    // one before. The server speaks each line and puts it at its time (POST /api/manage/speech/track).
+    let voLines = [];
+    const splitScript = (text) => String(text || "").replace(/^\s*\d+\.\s*/gm, "").split(/\n+|(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+    const voList = el("div", { class: "vo-lines" });
+    const voScript = el("textarea", { rows: "4", placeholder: "Paste a whole script here; it's split into lines you can time", "aria-label": "Voiceover script" });
     const voVoice = el("select", { "aria-label": "Voice" }), voSpeed = el("select", { "aria-label": "Speed" },
       ...[["slow", "Slower"], ["normal", "Normal speed"], ["fast", "Faster"]].map(([v, t]) => el("option", { value: v, selected: v === "normal" ? true : null }, t)));
     fetch("/api/speech/voices").then((r) => r.json()).then((r) => {
@@ -732,32 +738,79 @@
     }).catch(() => {});
     const voAudio = el("audio", { controls: true, hidden: true });
     const voMake = el("button", { type: "button", class: "small" }, "Make the voice");
-    const voFrom = el("button", { type: "button", class: "ghost small", title: "Writes down what's said in this clip, so you can fix it up and have the voice read it clearly" }, "📝 Start from what's said in the clip");
+    const voFrom = el("button", { type: "button", class: "ghost small", title: "Writes down what's said in this clip, line by line with its times, so the voice says it clearly at the same moments" }, "📝 Start from what's said in the clip");
     const voReplace = el("button", { type: "button", class: "fx-toggle", "aria-pressed": "true" }, "Replace the video's sound");
     const voMix = el("button", { type: "button", class: "fx-toggle", "aria-pressed": "false" }, "Play over it (sound quieter)");
-    const voPanel = el("div", { class: "vo-panel", hidden: true }, voScript,
-      el("div", { class: "row" }, voVoice, voSpeed, voMake, voFrom), voAudio,
-      el("div", { class: "row fx-row", hidden: true }, voReplace, voMix));
+    const voStale = () => { if (vo.audio) { vo.audio = ""; vo.on = false; voAudio.hidden = true; voAudio.removeAttribute("src"); fx.voice.setAttribute("aria-pressed", "false"); voSync(); voMake.textContent = "Make the voice again"; } };
+    const setLines = (texts, ats = []) => { voLines = texts.map((text, i) => ({ text, at: ats[i] == null ? null : ats[i], dur: 0 })); voStale(); drawLines(); };
+    function drawLines() {
+      voList.replaceChildren(...voLines.map((l, i) => {
+        const next = voLines[i + 1];
+        const overlap = l.dur && next && next.at != null && l.at != null && l.at + l.dur > next.at + 0.05;
+        const input = el("input", { value: l.text, "aria-label": `Line ${i + 1}`, placeholder: "What the voice says here" });
+        input.addEventListener("input", () => { l.text = input.value; voStale(); });
+        const nudge = (d) => { l.at = Math.max(0, Math.round(((l.at == null ? timelinePos() : l.at) + d) * 10) / 10); voStale(); drawLines(); };
+        return el("div", { class: "vo-line" + (overlap ? " overlap" : "") },
+          el("button", { type: "button", class: "ghost small vo-at", title: "Start this line where the video is now",
+            onclick: () => { l.at = Math.round(timelinePos() * 10) / 10; voStale(); drawLines(); } }, l.at == null ? "⏱ Set start" : `⏱ ${clock(l.at)}`),
+          l.at == null ? null : el("button", { type: "button", class: "ghost small", "aria-label": "Half a second earlier", onclick: () => nudge(-0.5) }, "−"),
+          l.at == null ? null : el("button", { type: "button", class: "ghost small", "aria-label": "Half a second later", onclick: () => nudge(0.5) }, "+"),
+          input,
+          l.at == null ? null : el("button", { type: "button", class: "ghost small", title: "Jump the video to this line", onclick: () => seekTimeline(l.at) }, "▶"),
+          el("button", { type: "button", class: "ghost small x", "aria-label": "Remove line", onclick: () => { voLines.splice(i, 1); voStale(); drawLines(); } }, "✕"),
+          overlap ? el("span", { class: "vo-warn" }, "Runs into the next line: move the next one later, or shorten this one.") : null);
+      }));
+    }
+    // Jump the player to second t of the new video (finds the clip and the spot in it).
+    function seekTimeline(t) {
+      let left = t;
+      for (let k = 0; k < clips.length; k++) {
+        const pieces = keepPieces(clips[k]), len = pieces.reduce((n, [a, b]) => n + b - a, 0);
+        if (left <= len || k === clips.length - 1) {
+          if (k !== active) load(k);
+          if (clips[k].still) return;
+          for (const [a, b] of pieces) { if (left <= b - a) { player.currentTime = a + left; return; } left -= b - a; }
+          return;
+        }
+        left -= len;
+      }
+    }
+    const addLine = el("button", { type: "button", class: "ghost small", onclick: () => { voLines.push({ text: "", at: null, dur: 0 }); drawLines(); voList.lastChild.querySelector("input").focus(); } }, "+ Line");
+    const splitBtn = el("button", { type: "button", class: "ghost small", onclick: () => { if (voScript.value.trim()) { setLines(splitScript(voScript.value)); voScript.value = ""; pasteBox.open = false; } } }, "Split into lines");
+    const pasteBox = el("details", { class: "vo-paste" }, el("summary", {}, "📋 Paste a whole script"), voScript, splitBtn);
+    const voPanel = el("div", { class: "vo-panel", hidden: true },
+      el("p", { class: "help" }, "Play the video and tap ⏱ on a line to start it right there; − and + move it by half a second. Lines without a time follow the one before."),
+      voList, el("div", { class: "row" }, addLine, voFrom), pasteBox,
+      el("div", { class: "row" }, voVoice, voSpeed, voMake), voAudio,
+      el("div", { class: "row fx-row" }, voReplace, voMix));
     fx.voice = el("button", { type: "button", class: "fx-toggle", "aria-pressed": "false", title: "A voice reads your script over the video" }, "🎙 Voiceover");
     fx.voice.addEventListener("click", () => {
       voPanel.hidden = false;
+      if (!voLines.length) { voLines.push({ text: "", at: null, dur: 0 }); drawLines(); }
       if (vo.audio) { vo.on = !vo.on; voSync(); say(`Voiceover: ${vo.on ? "on" : "off"}. Play to hear it with the video.`); }
-      else voScript.focus();
+      else { const first = voList.querySelector("input"); if (first) first.focus(); }
       fx.voice.setAttribute("aria-pressed", vo.on ? "true" : "false");
     });
-    const setMode = (m) => { vo.mode = m; voReplace.setAttribute("aria-pressed", m === "replace" ? "true" : "false"); voMix.setAttribute("aria-pressed", m === "mix" ? "true" : "false"); voSync(); };
+    const setMode = (m) => {
+      vo.mode = m; voReplace.setAttribute("aria-pressed", m === "replace" ? "true" : "false"); voMix.setAttribute("aria-pressed", m === "mix" ? "true" : "false"); voSync();
+      say(!vo.audio ? `${m === "replace" ? "The voice will replace the video's sound" : "The voice will play over the video's sound, which goes quieter"}. Make the voice to hear it.`
+        : m === "replace" ? "The video's own sound is off; you hear only the voice." : "You hear the voice over the video's sound, turned down.");
+    };
     voReplace.addEventListener("click", () => setMode("replace"));
     voMix.addEventListener("click", () => setMode("mix"));
     voMake.addEventListener("click", async () => {
-      if (!voScript.value.trim()) { voScript.focus(); return; }
-      voMake.disabled = true; say("Making the voice…");
+      const lines = voLines.filter((l) => l.text.trim());
+      if (!lines.length) { if (!voLines.length) addLine.click(); else voList.querySelector("input").focus(); say("Write what the voice should say first."); return; }
+      voMake.disabled = true; say(`Making the voice${lines.length > 1 ? ` (${lines.length} lines)` : ""}…`);
       try {
-        const res = await fetch("/api/speech", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: voScript.value, voice: voVoice.value, speed: voSpeed.value }) });
+        const res = await fetch("/api/manage/speech/track", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lines: lines.map((l) => ({ text: l.text, at: l.at })), voice: voVoice.value, speed: voSpeed.value }) });
         const r = await res.json();
         if (!res.ok) throw new Error(r.error || "The voice couldn't be made.");
-        vo.audio = r.audio; vo.on = true; voAudio.src = r.audio; voAudio.hidden = false;
-        voPanel.lastChild.hidden = false; fx.voice.setAttribute("aria-pressed", "true"); voSync();
+        lines.forEach((l, i) => { l.dur = r.lines[i].duration; if (l.at == null) l.placed = r.lines[i].at; });
+        drawLines();
+        vo.audio = r.audio; vo.on = true; voAudio.src = r.audio; voAudio.hidden = false; voMake.textContent = "Make the voice";
+        fx.voice.setAttribute("aria-pressed", "true"); voSync();
         // A video made only of pictures: give the pictures enough time for the whole voice.
         const shown = clips.reduce((n, c) => n + (c.seconds || 0), 0);
         if (clips.length && clips.every((c) => c.still) && r.duration > shown) {
@@ -765,7 +818,9 @@
           for (const c of clips) c.seconds = c.duration = each;
           drawClips();
         }
-        say(`Voice ready (${clock(r.duration)}). Play the video to hear them together; it goes in when you make the video.`);
+        const late = voList.querySelector(".overlap");
+        say(late ? "Voice ready, but a line runs into the next one (marked in red). Move it, then make the voice again."
+          : `Voice ready (${clock(r.duration)}). Play the video to hear them together; it goes in when you make the video.`);
       } catch (e) { say(e.message); } finally { voMake.disabled = false; }
     });
     voFrom.addEventListener("click", async () => {
@@ -776,7 +831,13 @@
         const res = await fetch("/api/manage/transcribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video: c.video }) });
         const r = await res.json();
         if (!res.ok) throw new Error(r.error || "That couldn't be written down.");
-        voScript.value = r.text || ""; say(r.text ? "Here's what's said. Fix anything, then Make the voice." : "No speech was found in this clip.");
+        // Each line keeps the moment it was said (moved onto the new video's timeline).
+        let before = 0;
+        for (let k = 0; k < active; k++) before += keepPieces(clips[k]).reduce((n, [a, b]) => n + b - a, 0);
+        const toTimeline = (t) => { let x = before; for (const [a, b] of keepPieces(c)) { if (t >= b) x += b - a; else { x += Math.max(0, t - a); break; } } return Math.round(x * 10) / 10; };
+        const segs = (r.segments || []).filter((g) => g.text);
+        if (segs.length) setLines(segs.map((g) => g.text), segs.map((g) => toTimeline(g.at)));
+        say(segs.length ? "Here's what's said, line by line at the same moments. Fix any words, then Make the voice." : "No speech was found in this clip.");
       } catch (e) { say(e.message); } finally { voFrom.disabled = false; }
     });
     // Where the player is on the new video's timeline (kept parts of earlier clips first).
@@ -845,7 +906,7 @@
     applyPreview();
     load(0);
     // Opened for a slide's voiceover: its text is ready in the script box.
-    if (o.script) { voScript.value = String(o.script).replace(/^\s*\d+\.\s*/gm, ""); voPanel.hidden = false; say("The slide's words are in the voiceover box below. Tap Make the voice, then Make the video."); }
+    if (o.script) { setLines(splitScript(o.script)); voPanel.hidden = false; say("The slide's words are in the voiceover below, one line each. Time them with ⏱ if you like, then Make the voice."); }
   }
 
   // ---- Picture editor -------------------------------------------------------------

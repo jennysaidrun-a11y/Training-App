@@ -998,3 +998,12 @@ details.more-menu.down .menu { bottom: auto; top: calc(100% + 4px); left: 0; rig
 .dbx-tabs button, .dbx-crumbs button.link { box-shadow: none; border-radius: 0; min-height: 0; transform: none; }
 .dbx-crumbs button.link { border: 0; background: none; padding: 0 2px; font-weight: 600; }
 .dbx-tabs button:hover, .dbx-crumbs button.link:hover { background: none; }
+.vedit-back [hidden] { display: none !important; }
+.vo-lines { display: grid; gap: 6px; }
+.vo-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.vo-line input { flex: 1; min-width: 180px; width: auto; padding: 8px 10px; }
+.vo-line .vo-at { min-width: 104px; font-variant-numeric: tabular-nums; }
+.vo-line.overlap input { border-color: var(--bad, #c0392b); }
+.vo-warn { flex-basis: 100%; color: var(--bad, #c0392b); font-size: 13px; }
+.vo-paste summary { cursor: pointer; font-weight: 600; }
+.vo-paste textarea { margin: 6px 0; }
