@@ -81,15 +81,22 @@
   const driveReady = window.DRIVE ? Promise.all([loadScript("https://apis.google.com/js/api.js"), loadScript("https://accounts.google.com/gsi/client")])
     .then(() => new Promise((ok) => window.gapi.load("picker", ok))).catch(() => null) : null;
   let driveEmail = "";
-  function driveSignIn(force) {
-    if (!force && driveToken && Date.now() - driveTokenAt < 50 * 60 * 1000) return Promise.resolve(driveToken);
+  // wide: the app's own Drive browser, which needs to see your folders (read only), not just picked files.
+  let driveWide = false;
+  function driveSignIn(force, wide) {
+    if (!force && driveToken && Date.now() - driveTokenAt < 50 * 60 * 1000 && (driveWide || !wide)) return Promise.resolve(driveToken);
     return new Promise((ok, bad) => {
       window.google.accounts.oauth2.initTokenClient({
-        client_id: window.DRIVE.clientId, scope: "https://www.googleapis.com/auth/drive.file openid email",
+        client_id: window.DRIVE.clientId,
+        scope: `https://www.googleapis.com/auth/${wide ? "drive.readonly" : "drive.file"} openid email`,
         ...(force ? { prompt: "select_account" } : {}),
         callback: async (r) => {
           if (r.error || !r.access_token) { bad(new Error("Google sign-in didn't finish.")); return; }
-          driveToken = r.access_token; driveTokenAt = Date.now();
+          if (wide && !window.google.accounts.oauth2.hasGrantedAllScopes(r, "https://www.googleapis.com/auth/drive.readonly")) {
+            bad(new Error("To browse your Drive here, tick \"See your Google Drive files\" when Google asks. Or use ⋯ › Google's picker."));
+            return;
+          }
+          driveToken = r.access_token; driveTokenAt = Date.now(); driveWide = !!wide;
           // Which Google account this is, so it's clear whose Drive the picker shows.
           try {
             const u = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { Authorization: `Bearer ${driveToken}` } });
@@ -192,6 +199,135 @@
       if (docs.length === 1 && !String(docs[0].mimeType || "").startsWith("image/")) watch(docs[0], list.firstChild);
     });
   }
+
+  // ---- The app's own Google Drive browser -------------------------------------------------
+  // Folders with real thumbnails, ▶ to play a video (Google's own player) before choosing,
+  // pick videos and pictures together. Read-only: it lists and previews; files are copied in
+  // only when you press Use. Resolves to [{id, name, mimeType}], "picker" (use Google's) or null.
+  const FOLDER = "application/vnd.google-apps.folder";
+  async function driveApi(path, params) {
+    const u = new URL("https://www.googleapis.com/drive/v3/" + path);
+    for (const [k, v] of Object.entries(params || {})) u.searchParams.set(k, v);
+    const r = await fetch(u, { headers: { Authorization: `Bearer ${driveToken}` } });
+    if (r.status === 401) { driveToken = null; throw new Error("Google sign-in ran out. Close this and tap the Drive button again."); }
+    if (!r.ok) throw new Error("Google Drive didn't answer. Try again in a moment.");
+    return r.json();
+  }
+  async function browseDrive(kinds, force) {
+    if (!(window.google && window.google.accounts)) throw new Error("Google Drive is still loading. Tap again in a moment.");
+    await driveSignIn(force, true);
+    return new Promise((done) => {
+      const wantVideo = kinds.includes("video"), wantImage = kinds.includes("image");
+      const types = [wantVideo ? "mimeType contains 'video/'" : "", wantImage ? "mimeType contains 'image/'" : ""].filter(Boolean).join(" or ");
+      const chosen = new Map();     // id -> doc
+      let trail = [{ id: "root", name: "My Drive" }], mode = "folder", token = "", busy = false;
+      const grid = el("div", { class: "dbx-grid" });
+      const crumbs = el("div", { class: "dbx-crumbs" });
+      const more = el("button", { type: "button", class: "ghost small", hidden: true }, "Show more");
+      const note = el("p", { class: "muted dbx-note", role: "status" });
+      const viewer = el("div", { class: "dbx-viewer", hidden: true });
+      const useBtn = el("button", { type: "button", class: "btn" });
+      const search = el("input", { type: "search", placeholder: "Search your Drive", "aria-label": "Search your Drive" });
+      const tabs = [["folder", "My Drive"], ["shared", "Shared with me"], ["recent", "Recent"]].map(([m, label]) =>
+        el("button", { type: "button", role: "tab", "data-mode": m, onclick: () => { mode = m; search.value = ""; if (m === "folder") trail = [{ id: "root", name: "My Drive" }]; load(); } }, label));
+      const count = () => {
+        useBtn.textContent = chosen.size ? `Use ${chosen.size} ${chosen.size === 1 ? "file" : "files"}` : "Tick what you want";
+        useBtn.disabled = !chosen.size;
+      };
+      const finish = (v) => { viewer.replaceChildren(); back.remove(); document.removeEventListener("keydown", onKey); done(v); };
+      const onKey = (e) => { if (e.key === "Escape") { if (!viewer.hidden) closeViewer(); else finish(null); } };
+      const closeViewer = () => { viewer.hidden = true; viewer.replaceChildren(); };
+      function preview(f) {
+        viewer.hidden = false;
+        const isVid = f.mimeType.startsWith("video/");
+        const pickBtn = el("button", { type: "button", class: "btn small" }, chosen.has(f.id) ? "✓ Ticked" : "Tick this one");
+        pickBtn.addEventListener("click", () => { toggle(f); pickBtn.textContent = chosen.has(f.id) ? "✓ Ticked" : "Tick this one"; });
+        viewer.replaceChildren(el("div", { class: "dbx-viewer-card" },
+          el("div", { class: "row between" }, el("b", { class: "dbx-viewer-name" }, f.name),
+            el("button", { type: "button", class: "ghost small", onclick: closeViewer, "aria-label": "Close preview" }, "✕")),
+          isVid ? el("iframe", { src: `https://drive.google.com/file/d/${encodeURIComponent(f.id)}/preview`, allow: "autoplay; fullscreen", allowfullscreen: "", title: f.name })
+            : el("img", { src: f.thumbnailLink ? f.thumbnailLink.replace(/=s\d+$/, "=s1600") : "", alt: f.name, referrerpolicy: "no-referrer" }),
+          el("div", { class: "row" }, pickBtn, el("span", { class: "muted" }, meta(f)),
+            isVid ? el("span", { class: "help" }, "If Google says it's still processing, the video is new; you can still use it.") : "")));
+      }
+      const meta = (f) => [f.videoMediaMetadata && f.videoMediaMetadata.durationMillis ? clock(f.videoMediaMetadata.durationMillis / 1000).replace(/\.\d$/, "") : "",
+        f.size ? `${(f.size / 1048576).toFixed(f.size > 1e8 ? 0 : 1)} MB` : "", f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString() : ""].filter(Boolean).join(" · ");
+      function toggle(f) {
+        if (chosen.has(f.id)) chosen.delete(f.id); else chosen.set(f.id, { id: f.id, name: f.name, mimeType: f.mimeType });
+        const t = grid.querySelector(`[data-id="${CSS.escape(f.id)}"]`);
+        if (t) { t.classList.toggle("on", chosen.has(f.id)); t.querySelector("input").checked = chosen.has(f.id); }
+        count();
+      }
+      function tile(f) {
+        if (f.mimeType === FOLDER) {
+          return el("button", { type: "button", class: "dbx-tile dbx-folder", onclick: () => { trail.push({ id: f.id, name: f.name }); mode = "folder"; load(); } },
+            el("span", { class: "dbx-thumb", "aria-hidden": "true" }, "📁"), el("span", { class: "dbx-name" }, f.name));
+        }
+        const isVid = f.mimeType.startsWith("video/");
+        const thumb = el("span", { class: "dbx-thumb" }, isVid ? "🎬" : "🖼");
+        if (f.thumbnailLink) {
+          const img = el("img", { src: f.thumbnailLink, alt: "", loading: "lazy", referrerpolicy: "no-referrer" });
+          img.onerror = () => img.remove();
+          thumb.append(img);
+        }
+        if (isVid) thumb.append(el("span", { class: "dbx-play", "aria-hidden": "true" }, "▶"));
+        const box = el("input", { type: "checkbox", "aria-label": `Tick ${f.name}` });
+        box.checked = chosen.has(f.id);
+        box.addEventListener("click", (e) => { e.stopPropagation(); toggle(f); });
+        const t = el("div", { class: "dbx-tile" + (chosen.has(f.id) ? " on" : ""), "data-id": f.id, tabindex: "0", role: "button", "aria-label": `${isVid ? "Play" : "Look at"} ${f.name}` },
+          thumb, el("label", { class: "dbx-tick", onclick: (e) => e.stopPropagation() }, box),
+          el("span", { class: "dbx-name" }, f.name), el("span", { class: "dbx-meta muted" }, meta(f)));
+        t.addEventListener("click", () => preview(f));
+        t.addEventListener("keydown", (e) => { if (e.key === "Enter") preview(f); if (e.key === " ") { e.preventDefault(); toggle(f); } });
+        return t;
+      }
+      async function load(next) {
+        if (busy) return;
+        busy = true; note.textContent = "Loading…";
+        for (const b of tabs) b.setAttribute("aria-selected", String(b.dataset.mode === mode && !search.value.trim()));
+        const q = search.value.trim().replace(/['\\]/g, "");
+        let query, orderBy = "folder,modifiedTime desc";
+        if (q) { query = `name contains '${q}' and (${types} or mimeType = '${FOLDER}')`; orderBy = "modifiedTime desc"; }
+        else if (mode === "shared") query = `sharedWithMe and (${types} or mimeType = '${FOLDER}')`;
+        else if (mode === "recent") { query = `(${types})`; orderBy = "modifiedTime desc"; }
+        else query = `'${trail[trail.length - 1].id}' in parents and (${types} or mimeType = '${FOLDER}')`;
+        crumbs.replaceChildren(...(q ? [el("span", {}, `Search: ${q}`)] : mode !== "folder" ? [el("span", {}, mode === "shared" ? "Shared with me" : "Recent")]
+          : trail.flatMap((c, i) => [i ? el("span", { class: "muted" }, " › ") : "", i === trail.length - 1 ? el("b", {}, c.name)
+            : el("button", { type: "button", class: "link", onclick: () => { trail = trail.slice(0, i + 1); load(); } }, c.name)])));
+        try {
+          const r = await driveApi("files", { q: query + " and trashed = false", orderBy, pageSize: "60", supportsAllDrives: "true", includeItemsFromAllDrives: "true",
+            fields: "nextPageToken,files(id,name,mimeType,thumbnailLink,size,modifiedTime,videoMediaMetadata(durationMillis))", ...(next ? { pageToken: token } : {}) });
+          token = r.nextPageToken || "";
+          const tiles = (r.files || []).map(tile);
+          if (next) grid.append(...tiles); else { grid.replaceChildren(...tiles); grid.scrollTop = 0; }
+          more.hidden = !token;
+          note.textContent = grid.children.length ? "" : q ? "Nothing found." : "No videos, pictures or folders here.";
+        } catch (e) { note.textContent = e.message; }
+        busy = false;
+      }
+      let timer = 0;
+      search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => load(), 400); });
+      more.addEventListener("click", () => load(true));
+      useBtn.addEventListener("click", () => finish([...chosen.values()]));
+      count();
+      const back = modal("Google Drive",
+        el("div", { class: "row between" }, el("h2", {}, "Google Drive"),
+          el("button", { type: "button", class: "ghost small", onclick: () => finish(null), "aria-label": "Close" }, "✕")),
+        el("p", { class: "muted" }, driveEmail ? `${driveEmail}. Tap a video to play it, tick the ones you want.` : "Tap a video to play it, tick the ones you want."),
+        el("div", { class: "row dbx-bar" }, el("div", { class: "subnav dbx-tabs", role: "tablist" }, ...tabs), search),
+        crumbs, grid, more, note, viewer,
+        el("div", { class: "row" }, useBtn, el("span", { class: "grow" }),
+          el("details", { class: "more-menu" }, el("summary", { class: "ghost small", "aria-label": "More" }, "⋯"),
+            el("div", { class: "menu" },
+              el("button", { type: "button", onclick: () => finish("picker") }, "Use Google's picker instead"),
+              el("button", { type: "button", onclick: () => finish("switch") }, "Switch Google account")))));
+      back.classList.add("drive-browser");
+      document.body.append(back);
+      document.addEventListener("keydown", onKey);
+      load();
+    });
+  }
+
   // A "Choose from Google Drive" button: picks (several at once), shows them to check, then copies
   // each one in and calls onCopied(kind, link); onFinish([{kind, link}]) once all are in.
   function driveButton(kinds, multi, onCopied, say, label = "Choose from Google Drive", onFinish) {
@@ -199,14 +335,20 @@
     const btn = el("button", { type: "button", class: "ghost small drive-btn" }, label);
     btn.addEventListener("click", async () => {
       try {
-        let docs = await pickFromDrive(kinds, false);
-        for (;;) {
-          if (!docs.length) return;
-          const r = await reviewPicked(docs, kinds);
-          if (r === "again") docs = await pickFromDrive(kinds, false);
-          else if (r === "switch") docs = await pickFromDrive(kinds, true);
-          else { docs = r || []; break; }
+        // The app's own Drive browser (thumbnails, play before choosing); Google's picker is the backup.
+        let docs = await browseDrive(kinds, false);
+        while (docs === "switch") docs = await browseDrive(kinds, true);
+        if (docs === "picker") {
+          docs = await pickFromDrive(kinds, false);
+          for (;;) {
+            if (!docs.length) return;
+            const r = await reviewPicked(docs, kinds);
+            if (r === "again") docs = await pickFromDrive(kinds, false);
+            else if (r === "switch") docs = await pickFromDrive(kinds, true);
+            else { docs = r || []; break; }
+          }
         }
+        docs = docs || [];
         if (!docs.length) return;
         btn.disabled = true;
         const got = [];
