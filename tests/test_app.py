@@ -1489,3 +1489,39 @@ def test_research_cli_shows_photos(env, monkeypatch, tmp_path):
 
     research.run_cli([{"role": "user", "text": "q"}], None, command="claude", runner=runner, images=[("photo-1.jpg", photo)])
     assert seen["files"] == ["photo-1.jpg"] and seen["cmd"][seen["cmd"].index("--tools") + 1] == "WebSearch,WebFetch,Read"
+
+
+# ---- Text to speech ---------------------------------------------------------------------------
+
+class _FakeVoice:
+    def synthesize_wav(self, text, w, syn_config=None):
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(22050)
+        w.writeframes(b"\x00\x00" * 22050 * 2)      # two seconds
+
+
+def test_speech_and_voiceover(client, anon, env, monkeypatch):
+    from trainer import app as app_module, tts, video
+    monkeypatch.setattr(tts, "_voice", lambda key, model_dir: _FakeVoice())
+    assert anon.post("/api/speech", json={"text": "Hi"}).status_code == 401
+    r = client.post("/api/speech", json={"text": "Lock out the mixer.", "voice": "en-m", "speed": "slow"})
+    assert r.status_code == 200, r.text
+    link = r.json()["audio"]
+    assert link.startswith("/speech/") and abs(r.json()["duration"] - 2) < 0.2
+    assert client.post("/api/speech", json={"text": "Lock out the mixer.", "voice": "en-m", "speed": "slow"}).json()["audio"] == link  # made once
+    assert client.get(link).status_code == 200 and anon.get(link).status_code == 401
+    assert client.get("/speech/../t.db").status_code in (404, 401)
+    assert client.post("/api/speech", json={"text": "  "}).status_code == 400
+    assert {v["id"] for v in client.get("/api/speech/voices").json()["voices"]} >= {"en-f", "es"}
+
+    a = app_module.media_dir() / "vo-20990101000000.mp4"
+    _clip(a, 3)
+    for mode in ("replace", "mix"):
+        r = client.post("/api/manage/video/edit", json={"voiceover": {"audio": link, "mode": mode}, "clips": [{"video": "/media/" + a.name}]})
+        assert r.status_code == 200, r.text
+        info = video.probe(app_module.media_dir() / r.json()["video"].rsplit("/", 1)[-1])
+        assert abs(info["duration"] - 3) < 0.3 and info["audio"]
+    # A silent picture video gets the voice as its sound.
+    r = client.post("/api/manage/video/edit", json={"mute": True, "voiceover": {"audio": link, "mode": "mix"}, "clips": [{"video": "/media/" + a.name}]})
+    assert r.status_code == 200 and video.probe(app_module.media_dir() / r.json()["video"].rsplit("/", 1)[-1])["audio"]
+    assert client.post("/api/manage/video/edit", json={"voiceover": {"audio": "/speech/nope.m4a", "mode": "mix"},
+                                                       "clips": [{"video": "/media/" + a.name}]}).status_code == 400

@@ -84,10 +84,37 @@
     return el("div", { class: "slide-gallery n" + Math.min(list.length, 4) }, ...list.map((src) => el("img", { class: "slide-img", src, alt: "" })));
   }
 
+  // ---- Listen: a natural voice reads the screen aloud (server-side Piper, in the worker's language) ----
+  let speaking = null;
+  function hush() { if (speaking) { speaking.pause(); speaking = null; } }
+  function listenButton(text) {
+    if (!window.SPEECH) return null;
+    const label = () => "🔊 " + tr("listen");
+    const b = el("button", { type: "button", class: "listen" }, label());
+    b.addEventListener("click", async () => {
+      if (speaking && b.classList.contains("on")) { hush(); b.classList.remove("on"); b.textContent = label(); return; }
+      hush();
+      b.disabled = true; b.textContent = "🔊 …";
+      try {
+        const res = await fetch("/api/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+        const r = await res.json();
+        if (!res.ok) throw new Error(r.error);
+        const audio = new Audio(r.audio);
+        speaking = audio;
+        audio.addEventListener("ended", () => { b.classList.remove("on"); b.textContent = label(); });
+        await audio.play();
+        b.classList.add("on"); b.textContent = "⏹ " + tr("stop_listening");
+      } catch (e) { b.textContent = label(); }
+      b.disabled = false;
+    });
+    return b;
+  }
+
   function showSection(si, next) {
     const s = L.sections[si];
+    hush();
     stage.replaceChildren(...[el("p", { class: "eyebrow" }, tr("part_of", { a: si + 1, b: L.sections.length })), el("h1", {}, s.heading),
-      pictures(s.images), reading(s.text)].filter(Boolean));
+      listenButton(`${s.heading}. ${s.text.replace(/^\s*\d+\.\s*/gm, "")}`), pictures(s.images), reading(s.text)].filter(Boolean));
     setFooter({ buttons: [button(tr("continue"), next)] });
     onKey = (e) => { if (e.key === "Enter") next(); };
   }
@@ -104,7 +131,9 @@
       return b;
     });
     const checkBtn = button(tr("check"), () => check(), "", true);
-    host.append(eyebrow ? el("p", { class: "eyebrow" }, eyebrow) : null, el("p", { class: "q" }, q.q), el("div", { class: "choices" }, ...choiceButtons));
+    hush();
+    host.append(eyebrow ? el("p", { class: "eyebrow" }, eyebrow) : null, el("p", { class: "q" }, q.q),
+      listenButton(`${q.q} ${q.choices.map((c, ci) => `${ci + 1}. ${c}.`).join(" ")}`), el("div", { class: "choices" }, ...choiceButtons));
     setFooter({ buttons: [checkBtn] });
 
     function pick(ci) {

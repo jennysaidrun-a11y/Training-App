@@ -10,3 +10,4 @@ anthropic>=1
 pypdf>=4
 imageio-ffmpeg>=0.5
 faster-whisper>=1.0
+piper-tts>=1.3

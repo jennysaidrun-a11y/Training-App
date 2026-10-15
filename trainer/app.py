@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, content, db, editor, extract, i18n, project, research, rules, video
+from . import auth, content, db, editor, extract, i18n, project, research, rules, tts, video
 
 HERE = content.ROOT / "trainer"
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -387,7 +387,7 @@ def lesson_page(request: Request, lesson_id: str):
     status = rules.load_status()
     return render(request, "lesson.html", lesson=lesson, person=person, data=_public_lesson(lesson),
                   rule_status=status.get("rules", {}), survey=_survey_for(lang), who=who, lang=lang,
-                  translated=translated, strings=i18n.table(lang))
+                  translated=translated, strings=i18n.table(lang), speech=tts.available())
 
 
 @app.post("/api/lesson/{lesson_id}/check")
@@ -1379,6 +1379,72 @@ async def video_info(v: str = ""):
         return JSONResponse({"error": str(e)}, status_code=400)
 
 
+# ---- Text to speech (trainer/tts.py): voiceovers and "Listen" on slides -----------------------
+SPEECH_NAME = re.compile(r"^[0-9a-f]{20}\.m4a$")
+
+
+def speech_dir():
+    return db.db_path().parent / "speech"
+
+
+def _speech_file(link):
+    name = str(link or "").rsplit("/", 1)[-1]
+    if str(link or "") == "/speech/" + name and SPEECH_NAME.match(name) and (speech_dir() / name).is_file():
+        return speech_dir() / name
+    return None
+
+
+@app.get("/speech/{name}")
+def speech_audio(name: str, request: Request):
+    if not auth.current(request):
+        raise HTTPException(401)
+    path = _speech_file("/speech/" + name)
+    if not path:
+        raise HTTPException(404)
+    return FileResponse(path, media_type="audio/mp4", headers={"Cache-Control": "private, max-age=86400"})
+
+
+@app.get("/api/speech/voices")
+def speech_voices():
+    return {"voices": tts.voice_list(), "ready": tts.available()}
+
+
+@app.post("/api/speech")
+async def make_speech(request: Request):
+    """Reads text aloud. Managers pick any voice and speed (voiceovers); workers get the voice for
+    their language (Listen on a slide). Signed-in people only; the same text is made once."""
+    if not auth.current(request):
+        raise HTTPException(401)
+    if not tts.available():
+        return JSONResponse({"error": "The voice isn't set up on this copy of the app yet."}, status_code=503)
+    body = await request.json()
+    manager = bool(auth.manager(request))
+    voice = str(body.get("voice") or "") if manager else ""
+    voice = voice if voice in tts.VOICES else tts.LANG_VOICE.get(i18n.pick(request, auth.current(request)), "en-f")
+    speed = str(body.get("speed") or "normal") if manager else "normal"
+    text = str(body.get("text") or "")
+    if not manager and len(text) > 1500:
+        return JSONResponse({"error": "That's too long to read out."}, status_code=400)
+    try:
+        name, secs = await run_in_threadpool(tts.speak, text, voice, speed, speech_dir(), db.db_path().parent / "models")
+    except tts.SpeechError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return {"audio": f"/speech/{name}", "duration": round(secs, 2)}
+
+
+@app.post("/api/manage/transcribe")
+async def transcribe_video(request: Request):
+    """What's said in an uploaded video, written down (to start a voiceover script from)."""
+    body = await request.json()
+    path = _media_file(body.get("video"))
+    if not path:
+        return JSONResponse({"error": "Only videos uploaded to the app can be used."}, status_code=400)
+    if not project.can_transcribe():
+        return JSONResponse({"error": "Writing down speech isn't set up on this copy yet."}, status_code=503)
+    segments = await run_in_threadpool(project.transcribe, path, db.db_path().parent / "models")
+    return {"text": " ".join(t for _, t in segments)}
+
+
 @app.post("/api/manage/video/frame")
 async def video_frame(request: Request):
     """One frame of an uploaded video as a picture, so the editor can draw on it and put it
@@ -1435,8 +1501,15 @@ async def edit_video(request: Request):
     out = f"{content.slugify(str(body.get('lesson') or 'lesson'))}-{kind}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}.mp4"
     try:
         extras = [x for x in (body.get("extras") or []) if x in video.EXTRAS] if isinstance(body.get("extras"), list) else []
+        vo = body.get("voiceover") if isinstance(body.get("voiceover"), dict) else None
+        voice = None
+        if vo:
+            vpath = _speech_file(vo.get("audio"))
+            if not vpath or vo.get("mode") not in ("replace", "mix"):
+                return JSONResponse({"error": "Make the voiceover again, then make the video."}, status_code=400)
+            voice = (vpath, vo["mode"])
         made = await run_in_threadpool(lambda: video.make(clips, paths, media_dir() / out, bool(body.get("mute")), turn,
-                                                          extras=extras))
+                                                          extras=extras, voice=voice))
     except video.EditError as e:
         (media_dir() / out).unlink(missing_ok=True)
         return JSONResponse({"error": str(e)}, status_code=400)

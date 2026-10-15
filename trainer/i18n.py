@@ -114,6 +114,8 @@ S = {
                      "vi": "Xem trước · không lưu kết quả", "ar": "معاينة · لا تُحفظ النتائج"},
     # player
     "part_of": {"en": "Part {a} of {b}", "es": "Parte {a} de {b}", "zh": "第{a}部分，共{b}部分", "vi": "Phần {a}/{b}", "ar": "الجزء {a} من {b}"},
+    "listen": {"en": "Listen", "es": "Escuchar", "zh": "收听", "vi": "Nghe", "ar": "استمع"},
+    "stop_listening": {"en": "Stop", "es": "Detener", "zh": "停止", "vi": "Dừng", "ar": "إيقاف"},
     "continue": {"en": "Continue", "es": "Continuar", "zh": "继续", "vi": "Tiếp tục", "ar": "متابعة"},
     "check": {"en": "Check", "es": "Comprobar", "zh": "检查", "vi": "Kiểm tra", "ar": "تحقق"},
     "cant_reach": {"en": "Couldn't reach the app", "es": "No se pudo conectar con la aplicación", "zh": "无法连接应用",

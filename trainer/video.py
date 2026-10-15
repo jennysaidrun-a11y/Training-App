@@ -98,14 +98,15 @@ def plan(clips, infos):
     return out
 
 
-def command(paths, pieces, audio, turn, out_path, stills=None, extras=()):
+def command(paths, pieces, audio, turn, out_path, stills=None, extras=(), voice=None):
     """The ffmpeg command line (a list, never run through a shell). audio: per input,
     whether it has sound; None or all False makes a silent video. A clip without
     sound gets silence, so it can sit next to clips that have some. stills: {input
     index: seconds} for pictures, which are shown still for that long. extras: touch-ups
-    from EXTRAS ("steady" is a second pass, see make)."""
+    from EXTRAS ("steady" is a second pass, see make). voice: (speech file, "replace" | "mix"):
+    a voiceover laid over the whole video, replacing its sound or over it with the sound quieter."""
     stills = stills or {}
-    audio = audio if audio and any(audio) else None
+    audio = audio if audio and any(audio) and not (voice and voice[1] == "replace") else None
     rot = TURNS.get(int(turn or 0), "")
     parts, labels = [], []
     for n, (i, a, b) in enumerate(pieces):
@@ -127,19 +128,28 @@ def command(paths, pieces, audio, turn, out_path, stills=None, extras=()):
     if fade:
         vpost += [f"fade=t=in:st=0:d={FADE}", f"fade=t=out:st={round(total - FADE, 3)}:d={FADE}"]
     parts.append(f"[vc]{','.join(vpost) or 'null'}[v]")
+    fades = [f"afade=t=in:st=0:d={FADE}", f"afade=t=out:st={round(total - FADE, 3)}:d={FADE}"] if fade else []
+    mix = bool(voice and audio and voice[1] == "mix")
     if audio:
-        apost = ([CLEAN] if "clean" in extras else []) + ([LEVEL] if "level" in extras else [])
-        if fade:
-            apost += [f"afade=t=in:st=0:d={FADE}", f"afade=t=out:st={round(total - FADE, 3)}:d={FADE}"]
+        apost = ([CLEAN] if "clean" in extras else []) + ([LEVEL] if "level" in extras else []) + fades
         apost.append("aresample=48000")   # loudnorm works at a high rate; back to normal
-        parts.append(f"[ac]{','.join(apost)}[a]")
+        parts.append(f"[ac]{','.join(apost)}[{'ao' if mix else 'a'}]")
+    if voice:
+        vo = f"[{len(paths)}:a]aresample=48000,aformat=channel_layouts=stereo,apad,atrim=duration={total}"
+        if mix:   # the voice over the video's own sound, which drops to a quarter
+            parts.append(vo + "[vo]")
+            parts.append("[ao]volume=0.25[bg];[bg][vo]amix=inputs=2:duration=first:normalize=0" + (f",{','.join(fades)}" if fades else "") + "[a]")
+        else:
+            parts.append(vo + (f",{','.join(fades)}" if fades else "") + "[a]")
     cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y"]
     for i, p in enumerate(paths):
         if i in stills:
             cmd += ["-loop", "1", "-framerate", "30", "-t", str(stills[i])]
         cmd += ["-i", str(p)]
+    if voice:
+        cmd += ["-i", str(voice[0])]
     cmd += ["-filter_complex", ";".join(parts), "-map", "[v]"]
-    cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", "128k"] if audio else ["-an"]
+    cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", "128k"] if audio or voice else ["-an"]
     cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
             "-movflags", "+faststart", str(out_path)]
     return cmd
@@ -157,7 +167,7 @@ def steady_commands(src, out_path):
              "-movflags", "+faststart", out_path.name]], out_path.parent / trf
 
 
-def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run, extras=()):
+def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run, extras=(), voice=None):
     """Makes the edited video at out_path. clips: [{start, end, cuts}] matching paths;
     a picture's clip also has "seconds" (how long it shows). extras: touch-ups (EXTRAS).
     Returns {"duration": new length in seconds}."""
@@ -177,7 +187,7 @@ def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run, extr
     if not lock.acquire(blocking=False):
         raise EditError("Another video is being made right now. Try again in a minute.")
     try:
-        r = runner(command(paths, pieces, audio, turn, first, stills, extras), capture_output=True, text=True,
+        r = runner(command(paths, pieces, audio, turn, first, stills, extras, voice), capture_output=True, text=True,
                    encoding="utf-8", errors="replace", timeout=TIMEOUT)
         if r.returncode == 0 and "steady" in extras:
             cmds, trf = steady_commands(first, out_path)

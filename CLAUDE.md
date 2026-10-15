@@ -32,6 +32,10 @@ Cal/OSHA (8 CCR, Title 8) apply.
   (free, CPU, model in `data/models`) unless one is pasted, and runs the Claude panel research with the photos
   (CLI: copied into its working folder with Read allowed; API: image blocks). Questions get `at` (video pause times) from
   the transcript. The result goes through `app._settle_draft` (citations checked) and lands as a draft to preview.
+- Text to speech (`trainer/tts.py`): Piper (free, open source, CPU), voices in `tts.VOICES` (downloaded once into
+  `data/models/piper` from the Piper voices collection), speech cached in `data/speech` (`/speech/<hash>.m4a`, signed-in only).
+  `POST /api/speech`: managers pick voice/speed (video editor "🎙 Voiceover": replace the sound or play over it, sent to
+  `video.make(voice=...)`); workers get their language's voice ("🔊 Listen" on slides and questions in `player.js`).
 - Google Drive: managers paste a share link ("Anyone with the link") in the video editor, the Video box or a
   picture slide; `/api/manage/drive` (`app._drive_copy`) copies the file into `data/media` from Google's fixed
   download address only, with size caps and a file-signature check. No Google account or key is stored.

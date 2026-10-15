@@ -933,3 +933,10 @@ details.more-menu .menu > [disabled] { opacity: .45; cursor: not-allowed; }
 .proj-outline { width: 100%; font: inherit; }
 .proj-steps { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--heading); margin-top: 8px; }
 .proj-transcript { white-space: pre-wrap; font-size: 0.85rem; max-height: 240px; overflow: auto; }
+/* Listen (read aloud) */
+button.listen { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); color: var(--crust); border: 2px solid var(--line);
+  border-radius: 999px; padding: 6px 14px; min-height: 40px; font-weight: 700; font-size: 0.9rem; box-shadow: none; margin: 4px 0 10px; }
+button.listen.on { background: var(--crust); color: #fff; border-color: var(--crust); }
+.vo-panel { border: 2px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.vo-panel textarea { width: 100%; font: inherit; }
+.vo-panel audio { width: 100%; }

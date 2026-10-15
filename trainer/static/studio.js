@@ -358,6 +358,7 @@
       player.style.transform = still.style.transform = t;
       player.style.filter = still.style.filter = on("bright") ? "brightness(1.08) contrast(1.1) saturate(1.15)" : "";
       player.muted = on("mute");
+      if (typeof voSync === "function" && fx.voice) voSync();
       if (audio) {
         audio.hp.frequency.value = on("clean") ? 80 : 10;
         audio.lp.frequency.value = on("clean") ? 12000 : 22000;
@@ -366,7 +367,7 @@
         audio.gain.gain.value = lv ? 1.8 : 1;
         if (audio.ctx.state === "suspended") audio.ctx.resume();
       }
-      for (const [k, btn] of Object.entries(fx)) btn.setAttribute("aria-pressed", isOn(k) ? "true" : "false");
+      for (const [k, btn] of Object.entries(fx)) if (k !== "voice") btn.setAttribute("aria-pressed", isOn(k) ? "true" : "false");
       fx.clean.disabled = fx.level.disabled = opts.mute;
       compareBtn.textContent = compare ? "👁 Showing: original" : "👁 Showing: with effects";
       compareBtn.setAttribute("aria-pressed", compare ? "true" : "false");
@@ -413,8 +414,79 @@
         say("This is exactly how it will look and sound.");
       } catch (e) { say(e.message); } finally { sampleBtn.disabled = false; }
     });
+    // Voiceover: a natural voice (Piper, free, on the server) reads a script over the whole video,
+    // replacing its sound or over it with the sound quieter. It plays along in the preview.
+    const vo = { audio: "", mode: "replace", on: false };
+    const voScript = el("textarea", { rows: "4", placeholder: "Type or paste what the voice should say", "aria-label": "Voiceover script" });
+    const voVoice = el("select", { "aria-label": "Voice" }), voSpeed = el("select", { "aria-label": "Speed" },
+      ...[["slow", "Slower"], ["normal", "Normal speed"], ["fast", "Faster"]].map(([v, t]) => el("option", { value: v, selected: v === "normal" ? true : null }, t)));
+    fetch("/api/speech/voices").then((r) => r.json()).then((r) => {
+      voVoice.replaceChildren(...r.voices.map((v) => el("option", { value: v.id }, v.label)));
+      if (!r.ready) voMake.disabled = true, say("The voice isn't set up on this copy of the app yet.");
+    }).catch(() => {});
+    const voAudio = el("audio", { controls: true, hidden: true });
+    const voMake = el("button", { type: "button", class: "small" }, "Make the voice");
+    const voFrom = el("button", { type: "button", class: "ghost small", title: "Writes down what's said in this clip, so you can fix it up and have the voice read it clearly" }, "📝 Start from what's said in the clip");
+    const voReplace = el("button", { type: "button", class: "fx-toggle", "aria-pressed": "true" }, "Replace the video's sound");
+    const voMix = el("button", { type: "button", class: "fx-toggle", "aria-pressed": "false" }, "Play over it (sound quieter)");
+    const voPanel = el("div", { class: "vo-panel", hidden: true }, voScript,
+      el("div", { class: "row" }, voVoice, voSpeed, voMake, voFrom), voAudio,
+      el("div", { class: "row fx-row", hidden: true }, voReplace, voMix));
+    fx.voice = el("button", { type: "button", class: "fx-toggle", "aria-pressed": "false", title: "A voice reads your script over the video" }, "🎙 Voiceover");
+    fx.voice.addEventListener("click", () => {
+      voPanel.hidden = false;
+      if (vo.audio) { vo.on = !vo.on; voSync(); say(`Voiceover: ${vo.on ? "on" : "off"}. Play to hear it with the video.`); }
+      else voScript.focus();
+      fx.voice.setAttribute("aria-pressed", vo.on ? "true" : "false");
+    });
+    const setMode = (m) => { vo.mode = m; voReplace.setAttribute("aria-pressed", m === "replace" ? "true" : "false"); voMix.setAttribute("aria-pressed", m === "mix" ? "true" : "false"); voSync(); };
+    voReplace.addEventListener("click", () => setMode("replace"));
+    voMix.addEventListener("click", () => setMode("mix"));
+    voMake.addEventListener("click", async () => {
+      if (!voScript.value.trim()) { voScript.focus(); return; }
+      voMake.disabled = true; say("Making the voice…");
+      try {
+        const res = await fetch("/api/speech", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: voScript.value, voice: voVoice.value, speed: voSpeed.value }) });
+        const r = await res.json();
+        if (!res.ok) throw new Error(r.error || "The voice couldn't be made.");
+        vo.audio = r.audio; vo.on = true; voAudio.src = r.audio; voAudio.hidden = false;
+        voPanel.lastChild.hidden = false; fx.voice.setAttribute("aria-pressed", "true"); voSync();
+        say(`Voice ready (${clock(r.duration)}). Play the video to hear them together; it goes in when you make the video.`);
+      } catch (e) { say(e.message); } finally { voMake.disabled = false; }
+    });
+    voFrom.addEventListener("click", async () => {
+      const c = clips[active];
+      if (!c || c.still) { say("Pick a video clip first."); return; }
+      voFrom.disabled = true; say("Writing down what's said… this takes about as long as the clip.");
+      try {
+        const res = await fetch("/api/manage/transcribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video: c.video }) });
+        const r = await res.json();
+        if (!res.ok) throw new Error(r.error || "That couldn't be written down.");
+        voScript.value = r.text || ""; say(r.text ? "Here's what's said. Fix anything, then Make the voice." : "No speech was found in this clip.");
+      } catch (e) { say(e.message); } finally { voFrom.disabled = false; }
+    });
+    // Where the player is on the new video's timeline (kept parts of earlier clips first).
+    function timelinePos() {
+      let t = 0;
+      for (let k = 0; k < active; k++) t += keepPieces(clips[k]).reduce((n, [a, b]) => n + b - a, 0);
+      const c = clips[active];
+      if (!c || c.still) return t;
+      for (const [a, b] of keepPieces(c)) { if (player.currentTime >= b) t += b - a; else { t += Math.max(0, player.currentTime - a); break; } }
+      return t;
+    }
+    function voSync() {
+      const live = vo.on && vo.audio && !compare;
+      player.volume = live && vo.mode === "mix" ? 0.25 : 1;
+      player.muted = (!compare && opts.mute) || (live && vo.mode === "replace");
+      if (!live) voAudio.pause();
+    }
+    player.addEventListener("play", () => { if (vo.on && vo.audio && !compare) { voAudio.currentTime = timelinePos(); voAudio.play().catch(() => {}); } });
+    player.addEventListener("pause", () => voAudio.pause());
+    player.addEventListener("seeked", () => { if (vo.on && vo.audio && !player.paused) voAudio.currentTime = timelinePos(); });
     const effectsBar = el("div", { class: "vedit-fx" },
       el("div", { class: "row fx-row" }, ...Object.values(fx), turn),
+      voPanel,
       el("div", { class: "row" }, compareBtn, sampleBtn), sample);
 
     makeBtn.addEventListener("click", async () => {
@@ -424,6 +496,7 @@
       try {
         const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lesson: lessonName(), label: o.label ? `${o.label} (edited)` : "", mute: opts.mute, turn: opts.turn, extras: [...opts.extras],
+            ...(vo.on && vo.audio ? { voiceover: { audio: vo.audio, mode: vo.mode } } : {}),
             clips: clips.map((c) => ({ video: c.video, start: c.start || 0, end: c.end, cuts: c.cuts, ...(c.still ? { seconds: c.seconds } : {}) })) }) });
         const r = await res.json().catch(() => ({}));
         if (!res.ok || !r.video) throw new Error(r.error || r.detail || "The video couldn't be made. Try again.");
