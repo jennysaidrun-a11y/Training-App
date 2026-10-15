@@ -1,5 +1,6 @@
 """The training app: worker pages, the lesson player and the manager pages."""
 import datetime as dt
+import json
 import os
 import re
 import secrets
@@ -1251,7 +1252,7 @@ async def upload_video(request: Request):
         return JSONResponse({"error": f"'{upload.filename}' isn't a video the app can play. Use an .mp4, .mov, .m4v or .webm file."}, status_code=400)
     if (upload.size or 0) > MAX_VIDEO_BYTES:
         return JSONResponse({"error": "That video is over 2 GB. Please use a shorter or smaller copy."}, status_code=400)
-    return {"video": _save_upload(upload, str(form.get("lesson") or "lesson"))}
+    return {"video": _save_upload(upload, str(form.get("lesson") or "lesson"), str(form.get("label") or ""))}
 
 
 def _media_file(link, types=VIDEO_TYPES):
@@ -1331,7 +1332,7 @@ def _drive_copy(link, lesson_id, get=None, file_id=None, token=None, name=""):
         except BaseException:
             path.unlink(missing_ok=True)
             raise
-    return kind, f"/media/{name}"
+    return kind, _library_add(f"/media/{name}", os.path.splitext(fname[-1])[0] if fname[-1] else "From Google Drive")
 
 
 @app.post("/api/manage/drive")
@@ -1403,6 +1404,7 @@ async def edit_video(request: Request):
     except video.EditError as e:
         (media_dir() / out).unlink(missing_ok=True)
         return JSONResponse({"error": str(e)}, status_code=400)
+    _library_add(f"/media/{out}", str(body.get("label") or "") or "Edited video " + dt.date.today().isoformat())
     return {"video": f"/media/{out}", **made}
 
 
@@ -1419,7 +1421,7 @@ async def upload_image(request: Request):
         return JSONResponse({"error": f"'{upload.filename}' isn't a picture the app can show. Use a .jpg, .png, .webp or .gif.{hint}"}, status_code=400)
     if (upload.size or 0) > MAX_IMAGE_BYTES:
         return JSONResponse({"error": "That picture is over 15 MB. Please use a smaller copy."}, status_code=400)
-    return {"image": _save_upload(upload, str(form.get("lesson") or "lesson"))}
+    return {"image": _save_upload(upload, str(form.get("lesson") or "lesson"), str(form.get("label") or ""))}
 
 
 def _verify(citations):
@@ -1656,12 +1658,12 @@ def media(name: str):
     return FileResponse(path, media_type=MEDIA_TYPES["." + name.rsplit(".", 1)[1]])
 
 
-def _save_upload(upload, lesson_id):
+def _save_upload(upload, lesson_id, label=""):
     ext = os.path.splitext(upload.filename)[1].lower()
     name = f"{content.slugify(lesson_id)}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}{ext}"
     with open(media_dir() / name, "wb") as out:
         shutil.copyfileobj(upload.file, out, 1024 * 1024)
-    return f"/media/{name}"
+    return _library_add(f"/media/{name}", label or os.path.splitext(upload.filename)[0])
 
 
 def _save_picture(ext, data):
@@ -1670,13 +1672,112 @@ def _save_picture(ext, data):
     return f"/media/{name}"
 
 
+# ---- Media library (Lessons > Media studio) -----------------------------------------
+# Every video and picture added or made in the app is kept here until a manager deletes
+# it: data/media/library.json maps file name -> {label, added}. Library files are never
+# swept as abandoned uploads.
+_library_lock = threading.Lock()
+
+
+def _library():
+    try:
+        return json.loads((media_dir() / "library.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _library_write(lib):
+    tmp = media_dir() / "library.json.tmp"
+    tmp.write_text(json.dumps(lib, indent=1, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, media_dir() / "library.json")
+
+
+def _library_add(link, label=""):
+    name = link.rsplit("/", 1)[-1]
+    clean = re.sub(r"\s+", " ", str(label or "")).strip()[:120] or os.path.splitext(name)[0]
+    with _library_lock:
+        lib = _library()
+        lib[name] = {"label": clean, "added": dt.date.today().isoformat()}
+        _library_write(lib)
+    return link
+
+
+def _media_users():
+    """File name -> titles of the lessons (and trashed lessons) that show it."""
+    users = {}
+    lessons = [(l, "") for l in content.load_lessons().values()] + [(t["data"], " (in trash)") for t in content.trashed_lessons()]
+    for lesson, note in lessons:
+        links = {lesson.get("video") or ""}
+        links |= {p for sec in lesson.get("sections") or [] for p in sec.get("images") or ([sec["image"]] if sec.get("image") else [])}
+        for link in links:
+            if str(link).startswith("/media/"):
+                users.setdefault(link.rsplit("/", 1)[-1], []).append(lesson.get("title", "") + note)
+    return users
+
+
+@app.get("/manage/studio", response_class=HTMLResponse)
+def studio_page(request: Request):
+    return render(request, "studio.html", drive=drive_picker())
+
+
+@app.get("/api/manage/media")
+def media_list():
+    lib, users = _library(), _media_users()
+    items, total = [], 0
+    for path in media_dir().iterdir():
+        if not MEDIA_NAME.match(path.name):
+            continue
+        st = path.stat()
+        total += st.st_size
+        if path.name not in lib and path.name not in users:
+            continue
+        info = lib.get(path.name, {})
+        items.append({"link": f"/media/{path.name}", "kind": "video" if path.suffix in VIDEO_TYPES else "image",
+                      "label": info.get("label") or os.path.splitext(path.name)[0], "size": st.st_size,
+                      "added": info.get("added") or dt.date.fromtimestamp(st.st_mtime).isoformat(),
+                      "used_by": sorted(users.get(path.name, [])), "_t": st.st_mtime})
+    items.sort(key=lambda x: x.pop("_t"), reverse=True)
+    return {"items": items, "total_bytes": total, "free_bytes": shutil.disk_usage(media_dir()).free}
+
+
+@app.post("/api/manage/media/rename")
+async def media_rename(request: Request):
+    body = await request.json()
+    path = _media_file(body.get("link"), MEDIA_TYPES)
+    label = re.sub(r"\s+", " ", str(body.get("label") or "")).strip()[:120]
+    if not path or not label:
+        return JSONResponse({"error": "Give the file a name."}, status_code=400)
+    with _library_lock:
+        lib = _library()
+        lib[path.name] = {**lib.get(path.name, {"added": dt.date.today().isoformat()}), "label": label}
+        _library_write(lib)
+    return {"ok": True}
+
+
+@app.post("/api/manage/media/delete")
+async def media_delete(request: Request):
+    body = await request.json()
+    path = _media_file(body.get("link"), MEDIA_TYPES)
+    if not path:
+        return JSONResponse({"error": "That file isn't in the library."}, status_code=400)
+    used = _media_users().get(path.name)
+    if used:
+        return JSONResponse({"error": f"It's still used in: {', '.join(sorted(used))}. Take it out of those lessons first."}, status_code=400)
+    with _library_lock:
+        lib = _library()
+        lib.pop(path.name, None)
+        _library_write(lib)
+    path.unlink(missing_ok=True)
+    return {"ok": True}
+
+
 def _remove_unused_upload(video, lessons):
     """Deletes an old uploaded video once no lesson points to it."""
     kept = list(lessons.values()) + [t["data"] for t in content.trashed_lessons()]
     if not video.startswith("/media/") or any(l.get("video") == video for l in kept):
         return
     name = video.rsplit("/", 1)[1]
-    if MEDIA_NAME.match(name):
+    if MEDIA_NAME.match(name) and name not in _library():     # the media library keeps its files
         (media_dir() / name).unlink(missing_ok=True)
 
 
@@ -1686,8 +1787,9 @@ def _sweep_media(lessons, older_than_hours=24):
     used = {l.get("video") for l in kept}
     used |= {p for l in kept for s in l.get("sections") or [] for p in s.get("images") or s.get("image") and [s["image"]] or []}
     cutoff = time.time() - older_than_hours * 3600
+    library = _library()
     for path in media_dir().iterdir():
-        if MEDIA_NAME.match(path.name) and f"/media/{path.name}" not in used and path.stat().st_mtime < cutoff:
+        if MEDIA_NAME.match(path.name) and path.name not in library and f"/media/{path.name}" not in used and path.stat().st_mtime < cutoff:
             path.unlink(missing_ok=True)
 
 

@@ -77,68 +77,34 @@
     slide.images = [...(slide.images || []), r.image];
     touch();
   }
-  // Google Drive: paste a share link; the server copies the file into the app.
-  const isDrive = (u) => /^https:\/\/(drive|docs)\.google\.com\//.test(String(u || "").trim());
-  async function fromDrive(link, kind, picked) {
-    const res = await fetch("/api/manage/drive", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ link: (link || "").trim(), kind, lesson: D.id || D.title || "lesson", ...(picked || {}) }) });
-    const r = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(r.error || r.detail || "That Drive file couldn't be copied. Try again.");
-    return r;
+  // Videos, pictures, Google Drive and the media library come from the Media Studio
+  // (static/studio.js), shared with Lessons > Media studio.
+  const { isDrive, driveButton, openImageEditor, libraryButton } = window.Studio;
+  window.Studio.setLesson(() => D.id || D.title || "lesson");
+  const fromDrive = (link, kind, picked) => window.Studio.fromDrive(link, kind, picked);
+  function openVideoEditor(redrawField) {
+    window.Studio.openVideoEditor({ video: D.video, onDone: (r, kept) => {
+      const moved = kept ? moveTimes(kept) : 0;
+      D.video = r.video; touch(); redrawField(); drawRail();
+      saveNote.textContent = `Edited video ready (${window.Studio.clock(r.duration)}).${moved ? ` ${moved} question time${moved === 1 ? "" : "s"} moved to match.` : ""} Save the lesson to keep it.`;
+    } });
   }
-  // "Choose from Google Drive": Google's own sign-in and file picker, shown once it's set up
-  // (window.DRIVE). Google keeps the sign-in; the app only gets a short-lived pass to copy
-  // the files you pick (drive.file), which the server uses once and doesn't store.
-  const DRIVE_TYPES = { video: "video/mp4,video/quicktime,video/webm,video/x-m4v", image: "image/jpeg,image/png,image/webp,image/gif" };
-  let driveToken = null, driveTokenAt = 0;
-  const loadScript = (src) => new Promise((ok, bad) => {
-    const t = document.createElement("script"); t.src = src; t.async = true; t.onload = ok;
-    t.onerror = () => bad(new Error("Google Drive couldn't be reached.")); document.head.append(t);
-  });
-  const driveReady = window.DRIVE ? Promise.all([loadScript("https://apis.google.com/js/api.js"), loadScript("https://accounts.google.com/gsi/client")])
-    .then(() => new Promise((ok) => window.gapi.load("picker", ok))).catch(() => null) : null;
-  function driveSignIn() {
-    if (driveToken && Date.now() - driveTokenAt < 50 * 60 * 1000) return Promise.resolve(driveToken);
-    return new Promise((ok, bad) => {
-      window.google.accounts.oauth2.initTokenClient({
-        client_id: window.DRIVE.clientId, scope: "https://www.googleapis.com/auth/drive.file",
-        callback: (r) => { if (r.error || !r.access_token) bad(new Error("Google sign-in didn't finish.")); else { driveToken = r.access_token; driveTokenAt = Date.now(); ok(driveToken); } },
-        error_callback: () => bad(new Error("Google sign-in was closed before it finished.")),
-      }).requestAccessToken();   // straight from the tap, so the sign-in window isn't blocked
-    });
-  }
-  // Opens the picker; resolves to [{id, name}] (empty if closed).
-  async function pickFromDrive(kinds, multi) {
-    if (!(window.google && window.google.picker && window.google.accounts)) throw new Error("Google Drive is still loading. Tap again in a moment.");
-    const token = await driveSignIn();
-    return new Promise((ok) => {
-      const P = window.google.picker;
-      const view = new P.DocsView(P.ViewId.DOCS).setMimeTypes(kinds.map((k) => DRIVE_TYPES[k]).join(",")).setIncludeFolders(true).setSelectFolderEnabled(false);
-      const b = new P.PickerBuilder().addView(view).setOAuthToken(token).setDeveloperKey(window.DRIVE.apiKey).setAppId(window.DRIVE.appId)
-        .setTitle("Choose from Google Drive")
-        .setCallback((d) => { if (d.action === P.Action.PICKED) ok(d.docs.map((x) => ({ id: x.id, name: x.name }))); else if (d.action === P.Action.CANCEL) ok([]); });
-      if (multi) b.enableFeature(P.Feature.MULTISELECT_ENABLED);
-      b.build().setVisible(true);
-    });
-  }
-  // A "Choose from Google Drive" button: picks, copies each file in, calls onCopied(kind, link).
-  function driveButton(kinds, multi, onCopied, say, label = "Choose from Google Drive") {
-    if (!window.DRIVE) return null;
-    const btn = el("button", { type: "button", class: "ghost small drive-btn" }, label);
-    btn.addEventListener("click", async () => {
-      try {
-        const docs = await pickFromDrive(kinds, multi);
-        btn.disabled = true;
-        for (const [i, d] of docs.entries()) {
-          say(`Copying ${docs.length > 1 ? `${i + 1} of ${docs.length}: ` : ""}${d.name} from Google Drive…`);
-          const r = await fromDrive("", kinds.length === 1 ? kinds[0] : undefined, { file_id: d.id, token: driveToken, name: d.name });
-          onCopied(r.kind, r[r.kind]);
-        }
-        if (docs.length) say("");
-      } catch (e) { say(e.message); }
-      finally { btn.disabled = false; }
-    });
-    return btn;
+  // Questions timed on the video move with the edit: keep = the parts kept of the old video.
+  function moveTimes(keep) {
+    let moved = 0;
+    for (const s of D.slides) {
+      if (s.type !== "question" || typeof s.at !== "number") continue;
+      let off = 0, t = null;
+      for (const [a, b] of keep) {
+        if (s.at < a) { t = off; break; }               // in a removed part: ask it where the video picks up
+        if (s.at < b) { t = off + (s.at - a); break; }
+        off += b - a;
+      }
+      if (t == null) t = off;
+      t = Math.round(t);
+      if (t !== s.at) { s.at = t; moved++; }
+    }
+    return moved;
   }
 
   function thumb(index, kind, label, sub) {
@@ -264,6 +230,7 @@
         el("label", { class: "upload" }, file, el("span", { class: "btn blue small" }, D.video ? "Replace video" : "Upload a video")),
         driveButton(["video"], false, (k, v) => { D.video = v; touch(); draw(); saveNote.textContent = "Video copied from Google Drive. Save the lesson to keep it."; },
           (m) => { note.hidden = !m; note.textContent = m; }, "From Google Drive"),
+        libraryButton(["video"], false, ([p]) => { D.video = p.link; touch(); draw(); saveNote.textContent = "Video chosen from the media library. Save the lesson to keep it."; }, "From library"),
         el("button", { type: "button", class: "btn small", onclick: () => openVideoEditor(draw) },
           D.video && D.video.startsWith("/media/") ? "✂ Edit video" : "🎬 Make a video"),
         D.video ? el("button", { type: "button", class: "ghost small danger", onclick: () => { D.video = ""; touch(); draw(); } }, "Remove") : null));
@@ -314,241 +281,6 @@
     return box;
   }
 
-  // ---- Video editor -------------------------------------------------------------
-  // Trim, cut out parts, add more clips or pictures (from the device or Google Drive),
-  // mute, turn. The server makes the new MP4 with ffmpeg (free and open source); the
-  // clips themselves aren't changed.
-  const clock = (t) => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s < 10 ? "0" : ""}${s.toFixed(1)}`; };
-  function keepPieces(c) {          // same rule as the server (trainer/video.py keep_pieces)
-    const dur = c.duration || 0, start = Math.min(c.start || 0, dur), end = c.end == null ? dur : Math.max(start, Math.min(c.end, dur));
-    let pieces = [[start, end]];
-    for (const [a, b] of [...c.cuts].sort((x, y) => x[0] - y[0])) {
-      if (b <= a) continue;
-      pieces = pieces.flatMap(([p, q]) => (b <= p || a >= q) ? [[p, q]] : [...(a > p ? [[p, a]] : []), ...(b < q ? [[b, q]] : [])]);
-    }
-    return pieces.filter(([p, q]) => q - p >= 0.05);
-  }
-  function openVideoEditor(redrawField) {
-    const clips = D.video && D.video.startsWith("/media/") ? [{ video: D.video, start: 0, end: null, cuts: [], duration: 0 }] : [];
-    let active = 0, cutFrom = null, busy = false;
-    const opts = { mute: false, turn: 0, extras: new Set(["clean", "level"]) };
-    const player = el("video", { class: "vedit-player", controls: true, playsinline: true, preload: "metadata" });
-    const still = el("img", { class: "vedit-player vedit-still", alt: "", hidden: true });
-    const list = el("div", { class: "vedit-clips" });
-    const total = el("span", { class: "vedit-total" });
-    const status = el("p", { class: "muted vedit-status", role: "status", "aria-live": "polite" });
-    const makeBtn = el("button", { type: "button", class: "btn" }, "Make the video");
-    const close = () => { if (!busy) { player.pause(); back.remove(); document.removeEventListener("keydown", onKey); } };
-    const onKey = (e) => { if (e.key === "Escape") close(); };
-
-    function load(i) {
-      active = i; cutFrom = null;
-      const c = clips[i];
-      player.hidden = !c || !!c.still; still.hidden = !c || !c.still;
-      if (!c) { player.pause(); drawClips(); return; }
-      if (c.still) { player.pause(); still.src = c.video; drawClips(); return; }
-      if (player.getAttribute("src") !== c.video) player.src = c.video;
-      if (!c.duration && !c.asked) {   // the server reads the length too, in case this browser can't
-        c.asked = true;
-        fetch("/api/manage/video/info?v=" + encodeURIComponent(c.video)).then((r) => r.json()).then((r) => {
-          if (r.duration && !c.duration) { c.duration = r.duration; drawClips(); }
-        }).catch(() => {});
-      }
-      drawClips();
-    }
-    player.addEventListener("error", () => {
-      status.textContent = "This browser can't show this video, so you can't pick times here. Safari and Chrome play MP4 best.";
-    });
-    player.addEventListener("loadedmetadata", () => {
-      const c = clips[active];
-      if (!c || c.still) return;
-      if (!c.duration) { c.duration = player.duration || 0; drawClips(); }
-    });
-    player.addEventListener("timeupdate", () => {
-      if (!clips[active] || clips[active].still) return;
-      const c = clips[active], head = list.querySelector(`[data-clip="${active}"] .vedit-head`);
-      if (head && c.duration) head.style.left = (100 * player.currentTime / c.duration) + "%";
-      // Previewing: skip over the parts that will be cut.
-      if (!player.paused && c.duration) {
-        const t = player.currentTime, keep = keepPieces(c);
-        if (keep.length && !keep.some(([a, b]) => t >= a - 0.05 && t < b)) {
-          const next = keep.find(([a]) => a > t);
-          if (next) player.currentTime = next[0]; else player.pause();
-        }
-      }
-    });
-    function bar(c, i) {
-      const b = el("div", { class: "vedit-bar", title: "Tap to jump there" });
-      if (c.duration) {
-        for (const [a, q] of keepPieces(c)) b.append(el("span", { class: "keep", style: `left:${100 * a / c.duration}%;width:${100 * (q - a) / c.duration}%` }));
-        if (i === active) b.append(el("span", { class: "vedit-head" }));
-      }
-      b.addEventListener("click", (e) => {
-        if (i !== active) { load(i); return; }
-        if (c.still) return;
-        const r = b.getBoundingClientRect();
-        if (c.duration) player.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * c.duration;
-      });
-      return b;
-    }
-    function drawClips() {
-      makeBtn.disabled = busy || !clips.length;
-      if (!clips.length) list.replaceChildren(el("p", { class: "muted" }, "Add a video or a picture below to start."));
-      else list.replaceChildren(...clips.map((c, i) => {
-        const here = () => (i === active ? player.currentTime : 0);
-        const secs = el("input", { type: "number", min: "0.5", max: "120", step: "0.5", value: c.seconds, class: "short", "aria-label": "Seconds to show the picture" });
-        secs.addEventListener("change", () => { c.seconds = c.duration = Math.min(120, Math.max(0.5, +secs.value || 5)); setTimeout(drawClips); });
-        const tools = c.still ? el("label", { class: "row vedit-tools" }, "Show this picture for ", secs, " seconds")
-          : i === active ? el("div", { class: "row vedit-tools" },
-          el("button", { type: "button", class: "ghost small", onclick: () => { c.start = here(); if (c.end != null && c.end < c.start) c.end = null; drawClips(); } }, "⇤ Start here"),
-          el("button", { type: "button", class: "ghost small", onclick: () => { c.end = Math.max(here(), c.start || 0); drawClips(); } }, "End here ⇥"),
-          cutFrom == null
-            ? el("button", { type: "button", class: "ghost small", onclick: () => { cutFrom = here(); drawClips(); } }, "✂ Cut from here…")
-            : el("button", { type: "button", class: "small", onclick: () => { const a = Math.min(cutFrom, here()), b = Math.max(cutFrom, here()); if (b - a >= 0.1) c.cuts.push([a, b]); cutFrom = null; drawClips(); } }, `…to here (from ${clock(cutFrom)})`),
-          cutFrom != null ? el("button", { type: "button", class: "ghost small", onclick: () => { cutFrom = null; drawClips(); } }, "Never mind") : null)
-          : el("button", { type: "button", class: "ghost small", onclick: () => load(i) }, "Edit this clip");
-        const cuts = c.cuts.length ? el("div", { class: "vedit-cuts" }, ...c.cuts.map(([a, b], k) => el("span", { class: "pill" }, `Cut ${clock(a)}–${clock(b)} `,
-          el("button", { type: "button", class: "x", "aria-label": "Put this part back", onclick: () => { c.cuts.splice(k, 1); drawClips(); } }, "✕")))) : null;
-        const kept = keepPieces(c).reduce((n, [a, b]) => n + b - a, 0);
-        return el("div", { class: "vedit-clip" + (i === active ? " on" : ""), "data-clip": i },
-          el("div", { class: "row" },
-            el("b", {}, c.still ? `Picture${clips.length > 1 ? ` (clip ${i + 1})` : ""}` : clips.length > 1 ? `Clip ${i + 1}` : "Your video"),
-            el("span", { class: "muted" }, c.still ? `${clock(c.seconds)} long` : c.duration ? `Keeps ${clock(c.start || 0)} to ${clock(c.end == null ? c.duration : c.end)} · ${clock(kept)} long` : "Loading…"),
-            el("span", { class: "grow" }),
-            i > 0 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move clip earlier", onclick: () => { clips.splice(i - 1, 0, clips.splice(i, 1)[0]); load(i - 1); } }, "↑") : null,
-            i < clips.length - 1 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move clip later", onclick: () => { clips.splice(i + 1, 0, clips.splice(i, 1)[0]); load(i + 1); } }, "↓") : null,
-            clips.length > 1 || !(D.video || "").startsWith("/media/") ? el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove clip", onclick: () => { clips.splice(i, 1); load(Math.max(0, Math.min(active, clips.length - 1))); } }, "✕") : null),
-          bar(c, i), tools, cuts);
-      }));
-      const all = clips.reduce((n, c) => n + keepPieces(c).reduce((m, [a, b]) => m + b - a, 0), 0);
-      total.textContent = clips.length && clips.every((c) => c.duration) ? `New video: ${clock(all)} long` : "";
-    }
-
-    // Another clip or picture at the end: tap to choose or drag one onto the box (app rule),
-    // or paste a Google Drive link.
-    const pick = el("input", { type: "file", accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*,image/jpeg,image/png,image/webp,image/gif" });
-    const addBox = el("label", { class: "pic-drop upload vedit-add" }, pick, el("span", {}, "+ Add a video or picture at the end"),
-      el("span", { class: "help" }, "Tap to choose one, or drag it here. A picture shows for 5 seconds; you can change that."));
-    pick.addEventListener("change", () => { if (pick.files[0]) addClip(pick.files[0]); pick.value = ""; });
-    dropZone(addBox, ["video", "image"], (f) => addClip(f), () => { status.textContent = "That isn't a video or picture. MP4 or JPG works best."; });
-    const pushClip = (kind, link) => {
-      clips.push(kind === "image" ? { video: link, still: true, seconds: 5, duration: 5, start: 0, end: null, cuts: [] }
-        : { video: link, start: 0, end: null, cuts: [], duration: 0 });
-      status.textContent = ""; load(clips.length - 1);
-    };
-    const driveLink = el("input", { placeholder: "Paste a Google Drive link to a video or picture", "aria-label": "Google Drive link" });
-    const driveBtn = el("button", { type: "button", class: "ghost small" }, "Add from Google Drive");
-    driveBtn.addEventListener("click", async () => {
-      if (!driveLink.value.trim()) { driveLink.focus(); return; }
-      driveBtn.disabled = true; status.textContent = "Copying from Google Drive… a big video can take a few minutes.";
-      try { const r = await fromDrive(driveLink.value); pushClip(r.kind, r[r.kind]); driveLink.value = ""; }
-      catch (e) { status.textContent = e.message; }
-      finally { driveBtn.disabled = false; }
-    });
-    const pickBtn = driveButton(["video", "image"], true, (k, v) => pushClip(k, v), (m) => { status.textContent = m; });
-    if (pickBtn) { pickBtn.className = "btn blue small drive-btn"; driveBtn.textContent = "Add link"; driveLink.placeholder = "or paste a Google Drive link"; }
-    const driveRow = el("div", { class: "vedit-drive-wrap" }, pickBtn, el("div", { class: "row vedit-drive" }, driveLink, driveBtn));
-    function addClip(f) {
-      if (f.type.startsWith("image/")) {
-        const form = new FormData();
-        form.append("image_file", f);
-        form.append("lesson", D.id || D.title || "lesson");
-        status.textContent = `Uploading ${f.name}…`;
-        fetch("/api/manage/image", { method: "POST", body: form }).then(async (res) => {
-          const r = await res.json().catch(() => ({}));
-          if (!res.ok || !r.image) throw new Error(r.error || r.detail || "That picture couldn't be added.");
-          pushClip("image", r.image);
-        }).catch((e) => { status.textContent = e.message === "Failed to fetch" ? "The upload didn't go through. Check the connection and try again." : e.message; });
-        return;
-      }
-      const form = new FormData();
-      form.append("video_file", f);
-      form.append("lesson", D.id || D.title || "lesson");
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", "/api/manage/video");
-      xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) status.textContent = `Uploading ${f.name}: ${Math.round(100 * ev.loaded / ev.total)}%`; };
-      xhr.onload = () => {
-        let r = {}; try { r = JSON.parse(xhr.responseText); } catch (e) { /* below */ }
-        if (xhr.status === 200 && r.video) pushClip("video", r.video);
-        else status.textContent = r.error || r.detail || "The upload didn't work. Try again.";
-      };
-      xhr.onerror = () => { status.textContent = "The upload didn't go through. Check the connection and try again."; };
-      xhr.send(form);
-    }
-
-    const mute = el("input", { type: "checkbox" });
-    // Touch-ups (free ffmpeg filters on the server): sound ones are off when there's no sound.
-    const touchUps = [["clean", "Clean up the sound", "Less background noise, hum and hiss", true],
-      ["level", "Even out the volume", "Quiet and loud parts end up the same loudness", true],
-      ["fade", "Fade in and out", "A gentle start and finish"],
-      ["bright", "Brighter, sharper picture", "Helps dim factory lighting"],
-      ["steady", "Steady a shaky video", "For phone videos filmed by hand; takes longer"]].map(([key, label, help, sound]) => {
-      const box = el("input", { type: "checkbox", checked: opts.extras.has(key) ? true : null });
-      box.addEventListener("change", () => { if (box.checked) opts.extras.add(key); else opts.extras.delete(key); });
-      return { sound, box, row: el("label", { class: "check" }, box, el("span", {}, el("b", {}, label), el("br"), el("span", { class: "muted small" }, help))) };
-    });
-    const syncSound = () => touchUps.forEach((t) => { if (t.sound) { t.box.disabled = opts.mute; t.row.classList.toggle("off", opts.mute); } });
-    mute.addEventListener("change", () => { opts.mute = mute.checked; syncSound(); });
-    const turn = el("select", { "aria-label": "Turn the video" },
-      ...[[0, "Don't turn"], [90, "Turn right"], [180, "Upside down"], [270, "Turn left"]].map(([v, t]) => el("option", { value: v }, t)));
-    turn.addEventListener("change", () => { opts.turn = +turn.value; });
-
-    // Questions timed on the video move with the edit (only the first clip is the old video).
-    function moveTimes() {
-      const c = clips[0];
-      if (!c || c.video !== D.video) return 0;
-      const keep = keepPieces(c);
-      let moved = 0;
-      for (const s of D.slides) {
-        if (s.type !== "question" || typeof s.at !== "number") continue;
-        let off = 0, t = null;
-        for (const [a, b] of keep) {
-          if (s.at < a) { t = off; break; }               // in a removed part: ask it where the video picks up
-          if (s.at < b) { t = off + (s.at - a); break; }
-          off += b - a;
-        }
-        if (t == null) t = off;
-        t = Math.round(t);
-        if (t !== s.at) { s.at = t; moved++; }
-      }
-      return moved;
-    }
-    makeBtn.addEventListener("click", async () => {
-      if (busy || !clips.length || !clips.every((c) => c.duration)) return;
-      busy = true; makeBtn.disabled = true; player.pause();
-      status.textContent = "Making the video… this can take a minute or two for a long video. Keep this open.";
-      try {
-        const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lesson: D.id || D.title || "lesson", mute: opts.mute, turn: opts.turn, extras: [...opts.extras],
-            clips: clips.map((c) => ({ video: c.video, start: c.start || 0, end: c.end, cuts: c.cuts, ...(c.still ? { seconds: c.seconds } : {}) })) }) });
-        const r = await res.json().catch(() => ({}));
-        if (!res.ok || !r.video) throw new Error(r.error || r.detail || "The video couldn't be made. Try again.");
-        const moved = moveTimes();
-        D.video = r.video; touch();
-        busy = false; close(); redrawField(); drawRail();
-        saveNote.textContent = `Edited video ready (${clock(r.duration)}).${moved ? ` ${moved} question time${moved === 1 ? "" : "s"} moved to match.` : ""} Save the lesson to keep it.`;
-      } catch (e) {
-        busy = false; makeBtn.disabled = false; status.textContent = e.message;
-      }
-    });
-
-    const back = el("div", { class: "vedit-back", role: "dialog", "aria-modal": "true", "aria-label": "Edit video" },
-      el("div", { class: "vedit card" },
-        el("div", { class: "row vedit-top" }, el("h2", {}, clips.length ? "Edit video" : "Make a video"), el("span", { class: "grow" }),
-          el("button", { type: "button", class: "ghost small", onclick: close }, "Close")),
-        player, still,
-        el("p", { class: "help" }, "Play the video and stop where you want, then tap a button. The gold bar is what stays; tap the bar to jump."),
-        list, addBox, driveRow,
-        el("div", { class: "row vedit-opts" }, el("label", { class: "check" }, mute, " No sound"), turn),
-        el("fieldset", { class: "vedit-touch" }, el("legend", {}, "Touch-ups"), ...touchUps.map((t) => t.row)),
-        el("div", { class: "row vedit-foot" }, total, el("span", { class: "grow" }),
-          el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), makeBtn),
-        status));
-    back.addEventListener("click", (e) => { if (e.target === back) close(); });
-    document.addEventListener("keydown", onKey);
-    document.body.append(back);
-    load(0);
-  }
 
   function readingSlide(index) {
     const s = D.slides[index - 1];
@@ -593,6 +325,8 @@
                                 onclick: () => { [s.images[i - 1], s.images[i]] = [s.images[i], s.images[i - 1]]; touch(); draw(); } }, "←") : null,
           n > 1 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move picture later", disabled: i === n - 1 ? true : null,
                                 onclick: () => { [s.images[i + 1], s.images[i]] = [s.images[i], s.images[i + 1]]; touch(); draw(); } }, "→") : null,
+          !String(src).startsWith("/media/") ? null : el("button", { type: "button", class: "ghost small", "aria-label": "Mark up this picture",
+                        onclick: () => openImageEditor({ src, onDone: (link) => { s.images[i] = link; touch(); draw(); drawRail(); } }) }, "✏️ Mark up"),
           el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove this picture",
                         onclick: () => { s.images.splice(i, 1); touch(); draw(); drawRail(); } }, "Remove"))));
       box.replaceChildren(...[
@@ -601,6 +335,7 @@
           n ? null : el("span", { class: "drop-ico", "aria-hidden": "true" }, "🖼️"),
           el("span", {}, el("b", {}, n ? "+ Add more pictures" : "Drag pictures here"), ...(n ? [" (drag them here or tap)"] : [el("br"), "or tap to choose. You can add several."])),
           n ? null : el("span", { class: "help" }, "JPG, PNG, WebP or GIF")),
+        libraryButton(["image"], true, (picked) => { s.images = [...s.images, ...picked.map((x) => x.link)]; touch(); draw(); drawRail(); }, "Choose pictures from the media library"),
         driveButton(["image"], true, (k, v) => { s.images = [...s.images, v]; touch(); }, (m) => { if (m) draw(m); else { draw(); drawRail(); } }, "Choose pictures from Google Drive"),
         drive,
         msg ? el("p", { class: "muted" }, msg) : null].filter(Boolean));

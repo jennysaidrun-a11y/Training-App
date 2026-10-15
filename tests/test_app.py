@@ -301,17 +301,19 @@ def test_video_upload_plays_and_replaces(client, env):
     part = client.get(video, headers={"Range": "bytes=0-99"})
     assert part.status_code == 206 and len(part.content) == 100  # seeking works
 
-    # Replacing the video removes the old file.
+    # Replacing the video keeps the old one in the media library (managers delete it there).
     time.sleep(1.1)
     new = client.post("/api/manage/video", data={"lesson": "allergens"}, files={"video_file": ("second.webm", b"webm" * 100, "video/webm")}).json()["video"]
     client.post("/api/manage/lesson/allergens", json=_deck(video=new))
     assert new != video and new.endswith(".webm")
-    assert client.get(video).status_code == 404
+    assert client.get(video).status_code == 200
+    lib = {x["link"]: x for x in client.get("/api/manage/media").json()["items"]}
+    assert lib[video]["label"] == "Floor clip" and lib[video]["used_by"] == [] and lib[new]["used_by"]
 
-    # Clearing the video removes it.
+    # Clearing the video keeps it too.
     client.post("/api/manage/lesson/allergens", json=_deck(video=""))
     assert content.load_lessons()["allergens"]["video"] == ""
-    assert client.get(new).status_code == 404
+    assert client.get(new).status_code == 200
 
 
 def test_unsaved_uploads_are_swept(client, env):
@@ -323,6 +325,12 @@ def test_unsaved_uploads_are_swept(client, env):
     fresh.write_bytes(b"x")
     client.post("/api/manage/lesson/allergens", json=_deck(video=""))
     assert not stale.exists() and fresh.exists()
+    kept = app_module.media_dir() / "kept-20200101000000.mp4"   # in the media library: never swept
+    kept.write_bytes(b"x")
+    os.utime(kept, (0, 0))
+    app_module._library_add("/media/" + kept.name, "Kept")
+    client.post("/api/manage/lesson/allergens", json=_deck(video=""))
+    assert kept.exists()
 
 
 def test_video_upload_rejects_non_videos(client):
@@ -1354,3 +1362,28 @@ def test_video_editor_touch_ups(client, env):
     assert leftovers == []
     cmd = " ".join(video.command(["x.mp4"], [(0, 0, 4)], [True], 0, "o.mp4", extras=("clean", "fade")))
     assert "afftdn" in cmd and "fade=t=out:st=3.4" in cmd and "loudnorm" not in cmd
+
+
+def test_media_studio_library(client, anon, env):
+    from trainer import app as app_module
+    assert "Media studio" in client.get("/manage/studio").text
+    pic = client.post("/api/manage/image", data={"lesson": "allergens", "label": "Mixer guard"},
+                      files={"image_file": ("IMG_1.jpg", b"\xff\xd8\xff\xe0" + b"j" * 100, "image/jpeg")}).json()["image"]
+    items = client.get("/api/manage/media").json()["items"]
+    assert [(x["link"], x["label"], x["kind"]) for x in items] == [(pic, "Mixer guard", "image")]
+    assert client.post("/api/manage/media/rename", json={"link": pic, "label": "  Guard on mixer 3 "}).json()["ok"]
+    assert client.get("/api/manage/media").json()["items"][0]["label"] == "Guard on mixer 3"
+    # Used in a lesson: can't delete. Not used: deleted for good.
+    deck = _deck()
+    deck["slides"][1]["images"] = [pic]
+    assert client.post("/api/manage/lesson/allergens", json=deck).status_code == 200
+    r = client.post("/api/manage/media/delete", json={"link": pic})
+    assert r.status_code == 400 and "Allergen" in r.json()["error"]
+    deck["slides"][1]["images"] = []
+    client.post("/api/manage/lesson/allergens", json=deck)
+    assert client.post("/api/manage/media/delete", json={"link": pic}).json()["ok"]
+    assert client.get(pic).status_code == 404 and client.get("/api/manage/media").json()["items"] == []
+    for bad in ["/media/../t.db", "https://x.example/a.jpg"]:
+        assert client.post("/api/manage/media/delete", json={"link": bad}).status_code == 400
+    assert client.get("/media/library.json").status_code == 404
+    assert anon.get("/api/manage/media", follow_redirects=False).status_code in (303, 401, 403)

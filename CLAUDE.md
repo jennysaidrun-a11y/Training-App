@@ -13,7 +13,11 @@ Cal/OSHA (8 CCR, Title 8) apply.
   `research.py` (web search/fetch + a strict `propose_lesson` tool; citations are then
   checked live with `rules.check_rule`). Uses the API when `ANTHROPIC_API_KEY` is set, else
   Claude Code (`claude -p`, the user's signed-in account; `update.sh` installs it). Tests stub both.
-- Video editor in the lesson editor ("✂ Edit video": trim, cut out parts, join clips, mute, turn): `trainer/video.py`
+- Media studio (Lessons > Media studio, `/manage/studio`, `static/studio.js`, shared by the lesson editor): media
+  library (`data/media/library.json`: every upload, Drive copy and edit is kept until a manager deletes it, never swept;
+  files used by a lesson can't be deleted; `/api/manage/media*`), picture editor (canvas: marker, highlighter,
+  arrow, box, circle, numbers, text, blur, crop, turn, undo; saves a new copy), video editor and Google Drive.
+- Video editor ("✂ Edit video": trim, cut out parts, join clips, mute, turn): `trainer/video.py`
   runs ffmpeg from the `imageio-ffmpeg` pip package (no other install) and makes a new 720p MP4; routes
   `/api/manage/video/edit` and `/api/manage/video/info`. Only files already in `data/media` can be edited.
   Pictures can be clips too (shown still for N seconds), so a video can be made from pictures alone.

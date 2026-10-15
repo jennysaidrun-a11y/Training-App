@@ -24,7 +24,7 @@
     {% set here = request.url.path %}
     <nav class="tabs" aria-label="Main">
       <a class="tab {{ 'on' if here == '/' or here.startswith('/me') or here.startswith('/signin') else '' }}" href="/">{{ icon("learn") }}<span>{{ t("learn") }}</span></a>
-      {% set on_lessons = here.startswith('/manage/topics') or here.startswith('/manage/requirements') or here.startswith('/manage/translations') or here.startswith('/manage/lesson') %}
+      {% set on_lessons = here.startswith('/manage/topics') or here.startswith('/manage/requirements') or here.startswith('/manage/translations') or here.startswith('/manage/lesson') or here.startswith('/manage/studio') %}
       {% if is_manager or here.startswith('/manage') %}
       <a class="tab {{ 'on' if on_lessons else '' }}" href="/manage/topics">{{ icon("rules") }}<span>{{ t("lessons") }}</span></a>
       <a class="tab {{ 'on' if here.startswith('/manage') and not on_lessons else '' }}" href="/manage">{{ icon("manage") }}<span>{{ t("manager") }}</span></a>
