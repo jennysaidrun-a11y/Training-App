@@ -83,7 +83,7 @@ def lesson_tool(role_ids):
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["type", "heading", "text", "images", "picture_search", "q", "choices", "answer", "why"],
+                        "required": ["type", "heading", "text", "images", "picture_search", "q", "choices", "answer", "why", "at"],
                         "properties": {
                             "type": {"type": "string", "enum": ["reading", "question"]},
                             "heading": {"type": "string", "description": "Reading slides only; '' for questions."},
@@ -97,6 +97,8 @@ def lesson_tool(role_ids):
                             "choices": {"type": "array", "items": {"type": "string"}, "description": "Question slides only; [] for readings."},
                             "answer": {"type": "integer", "description": "Index of the right choice; 0 for readings."},
                             "why": {"type": "string", "description": "Why the right answer is right; '' for readings."},
+                            "at": {"type": "integer", "description": "Question slides only: seconds into the lesson video to pause "
+                                   "and ask it; -1 to ask it after the reading slide before it (and for readings)."},
                         },
                     },
                 },
@@ -158,18 +160,21 @@ def _clean_slides(slides):
         elif s.get("type") == "question":
             choices = [c for c in s.get("choices", []) if c.strip()]
             answer = s.get("answer", 0)
+            at = s.get("at")
             out.append({"type": "question", "q": s.get("q", "").strip(), "choices": choices,
-                        "answer": answer if 0 <= answer < len(choices) else 0, "why": s.get("why", "").strip(), "at": None})
+                        "answer": answer if 0 <= answer < len(choices) else 0, "why": s.get("why", "").strip(),
+                        "at": int(at) if isinstance(at, (int, float)) and not isinstance(at, bool) and at >= 0 else None})
     return out
 
 
-def run(history, draft, client=None):
+def run(history, draft, client=None, images=None):
     """history: [{"role": "user"|"assistant", "text": ...}], newest last (a user turn).
     draft: the editor's current lesson (editor_payload shape) or None.
+    images: [(file name, path)] of photos for Claude to look at (Build from a project).
     Returns {"reply": str, "lesson": dict | None, "searched": [urls]}."""
     if client is None and mode() == "cli":
-        return run_cli(history, draft)
-    return run_api(history, draft, client)
+        return run_cli(history, draft, images=images)
+    return run_api(history, draft, client, images=images)
 
 
 def _with_draft(text, draft):
@@ -242,19 +247,19 @@ given schema: "reply" is your 1-3 sentence message to the manager; set "has_less
 lesson can be empty. Use WebSearch and WebFetch to look up the rules."""
 
 
-def run_cli(history, draft, command=None, runner=subprocess.run):
+def run_cli(history, draft, command=None, runner=subprocess.run, images=None):
     """The same research through Claude Code, signed in with the user's Claude account.
     A lesson with no readable citation goes back once with the reason."""
-    out = _run_cli_once(history, draft, command, runner)
+    out = _run_cli_once(history, draft, command, runner, images)
     if out["lesson"] and not out["lesson"]["citations"]:
         again = history[:-1] + [{"role": "user", "text": history[-1]["text"] + "\n\n<app_note>" + NO_CITATION + "</app_note>"}]
-        retry = _run_cli_once(again, out["lesson"], command, runner)
+        retry = _run_cli_once(again, out["lesson"], command, runner, images)
         if retry["lesson"]:
             out = retry
     return out
 
 
-def _run_cli_once(history, draft, command=None, runner=subprocess.run):
+def _run_cli_once(history, draft, command=None, runner=subprocess.run, images=None):
     system, role_ids = _system()
     lesson_schema = lesson_tool(role_ids)["input_schema"]
     schema = {
@@ -266,10 +271,14 @@ def _run_cli_once(history, draft, command=None, runner=subprocess.run):
     earlier = "".join(f"<{t['role']}>\n{t['text']}\n</{t['role']}>\n" for t in history[:-1])
     prompt = (f"<conversation_so_far>\n{earlier}</conversation_so_far>\n\n" if earlier else "") + \
         _with_draft(history[-1]["text"], draft)
+    # Photos to look at are copied into its otherwise empty working folder; it may only Read those.
+    tools = ["WebSearch", "WebFetch"] + (["Read"] if images else [])
     cmd = [command or claude_command(), "-p", "--output-format", "json", "--json-schema", json.dumps(schema),
-           "--system-prompt", system + CLI_NOTE, "--tools", "WebSearch,WebFetch",
-           "--allowedTools", "WebSearch", "WebFetch", "--model", CLI_MODEL, "--no-session-persistence"]
+           "--system-prompt", system + CLI_NOTE, "--tools", ",".join(tools),
+           "--allowedTools", *tools, "--model", CLI_MODEL, "--no-session-persistence"]
     with tempfile.TemporaryDirectory() as empty:   # no project files for it to read
+        for name, path in images or []:
+            shutil.copy(path, os.path.join(empty, name))
         try:
             r = runner(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=CLI_TIMEOUT, cwd=empty)
         except subprocess.TimeoutExpired:
@@ -294,7 +303,7 @@ def _run_cli_once(history, draft, command=None, runner=subprocess.run):
     return {"reply": reply, "lesson": lesson, "searched": []}
 
 
-def run_api(history, draft, client=None):
+def run_api(history, draft, client=None, images=None):
     """history: [{"role": "user"|"assistant", "text": ...}], newest last (a user turn).
     draft: the editor's current lesson (editor_payload shape) or None.
     Returns {"reply": str, "lesson": dict | None, "searched": [urls]}."""
@@ -306,7 +315,17 @@ def run_api(history, draft, client=None):
     messages = []
     for turn in history[:-1]:
         messages.append({"role": turn["role"], "content": turn["text"] or "…"})
-    messages.append({"role": "user", "content": _with_draft(history[-1]["text"], draft)})
+    last = _with_draft(history[-1]["text"], draft)
+    if images:
+        import base64
+        blocks = []
+        for name, path in images:
+            with open(path, "rb") as f:
+                data = base64.b64encode(f.read()).decode()
+            blocks += [{"type": "text", "text": f"Photo {name}:"},
+                       {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}}]
+        last = blocks + [{"type": "text", "text": last}]
+    messages.append({"role": "user", "content": last})
 
     tools = [
         {"type": "web_search_20260209", "name": "web_search", "max_uses": 6},

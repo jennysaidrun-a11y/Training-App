@@ -32,6 +32,10 @@
       <button type="button" class="ghost small close-sheet" id="ask-close" aria-label="Close">{{ icon("x") }}</button>
     </div>
     {% if research_ready %}
+    <div class="assist-project">
+      <button type="button" class="small" id="project-open">📦 Build from a project</button>
+      <span class="muted">Your videos and photos, your template: Claude makes the whole lesson. {{ info("Add the training videos and photos. The app writes down what's said in the videos, then Claude builds every slide following your template, puts your photos on the right slides, adds questions that pause the video at the right moments, and checks the rules. You preview it before it goes in.") }}</span>
+    </div>
     <div class="assist-link">
       <span class="lbl">Start from an existing training</span>
       <div class="row">

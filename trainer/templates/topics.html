@@ -5,7 +5,8 @@
 {% set needs = [] %}{% for lid, f in flagged.items() if f %}{% set _ = needs.append(lid) %}{% endfor %}
 {% include "_manager_nav.html" %}
 <div class="page-head"><h1>Lessons</h1>
-  <a class="btn" href="/manage/lesson/new">{{ icon("plus") }} New lesson</a></div>
+  <div class="actions"><a class="btn ghost" href="/manage/lesson/new?project=1">📦 Build from a project</a>
+  <a class="btn" href="/manage/lesson/new">{{ icon("plus") }} New lesson</a></div></div>
 {% if request.query_params.get('saved') %}<p class="note">Saved. Everyone sees the new version now.</p>{% endif %}
 {% if request.query_params.get('trashed') %}<p class="note">Lesson moved to the trash. You can put it back from Trash below.</p>{% endif %}
 {% if request.query_params.get('checking') %}<p class="note">Checking the rules now. Refresh in a minute to see the results.</p>{% endif %}

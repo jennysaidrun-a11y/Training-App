@@ -609,9 +609,9 @@
       const pics = lesson.slides.reduce((n, s) => n + (s.images || []).length, 0);
       const use = el("button", { type: "button", class: "small" }, "Use this draft");
       use.addEventListener("click", () => {
-        if (hasContent() && !confirm("Replace the slides in the editor with Claude's draft? (The video stays.)")) return;
+        if (hasContent() && !confirm(lesson.video ? "Replace the slides and the video in the editor with Claude's draft?" : "Replace the slides in the editor with Claude's draft? (The video stays.)")) return;
         Object.assign(D, { title: lesson.title, summary: lesson.summary, roles: lesson.roles, slides: JSON.parse(JSON.stringify(lesson.slides)),
-          citations: [...lesson.citations], sources: lesson.sources.map((s) => ({ ...s })) });
+          citations: [...lesson.citations], sources: lesson.sources.map((s) => ({ ...s })), ...(lesson.video ? { video: lesson.video } : {}) });
         slideErrors = {};
         errorsBox.hidden = true;
         touch();
@@ -760,6 +760,146 @@
       busy = false;
       send.disabled = linkGo.disabled = false;
     }
+
+    // ---- Build from a project: videos + photos + a template (+ transcript) -> whole lesson ----
+    // The server joins the videos, writes the transcript from their sound, and Claude builds
+    // the slides; the result lands in this panel as a draft to preview and use.
+    const { dropZone: drop, upload, libraryButton: libBtn, driveButton: drvBtn } = window.Studio;
+    function openProject() {
+      const files = [];          // {kind: "video"|"image", link, label}
+      let templates = [], canTranscribe = false, building = false;
+      const list = el("div", { class: "proj-files" });
+      const status = el("p", { class: "muted vedit-status", role: "status", "aria-live": "polite" });
+      const say = (m) => { status.textContent = m || ""; };
+      const pick = el("input", { type: "file", multiple: true, accept: "video/mp4,video/quicktime,video/webm,video/x-m4v,video/*,image/jpeg,image/png,image/webp,image/gif" });
+      const dropBox = el("label", { class: "pic-drop upload studio-drop" }, pick,
+        el("span", {}, el("b", {}, "Drop the project's videos and photos here"), " or tap to choose"));
+      const add = (kind, link, label) => { files.push({ kind, link, label: label || link.split("/").pop() }); drawFiles(); };
+      async function addFiles(fs) {
+        for (const [i, f] of [...fs].entries()) {
+          try { const r = await upload(f, (p) => say(`Uploading ${fs.length > 1 ? `${i + 1} of ${fs.length}: ` : ""}${f.name}: ${p}%`), f.name.replace(/\.[^.]+$/, "")); add(r.kind, r.link, f.name.replace(/\.[^.]+$/, "")); }
+          catch (e) { say(`${f.name}: ${e.message}`); return; }
+        }
+        say("");
+      }
+      pick.addEventListener("change", () => { if (pick.files.length) addFiles([...pick.files]); pick.value = ""; });
+      drop(dropBox, ["video", "image"], addFiles, () => say("Only videos and photos go in a project."));
+      function drawFiles() {
+        const vids = files.filter((f) => f.kind === "video");
+        if (!files.length) { list.replaceChildren(el("p", { class: "muted small" }, "Nothing added yet.")); return; }
+        list.replaceChildren(...files.map((f, i) => el("div", { class: "proj-file" },
+          f.kind === "video" ? el("video", { src: f.link + "#t=0.5", preload: "metadata", muted: true, playsinline: true }) : el("img", { src: f.link, alt: "" }),
+          el("span", { class: "grow" }, el("b", {}, f.label), el("br"), el("span", { class: "muted small" },
+            f.kind === "video" ? (vids.length > 1 ? `Video ${vids.indexOf(f) + 1} of ${vids.length} (played in this order)` : "Video") : "Photo")),
+          i > 0 ? el("button", { type: "button", class: "ghost small", "aria-label": "Move up", onclick: () => { files.splice(i - 1, 0, files.splice(i, 1)[0]); drawFiles(); } }, "↑") : null,
+          el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove", onclick: () => { files.splice(i, 1); drawFiles(); } }, "✕"))));
+      }
+      // Template: pick one, read it, change it, or save a new one.
+      const tSelect = el("select", { "aria-label": "Template" });
+      const tName = el("input", { "aria-label": "Template name", maxlength: "80" });
+      const tOutline = el("textarea", { rows: "7", "aria-label": "How the slides go", class: "proj-outline" });
+      const tSave = el("button", { type: "button", class: "ghost small" }, "Save changes");
+      const tNew = el("button", { type: "button", class: "ghost small" }, "Save as a new template");
+      const tDel = el("button", { type: "button", class: "ghost small danger" }, "Delete");
+      const current = () => templates.find((t) => t.id === tSelect.value);
+      function fillTemplates(sel) {
+        tSelect.replaceChildren(...templates.map((t) => el("option", { value: t.id }, t.name)));
+        tSelect.value = sel && templates.some((t) => t.id === sel) ? sel : templates[0]?.id;
+        const t = current(); tName.value = t?.name || ""; tOutline.value = t?.outline || "";
+        tDel.disabled = templates.length < 2;
+      }
+      tSelect.addEventListener("change", () => fillTemplates(tSelect.value));
+      async function saveTemplate(asNew) {
+        try {
+          const res = await fetch("/api/manage/templates", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: asNew ? "" : tSelect.value, name: tName.value, outline: tOutline.value }) });
+          const r = await res.json();
+          if (!res.ok) throw new Error(r.error || "The template couldn't be saved.");
+          templates = r.templates; fillTemplates(r.id); say(asNew ? "New template saved." : "Template saved.");
+        } catch (e) { say(e.message); }
+      }
+      tSave.addEventListener("click", () => saveTemplate(false));
+      tNew.addEventListener("click", () => { if (tName.value === current()?.name) tName.value += " (copy)"; saveTemplate(true); });
+      tDel.addEventListener("click", async () => {
+        if (!confirm(`Delete the template "${current()?.name}"?`)) return;
+        const res = await fetch("/api/manage/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ delete: tSelect.value }) });
+        const r = await res.json(); if (res.ok) { templates = r.templates; fillTemplates(); } else say(r.error);
+      });
+      const autoNote = el("p", { class: "muted small" });
+      const transcript = el("textarea", { rows: "3", placeholder: "Optional: paste a transcript or script instead", "aria-label": "Transcript" });
+      const notes = el("textarea", { rows: "2", placeholder: "Optional: anything Claude should know (who it's for, what to stress)", "aria-label": "Notes for Claude" });
+      const buildBtn = el("button", { type: "button", class: "btn" }, "Build the lesson");
+      const steps = el("div", { class: "proj-steps", hidden: true });
+      const closeBtn = el("button", { type: "button", class: "ghost small" }, "Close");
+      const back = window.Studio.modal("Build a lesson from a project",
+        el("div", { class: "row vedit-top" }, el("h2", {}, "Build from a project"), el("span", { class: "grow" }), closeBtn),
+        el("h3", {}, "1. Videos and photos"),
+        dropBox,
+        el("div", { class: "row" }, drvBtn(["video", "image"], true, (k, v) => add(k, v), (m) => say(m || "")) || "",
+          libBtn(["video", "image"], true, (picked) => picked.forEach((p) => add(p.kind, p.link)), "From the media library")),
+        list,
+        el("h3", {}, "2. Template"),
+        el("div", { class: "row" }, tSelect),
+        el("details", { class: "proj-tpl" }, el("summary", {}, "See or change this template"),
+          el("label", {}, "Name", tName), el("label", {}, "How the slides go", tOutline),
+          el("div", { class: "row" }, tSave, tNew, el("span", { class: "grow" }), tDel)),
+        el("h3", {}, "3. Transcript"),
+        autoNote, transcript,
+        notes,
+        el("div", { class: "row vedit-foot" }, el("span", { class: "grow" }), buildBtn),
+        steps, status);
+      const close = () => { if (!building) back.remove(); };
+      closeBtn.addEventListener("click", close);
+      back.addEventListener("click", (e) => { if (e.target === back) close(); });
+      document.body.append(back);
+      drawFiles();
+      fetch("/api/manage/templates").then((r) => r.json()).then((r) => {
+        templates = r.templates; canTranscribe = r.can_transcribe; fillTemplates();
+        autoNote.textContent = canTranscribe ? "The app writes down what's said in the videos by itself." : "Automatic transcripts aren't set up on this copy yet; paste one below if you have it.";
+      });
+
+      buildBtn.addEventListener("click", async () => {
+        if (building) return;
+        if (!files.length && !transcript.value.trim()) { say("Add the project's videos and photos first."); return; }
+        if (hasContent() && !confirm("Claude's lesson comes back as a draft in the Claude panel. Nothing in the editor changes until you choose \"Use this draft\". Build it?")) return;
+        building = true; buildBtn.disabled = closeBtn.disabled = true; steps.hidden = false;
+        steps.replaceChildren(el("span", { class: "dots" }, el("i"), el("i"), el("i")), el("span", {}, " Starting…"));
+        say("Keep this page open. Building a lesson takes a few minutes.");
+        let r;
+        try {
+          const res = await fetch("/api/manage/project", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lesson: D.id || D.title || "lesson", template: tSelect.value, transcript: transcript.value, notes: notes.value,
+              videos: files.filter((f) => f.kind === "video").map((f) => f.link),
+              photos: files.filter((f) => f.kind === "image").map((f) => ({ link: f.link, label: f.label })) }) });
+          const start = await res.json();
+          if (!res.ok) throw new Error(start.error === "setup" ? "Claude isn't connected to this copy of the app yet." : start.error || "The build couldn't start.");
+          for (;;) {
+            await new Promise((ok) => setTimeout(ok, 3000));
+            const pr = await fetch("/api/manage/project/" + start.job);
+            r = await pr.json();
+            if (!pr.ok) throw new Error(r.error || "The build stopped.");
+            steps.lastChild.textContent = " " + (r.step || "Working…");
+            if (r.state !== "running") break;
+          }
+          if (r.state === "failed") throw new Error(r.error === "signin" ? "Claude isn't signed in on this copy. See the Claude panel for the steps." : r.error);
+        } catch (e) {
+          building = false; buildBtn.disabled = closeBtn.disabled = false; steps.hidden = true; say(e.message); return;
+        }
+        building = false; back.remove();
+        const res = r.result;
+        history.push({ role: "user", text: "Build a lesson from my project (videos, photos and template)." });
+        history.push({ role: "assistant", text: res.reply || "" });
+        bubble("user", `📦 Build from a project: ${files.length} file${files.length === 1 ? "" : "s"}, template "${current()?.name || ""}"`);
+        const kids = [];
+        for (const para of (res.reply || "").split(/\n\s*\n/)) if (para.trim()) kids.push(el("p", {}, para.trim()));
+        if (res.lesson) kids.push(draftCard(res.lesson, res.checks));
+        if (res.transcript) kids.push(el("details", { class: "read-list" }, el("summary", {}, "Transcript"), el("pre", { class: "proj-transcript" }, res.transcript)));
+        bubble("claude", ...kids);
+        if (window.matchMedia("(max-width: 1100px)").matches) openSheet();
+      });
+    }
+    document.getElementById("project-open")?.addEventListener("click", openProject);
+    if (new URLSearchParams(location.search).get("project")) openProject();
   }
 
   show(D.slides.length ? 1 : 0);

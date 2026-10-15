@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, content, db, editor, extract, i18n, research, rules, video
+from . import auth, content, db, editor, extract, i18n, project, research, rules, video
 
 HERE = content.ROOT / "trainer"
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -1517,18 +1517,24 @@ async def research_chat(request: Request):
     except Exception as e:  # shown in the panel; the manager can try again
         print(f"Research failed: {e.__class__.__name__}: {e}")
         return JSONResponse({"error": f"Claude couldn't finish that ({e.__class__.__name__}). Try again in a minute."}, status_code=502)
+    return await run_in_threadpool(_settle_draft, result)
+
+
+def _settle_draft(result):
+    """Claude's draft before the manager sees it: every citation checked at eCFR / DIR (wrong
+    ones taken out), pictures license-checked, missing pictures found on Wikimedia Commons."""
     if result.get("lesson"):
         lesson, notes = result["lesson"], []
-        result["checks"] = await run_in_threadpool(_verify, lesson["citations"])
+        result["checks"] = _verify(lesson["citations"])
         wrong = [c["ref"] for c in result["checks"] if c["found"] is False]
         if wrong:          # the source says there's no such section: keep it out of the lesson
             lesson["citations"] = [c for c in lesson["citations"] if content.parse_citation(c)["ref"] not in wrong]
             notes.append(f"Took out {', '.join(wrong)}: {'it is' if len(wrong) == 1 else 'they are'} not at eCFR / DIR.")
         if not lesson["citations"]:
             notes.append("This draft has no confirmed rule citation yet. Ask Claude to find the rule before saving.")
-        if await run_in_threadpool(_settle_pictures, lesson):
+        if _settle_pictures(lesson):
             notes.append("A picture Claude picked couldn't be checked as free to use, so it's left off.")
-        found = await run_in_threadpool(_find_pictures, lesson)
+        found = _find_pictures(lesson)
         if found:
             notes.append(f"Added {found} matching photo{'' if found == 1 else 's'} from Wikimedia Commons (credited in sources).")
         for sl in lesson.get("slides", []):
@@ -1536,6 +1542,59 @@ async def research_chat(request: Request):
         if notes:
             result["reply"] = ((result.get("reply") or "") + "\n\n" + " ".join(f"({n})" for n in notes)).strip()
     return result
+
+
+# ---- Build a lesson from a project (videos + photos + template + transcript) ----------------
+
+@app.get("/api/manage/templates")
+def list_templates():
+    return {"templates": project.load_templates(), "can_transcribe": project.can_transcribe()}
+
+
+@app.post("/api/manage/templates")
+async def change_template(request: Request):
+    body = await request.json()
+    try:
+        if body.get("delete"):
+            await run_in_threadpool(project.delete_template, str(body["delete"]))
+            return {"templates": project.load_templates()}
+        tid = await run_in_threadpool(project.save_template, body.get("name"), body.get("outline"), str(body.get("id") or ""))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return {"id": tid, "templates": project.load_templates()}
+
+
+@app.post("/api/manage/project")
+async def build_project(request: Request):
+    """Starts building a lesson from the manager's videos and photos; poll /api/manage/project/<job>."""
+    if not research.available():
+        return JSONResponse({"error": "setup"}, status_code=503)
+    body = await request.json()
+    videos = [_media_file(v) for v in (body.get("videos") or [])[:project.MAX_VIDEOS + 1]]
+    photos = [(p.get("link"), _media_file(p.get("link"), IMAGE_TYPES), str(p.get("label") or "")[:120])
+              for p in (body.get("photos") or [])[:project.MAX_PHOTOS + 1] if isinstance(p, dict)]
+    if not all(videos) or not all(p[1] for p in photos):
+        return JSONResponse({"error": "Only videos and photos uploaded to the app can be used."}, status_code=400)
+    if len(videos) > project.MAX_VIDEOS or len(photos) > project.MAX_PHOTOS:
+        return JSONResponse({"error": f"Use at most {project.MAX_VIDEOS} videos and {project.MAX_PHOTOS} photos."}, status_code=400)
+    if not videos and not photos and not str(body.get("transcript") or "").strip():
+        return JSONResponse({"error": "Add at least one video or photo, or paste a transcript."}, status_code=400)
+    template = next((t for t in project.load_templates() if t["id"] == body.get("template")), None)
+    if not template:
+        return JSONResponse({"error": "Pick a template."}, status_code=400)
+    job = project.start({"videos": videos, "photos": photos, "template": template, "lesson": str(body.get("lesson") or "lesson"),
+                         "transcript": str(body.get("transcript") or "")[:project.MAX_TRANSCRIPT],
+                         "notes": str(body.get("notes") or "")}, media_dir(), _settle_draft)
+    return {"job": job}
+
+
+@app.get("/api/manage/project/{job_id}")
+def project_status(job_id: str):
+    j = project.job(job_id)
+    if not j:
+        return JSONResponse({"error": "That build isn't running any more. Start it again."}, status_code=404)
+    j.pop("started", None)
+    return j
 
 
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"

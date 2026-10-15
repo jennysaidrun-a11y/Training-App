@@ -1411,3 +1411,81 @@ def test_media_studio_library(client, anon, env):
         assert client.post("/api/manage/media/delete", json={"link": bad}).status_code == 400
     assert client.get("/media/library.json").status_code == 404
     assert anon.get("/api/manage/media", follow_redirects=False).status_code in (303, 401, 403)
+
+
+# ---- Build a lesson from a project -------------------------------------------------------
+
+def test_project_templates(client, env):
+    from trainer import project
+    r = client.get("/api/manage/templates").json()
+    assert r["templates"][0]["id"] == "standard" and "can_transcribe" in r
+    r = client.post("/api/manage/templates", json={"name": "Machine walk-through", "outline": "1. What the machine does\n2. Steps"}).json()
+    assert r["id"] == "machine-walk-through" and [t["id"] for t in r["templates"]] == ["standard", "machine-walk-through"]
+    r = client.post("/api/manage/templates", json={"id": "machine-walk-through", "name": "Machine walk-through", "outline": "Changed"}).json()
+    assert project.load_templates()[1]["outline"] == "Changed"
+    assert client.post("/api/manage/templates", json={"name": "", "outline": "x"}).status_code == 400
+    assert [t["id"] for t in client.post("/api/manage/templates", json={"delete": "standard"}).json()["templates"]] == ["machine-walk-through"]
+    assert client.post("/api/manage/templates", json={"delete": "machine-walk-through"}).status_code == 400   # keep one
+
+
+def test_project_builds_a_lesson(client, env, monkeypatch):
+    """Two videos are joined, the transcript and photos go to Claude with the template, and the
+    draft comes back checked, with the joined video and questions that pause it."""
+    from trainer import app as app_module, project, video
+    a = app_module.media_dir() / "proj-20990101000000.mp4"
+    b = app_module.media_dir() / "proj-20990101000001.mp4"
+    _clip(a, 3)
+    _clip(b, 2)
+    pic = app_module.media_dir() / "proj-20990101000002.png"
+    subprocess.run([video.ffmpeg_exe(), "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=red:s=301x199", "-frames:v", "1", str(pic)], check=True)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    monkeypatch.setattr(project, "can_transcribe", lambda: True)
+    monkeypatch.setattr(project, "transcribe", lambda path, model_dir: [(0.0, "Lock out the mixer."), (3.5, "Try the start button.")])
+    seen = {}
+
+    def fake_run(history, draft, images=None):
+        seen.update(text=history[-1]["text"], images=images)
+        lesson = dict(DRAFT, slides=[{"type": "reading", "heading": "Lock it out", "text": "Use your lock.", "images": ["/media/" + pic.name]},
+                                     {"type": "question", "q": "When?", "choices": ["Before cleaning", "After"], "answer": 0, "why": "", "at": 4},
+                                     {"type": "question", "q": "Too late?", "choices": ["a", "b"], "answer": 0, "why": "", "at": 99}])
+        return {"reply": "Built it.", "lesson": research._finish(lesson, ["packaging"]), "searched": []}
+
+    monkeypatch.setattr(research, "run", fake_run)
+    monkeypatch.setattr(rules, "check_rule", lambda c, old, get=None: {"found": True, "name": "Powered industrial trucks."})
+    monkeypatch.setattr(app_module, "_find_pictures", lambda lesson: 0)
+    r = client.post("/api/manage/project", json={"lesson": "mixers", "template": "standard", "notes": "For bakers",
+                                                  "videos": ["/media/" + a.name, "/media/" + b.name],
+                                                  "photos": [{"link": "/media/" + pic.name, "label": "Mixer disconnect"}]})
+    assert r.status_code == 200, r.text
+    for _ in range(200):
+        j = client.get("/api/manage/project/" + r.json()["job"]).json()
+        if j["state"] != "running":
+            break
+        time.sleep(0.1)
+    assert j["state"] == "done", j
+    res = j["result"]
+    assert res["lesson"]["video"].startswith("/media/mixers-project-") and res["checks"][0]["found"]
+    assert [s.get("at") for s in res["lesson"]["slides"]] == [None, 4, None]     # a time past the end is dropped
+    assert "[0:03] Try the start button." in res["transcript"]
+    assert "Standard safety lesson" in seen["text"] and "Mixer disconnect" in seen["text"] and "For bakers" in seen["text"]
+    assert seen["images"][0][0] == "photo-1.jpg"
+    # Refusals
+    assert client.post("/api/manage/project", json={"template": "standard", "videos": ["/media/../t.db"]}).status_code == 400
+    assert client.post("/api/manage/project", json={"template": "nope", "videos": ["/media/" + a.name]}).status_code == 400
+    assert client.post("/api/manage/project", json={"template": "standard"}).status_code == 400
+    assert client.get("/api/manage/project/nope").status_code == 404
+
+
+def test_research_cli_shows_photos(env, monkeypatch, tmp_path):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    photo = tmp_path / "p.jpg"
+    photo.write_bytes(b"\xff\xd8\xff fake")
+    seen = {}
+
+    def runner(cmd, input, **kw):
+        seen.update(cmd=cmd, files=sorted(os.listdir(kw["cwd"])))
+        return _Done(json.dumps({"structured_output": {"reply": "ok", "has_lesson": False, "lesson": DRAFT}}))
+
+    research.run_cli([{"role": "user", "text": "q"}], None, command="claude", runner=runner, images=[("photo-1.jpg", photo)])
+    assert seen["files"] == ["photo-1.jpg"] and seen["cmd"][seen["cmd"].index("--tools") + 1] == "WebSearch,WebFetch,Read"

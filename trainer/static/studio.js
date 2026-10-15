@@ -810,6 +810,6 @@
     refresh();
   }
 
-  window.Studio = { el, dropZone, upload, isDrive, fromDrive, driveButton, openVideoEditor, openImageEditor, openLibrary, libraryButton,
+  window.Studio = { el, modal, dropZone, upload, isDrive, fromDrive, driveButton, openVideoEditor, openImageEditor, openLibrary, libraryButton,
                     mountPage, clock, keepPieces, setLesson: (fn) => { lessonName = fn; } };
 })();

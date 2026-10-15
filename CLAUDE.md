@@ -26,6 +26,12 @@ Cal/OSHA (8 CCR, Title 8) apply.
   Pictures can be clips too (shown still for N seconds), so a video can be made from pictures alone.
   Touch-ups (`video.EXTRAS`): clean up sound (highpass/lowpass + afftdn), even volume (loudnorm), fade,
   brighter/sharper (eq + unsharp), steady (vid.stab two-pass after the main encode).
+- Build from a project (`trainer/project.py`, button on Lessons and in the editor's Claude panel): the manager's
+  videos + photos + a template (`content/templates.yaml`, edited in the dialog) + transcript. A background job
+  (`/api/manage/project`, poll `/api/manage/project/<job>`) joins the videos, writes the transcript with faster-whisper
+  (free, CPU, model in `data/models`) unless one is pasted, and runs the Claude panel research with the photos
+  (CLI: copied into its working folder with Read allowed; API: image blocks). Questions get `at` (video pause times) from
+  the transcript. The result goes through `app._settle_draft` (citations checked) and lands as a draft to preview.
 - Google Drive: managers paste a share link ("Anyone with the link") in the video editor, the Video box or a
   picture slide; `/api/manage/drive` (`app._drive_copy`) copies the file into `data/media` from Google's fixed
   download address only, with size caps and a file-signature check. No Google account or key is stored.
