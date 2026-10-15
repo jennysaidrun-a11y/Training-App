@@ -847,3 +847,8 @@ body:has(.vedit-back) { overflow: hidden; }
 .picture-field > input { margin-top: 8px; }
 .vedit-drive-wrap { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .vedit-drive-wrap .vedit-drive { align-self: stretch; }
+.vedit-touch { border: 2px solid var(--line); border-radius: var(--radius); padding: 8px 14px 4px; margin: 0;
+               display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 4px 16px; }
+.vedit-touch legend { font-weight: 700; color: var(--heading); padding: 0 6px; }
+.vedit-touch .check { margin: 6px 0; min-height: 44px; }
+.vedit-touch .check.off { opacity: .45; }

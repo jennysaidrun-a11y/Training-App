@@ -17,6 +17,8 @@ Cal/OSHA (8 CCR, Title 8) apply.
   runs ffmpeg from the `imageio-ffmpeg` pip package (no other install) and makes a new 720p MP4; routes
   `/api/manage/video/edit` and `/api/manage/video/info`. Only files already in `data/media` can be edited.
   Pictures can be clips too (shown still for N seconds), so a video can be made from pictures alone.
+  Touch-ups (`video.EXTRAS`): clean up sound (highpass/lowpass + afftdn), even volume (loudnorm), fade,
+  brighter/sharper (eq + unsharp), steady (vid.stab two-pass after the main encode).
 - Google Drive: managers paste a share link ("Anyone with the link") in the video editor, the Video box or a
   picture slide; `/api/manage/drive` (`app._drive_copy`) copies the file into `data/media` from Google's fixed
   download address only, with size caps and a file-signature check. No Google account or key is stored.

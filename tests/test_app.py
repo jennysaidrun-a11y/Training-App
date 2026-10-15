@@ -1337,3 +1337,20 @@ def test_google_drive_picker(client, env, monkeypatch):
     assert client.post("/api/manage/drive", json={"file_id": "../../etc", "token": "t"}).status_code == 400
     assert client.post("/api/manage/drive", json={"file_id": fid}).status_code == 400
     assert len(calls) == n
+
+
+def test_video_editor_touch_ups(client, env):
+    from trainer import app as app_module, video
+    a = app_module.media_dir() / "allergens-20990101000000.mp4"
+    subprocess.run([video.ffmpeg_exe(), "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=15:duration=4",
+                    "-f", "lavfi", "-i", "anoisesrc=d=4:a=0.2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(a)], check=True)
+    r = client.post("/api/manage/video/edit", json={"clips": [{"video": "/media/" + a.name}],
+                                                     "extras": ["clean", "level", "fade", "bright", "steady", "nonsense"]})
+    assert r.status_code == 200, r.text
+    out = app_module.media_dir() / r.json()["video"].rsplit("/", 1)[-1]
+    info = video.probe(out)
+    assert abs(info["duration"] - 4) < 0.3 and info["audio"]
+    leftovers = [p.name for p in app_module.media_dir().iterdir() if "pass1" in p.name or p.suffix == ".trf"]
+    assert leftovers == []
+    cmd = " ".join(video.command(["x.mp4"], [(0, 0, 4)], [True], 0, "o.mp4", extras=("clean", "fade")))
+    assert "afftdn" in cmd and "fade=t=out:st=3.4" in cmd and "loudnorm" not in cmd

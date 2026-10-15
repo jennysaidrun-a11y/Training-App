@@ -331,7 +331,7 @@
   function openVideoEditor(redrawField) {
     const clips = D.video && D.video.startsWith("/media/") ? [{ video: D.video, start: 0, end: null, cuts: [], duration: 0 }] : [];
     let active = 0, cutFrom = null, busy = false;
-    const opts = { mute: false, turn: 0 };
+    const opts = { mute: false, turn: 0, extras: new Set(["clean", "level"]) };
     const player = el("video", { class: "vedit-player", controls: true, playsinline: true, preload: "metadata" });
     const still = el("img", { class: "vedit-player vedit-still", alt: "", hidden: true });
     const list = el("div", { class: "vedit-clips" });
@@ -477,7 +477,18 @@
     }
 
     const mute = el("input", { type: "checkbox" });
-    mute.addEventListener("change", () => { opts.mute = mute.checked; });
+    // Touch-ups (free ffmpeg filters on the server): sound ones are off when there's no sound.
+    const touchUps = [["clean", "Clean up the sound", "Less background noise, hum and hiss", true],
+      ["level", "Even out the volume", "Quiet and loud parts end up the same loudness", true],
+      ["fade", "Fade in and out", "A gentle start and finish"],
+      ["bright", "Brighter, sharper picture", "Helps dim factory lighting"],
+      ["steady", "Steady a shaky video", "For phone videos filmed by hand; takes longer"]].map(([key, label, help, sound]) => {
+      const box = el("input", { type: "checkbox", checked: opts.extras.has(key) ? true : null });
+      box.addEventListener("change", () => { if (box.checked) opts.extras.add(key); else opts.extras.delete(key); });
+      return { sound, box, row: el("label", { class: "check" }, box, el("span", {}, el("b", {}, label), el("br"), el("span", { class: "muted small" }, help))) };
+    });
+    const syncSound = () => touchUps.forEach((t) => { if (t.sound) { t.box.disabled = opts.mute; t.row.classList.toggle("off", opts.mute); } });
+    mute.addEventListener("change", () => { opts.mute = mute.checked; syncSound(); });
     const turn = el("select", { "aria-label": "Turn the video" },
       ...[[0, "Don't turn"], [90, "Turn right"], [180, "Upside down"], [270, "Turn left"]].map(([v, t]) => el("option", { value: v }, t)));
     turn.addEventListener("change", () => { opts.turn = +turn.value; });
@@ -508,7 +519,7 @@
       status.textContent = "Making the video… this can take a minute or two for a long video. Keep this open.";
       try {
         const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lesson: D.id || D.title || "lesson", mute: opts.mute, turn: opts.turn,
+          body: JSON.stringify({ lesson: D.id || D.title || "lesson", mute: opts.mute, turn: opts.turn, extras: [...opts.extras],
             clips: clips.map((c) => ({ video: c.video, start: c.start || 0, end: c.end, cuts: c.cuts, ...(c.still ? { seconds: c.seconds } : {}) })) }) });
         const r = await res.json().catch(() => ({}));
         if (!res.ok || !r.video) throw new Error(r.error || r.detail || "The video couldn't be made. Try again.");
@@ -529,6 +540,7 @@
         el("p", { class: "help" }, "Play the video and stop where you want, then tap a button. The gold bar is what stays; tap the bar to jump."),
         list, addBox, driveRow,
         el("div", { class: "row vedit-opts" }, el("label", { class: "check" }, mute, " No sound"), turn),
+        el("fieldset", { class: "vedit-touch" }, el("legend", {}, "Touch-ups"), ...touchUps.map((t) => t.row)),
         el("div", { class: "row vedit-foot" }, total, el("span", { class: "grow" }),
           el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), makeBtn),
         status));

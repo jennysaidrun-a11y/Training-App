@@ -1,4 +1,6 @@
-"""The lesson editor's video editor: trim, cut out parts, join clips and pictures, mute, turn.
+"""The lesson editor's video editor: trim, cut out parts, join clips and pictures, mute, turn,
+plus touch-ups: clean up sound (noise reduction), even out the volume, fade in and out,
+brighter/sharper picture, steady a shaky video.
 
 The work is done by ffmpeg, the free open-source video tool, from the imageio-ffmpeg
 package (pip installs a ready-made copy on Windows, Mac and Linux, so nothing else to
@@ -8,6 +10,7 @@ computers; the clips it came from are left as they were.
 import re
 import subprocess
 import threading
+from pathlib import Path
 
 MAX_CLIPS = 10
 MAX_PIECES = 40          # kept pieces across all clips
@@ -16,6 +19,12 @@ STILL_SECONDS = 5        # how long a picture shows unless the manager picks ano
 MAX_STILL = 120
 TIMEOUT = 30 * 60
 TURNS = {0: "", 90: "transpose=1,", 180: "transpose=1,transpose=1,", 270: "transpose=2,"}
+FADE = 0.6               # seconds
+# Touch-ups (all free ffmpeg filters).
+CLEAN = "highpass=f=80,lowpass=f=12000,afftdn=nr=14:nf=-35:tn=1"   # hum, hiss and steady background noise
+LEVEL = "loudnorm=I=-16:TP=-1.5:LRA=11"                            # same loudness all the way through
+BRIGHT = "eq=brightness=0.04:contrast=1.08:saturation=1.15,unsharp=5:5:0.5"
+EXTRAS = ("clean", "level", "fade", "bright", "steady")
 lock = threading.Lock()  # one edit at a time, so a small server isn't swamped
 
 
@@ -76,11 +85,12 @@ def plan(clips, infos):
     return out
 
 
-def command(paths, pieces, audio, turn, out_path, stills=None):
+def command(paths, pieces, audio, turn, out_path, stills=None, extras=()):
     """The ffmpeg command line (a list, never run through a shell). audio: per input,
     whether it has sound; None or all False makes a silent video. A clip without
     sound gets silence, so it can sit next to clips that have some. stills: {input
-    index: seconds} for pictures, which are shown still for that long."""
+    index: seconds} for pictures, which are shown still for that long. extras: touch-ups
+    from EXTRAS ("steady" is a second pass, see make)."""
     stills = stills or {}
     audio = audio if audio and any(audio) else None
     rot = TURNS.get(int(turn or 0), "")
@@ -97,7 +107,19 @@ def command(paths, pieces, audio, turn, out_path, stills=None):
             parts.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={round(b - a, 3)}[a{n}]")
         if audio:
             labels.append(f"[a{n}]")
-    parts.append("".join(labels) + f"concat=n={len(pieces)}:v=1:a={1 if audio else 0}[v]" + ("[a]" if audio else ""))
+    parts.append("".join(labels) + f"concat=n={len(pieces)}:v=1:a={1 if audio else 0}[vc]" + ("[ac]" if audio else ""))
+    total = round(sum(b - a for _, a, b in pieces), 3)
+    fade = "fade" in extras and total > 3 * FADE
+    vpost = [BRIGHT] if "bright" in extras else []
+    if fade:
+        vpost += [f"fade=t=in:st=0:d={FADE}", f"fade=t=out:st={round(total - FADE, 3)}:d={FADE}"]
+    parts.append(f"[vc]{','.join(vpost) or 'null'}[v]")
+    if audio:
+        apost = ([CLEAN] if "clean" in extras else []) + ([LEVEL] if "level" in extras else [])
+        if fade:
+            apost += [f"afade=t=in:st=0:d={FADE}", f"afade=t=out:st={round(total - FADE, 3)}:d={FADE}"]
+        apost.append("aresample=48000")   # loudnorm works at a high rate; back to normal
+        parts.append(f"[ac]{','.join(apost)}[a]")
     cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y"]
     for i, p in enumerate(paths):
         if i in stills:
@@ -110,9 +132,21 @@ def command(paths, pieces, audio, turn, out_path, stills=None):
     return cmd
 
 
-def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run):
+def steady_commands(src, out_path):
+    """Two ffmpeg passes that steady a shaky video (vid.stab): measure the shake, then
+    smooth it out. Run in the output's folder so the shake file needs no path."""
+    trf = out_path.stem + ".trf"
+    return [[ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-i", src.name,
+             "-vf", f"vidstabdetect=shakiness=6:accuracy=12:result={trf}", "-f", "null", "-"],
+            [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-i", src.name,
+             "-vf", f"vidstabtransform=input={trf}:smoothing=20:zoom=2,unsharp=5:5:0.6", "-c:a", "copy",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+             "-movflags", "+faststart", out_path.name]], out_path.parent / trf
+
+
+def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run, extras=()):
     """Makes the edited video at out_path. clips: [{start, end, cuts}] matching paths;
-    a picture's clip also has "seconds" (how long it shows).
+    a picture's clip also has "seconds" (how long it shows). extras: touch-ups (EXTRAS).
     Returns {"duration": new length in seconds}."""
     stills, infos = {}, []
     for i, (c, p) in enumerate(zip(clips, paths)):
@@ -124,15 +158,31 @@ def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run):
             infos.append(probe(p, runner))
     pieces = plan(clips, infos)
     audio = None if mute else [x["audio"] for x in infos]
+    extras = tuple(x for x in extras if x in EXTRAS)
+    out_path = Path(out_path)
+    first = out_path.with_name(out_path.stem + "-pass1.mp4") if "steady" in extras else out_path
     if not lock.acquire(blocking=False):
         raise EditError("Another video is being made right now. Try again in a minute.")
     try:
-        r = runner(command(paths, pieces, audio, turn, out_path, stills), capture_output=True, text=True,
+        r = runner(command(paths, pieces, audio, turn, first, stills, extras), capture_output=True, text=True,
                    encoding="utf-8", errors="replace", timeout=TIMEOUT)
+        if r.returncode == 0 and "steady" in extras:
+            cmds, trf = steady_commands(first, out_path)
+            try:
+                for cmd in cmds:
+                    r = runner(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               timeout=TIMEOUT, cwd=str(out_path.parent))
+                    if r.returncode != 0:
+                        break
+            finally:
+                first.unlink(missing_ok=True)
+                trf.unlink(missing_ok=True)
     except subprocess.TimeoutExpired:
         raise EditError("Making the video took too long. Try a shorter video.")
     finally:
         lock.release()
+    if first != out_path:
+        first.unlink(missing_ok=True)
     if r.returncode != 0:
         raise EditError("The video couldn't be made: " + (r.stderr or "unknown error").strip()[-300:])
     return {"duration": round(sum(b - a for _, a, b in pieces), 2)}

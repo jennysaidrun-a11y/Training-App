@@ -1397,7 +1397,9 @@ async def edit_video(request: Request):
         return JSONResponse({"error": "Turn the video by 90, 180 or 270 degrees."}, status_code=400)
     out = f"{content.slugify(str(body.get('lesson') or 'lesson'))}-edited-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}.mp4"
     try:
-        made = await run_in_threadpool(video.make, clips, paths, media_dir() / out, bool(body.get("mute")), turn)
+        extras = [x for x in (body.get("extras") or []) if x in video.EXTRAS] if isinstance(body.get("extras"), list) else []
+        made = await run_in_threadpool(lambda: video.make(clips, paths, media_dir() / out, bool(body.get("mute")), turn,
+                                                          extras=extras))
     except video.EditError as e:
         (media_dir() / out).unlink(missing_ok=True)
         return JSONResponse({"error": str(e)}, status_code=400)
