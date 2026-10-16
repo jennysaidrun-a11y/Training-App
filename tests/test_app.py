@@ -674,6 +674,41 @@ def test_voiceover_lines_start_at_their_times(tmp_path):
     assert len(cmds) == 1 and (tmp_path / one).is_file()       # one line at the start: no mixing needed
 
 
+def test_spanish_and_vietnamese_use_their_own_voices(tmp_path, monkeypatch):
+    """Spanish (Kokoro) and Vietnamese (VieNeu) lines are made together in one short process;
+    when that process can't make a line, Piper reads it instead."""
+    import json
+    from trainer import tts, video
+    monkeypatch.setattr(tts, "engine_ready", lambda engine: True)
+    monkeypatch.setattr(video, "probe", lambda path: {"duration": 1.5})
+    monkeypatch.setattr(tts, "_voice", lambda key, model_dir: _FakeVoice())
+    jobs = []
+
+    class Done:
+        returncode = 0
+
+    def runner(cmd, **kw):
+        if "trainer.tts_engines" in cmd:
+            job = json.loads(open(cmd[-1]).read())
+            jobs.append(job)
+            for it in job["items"]:
+                if "fail" not in it["text"]:
+                    open(it["wav"], "wb").write(b"w" * 2000)
+        else:
+            open(cmd[-1], "wb").write(b"m4a")
+        return Done()
+    name, secs, placed = tts.track([{"text": "Apague la máquina.", "at": 0}, {"text": "Use guantes.", "at": 2}],
+                                   "es", "slow", tmp_path, tmp_path, runner=runner)
+    assert len(jobs) == 1 and jobs[0]["engine"] == "kokoro" and jobs[0]["voice"] == "ef_dora" and jobs[0]["speed"] == 0.85
+    assert [it["text"] for it in jobs[0]["items"]] == ["Apague la máquina.", "Use guantes."]
+    tts.speak("Apague la máquina.", "es", "slow", tmp_path, tmp_path, runner=runner)
+    assert len(jobs) == 1                                        # already made: no new process
+    got, _ = tts.speak("Tắt máy.", "vi", "normal", tmp_path, tmp_path, runner=runner)
+    assert jobs[-1]["engine"] == "vieneu" and got == tts.file_name("Tắt máy.", "vi", "normal", "vieneu")
+    got, _ = tts.speak("fail here", "vi", "normal", tmp_path, tmp_path, runner=runner)
+    assert got == tts.file_name("fail here", "vi", "normal")    # Piper stepped in
+
+
 def test_static_links_are_versioned(client):
     from trainer.app import templates
     v = templates.env.globals["asset_v"]

@@ -37,8 +37,11 @@ Cal/OSHA (8 CCR, Title 8) apply.
   (free, CPU, model in `data/models`) unless one is pasted, and runs the Claude panel research with the photos
   (CLI: copied into its working folder with Read allowed; API: image blocks). Questions get `at` (video pause times) from
   the transcript. The result goes through `app._settle_draft` (citations checked) and lands as a draft to preview.
-- Text to speech (`trainer/tts.py`): Piper (free, open source, CPU), voices in `tts.VOICES` (downloaded once into
-  `data/models/piper` from the Piper voices collection), speech cached in `data/speech` (`/speech/<hash>.m4a`, signed-in only).
+- Text to speech (`trainer/tts.py`): all free, open source, CPU. Spanish is Kokoro (`kokoro-onnx`, int8 model from its
+  release page into `data/models/kokoro`), Vietnamese is VieNeu-TTS v3 Nano (`vieneu`, Hugging Face cache in `data/models/hf`;
+  needs onnxruntime < 1.23), the rest Piper (`data/models/piper`), which is also the backup when those can't run. Kokoro and
+  VieNeu run in a short child process (`trainer/tts_engines.py`, all of a voiceover's lines at once) so their models leave
+  memory (Fly has 1 GB). Voices in `tts.VOICES`; speech cached in `data/speech` (`/speech/<hash>.m4a`, signed-in only).
   `POST /api/speech`: managers pick voice/speed (video editor "🎙 Voiceover": replace the sound or play over it, sent to
   `video.make(voice=...)`); workers get their language's voice ("🔊 Listen" on slides and questions in `player.js`).
 - Google Drive: managers paste a share link ("Anyone with the link") in the video editor, the Video box or a
