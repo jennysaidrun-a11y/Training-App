@@ -863,7 +863,7 @@ body:has(.vedit-back) { overflow: hidden; }
 .swatch { width: 40px; height: 40px; min-height: 0; padding: 0; border-radius: 50%; border: 3px solid var(--line); box-shadow: none; cursor: pointer; }
 .swatch[aria-pressed="true"] { border-color: var(--crust); outline: 3px solid var(--gold); outline-offset: 1px; }
 .iedit-opts select { min-height: 44px; }
-.iedit-stage { display: flex; justify-content: center; background: repeating-conic-gradient(var(--soft) 0 25%, var(--bg) 0 50%) 0 0 / 20px 20px; border-radius: var(--radius); padding: 8px; }
+.iedit-stage { position: relative; display: flex; justify-content: center; background: repeating-conic-gradient(var(--soft) 0 25%, var(--bg) 0 50%) 0 0 / 20px 20px; border-radius: var(--radius); padding: 8px; }
 .iedit-canvas { max-width: 100%; max-height: 62vh; width: auto; height: auto; touch-action: none; cursor: crosshair; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,.2); }
 
 /* Media studio: library */
@@ -1050,3 +1050,7 @@ details.more-menu.down .menu { bottom: auto; top: calc(100% + 4px); left: 0; rig
   .vedit-toolbox { flex-direction: row; overflow-x: auto; position: static; padding-bottom: 4px; }
   .tb-btn { flex: 0 0 64px; }
 }
+.iedit-type { position: absolute; z-index: 2; padding: 0.2em 0.4em; margin: 0; border: 2px dashed var(--gold);
+               border-radius: 6px; background: rgba(255,255,255,.85); font-weight: 700; font-family: system-ui, sans-serif;
+               line-height: 1.2; resize: none; overflow: hidden; box-shadow: none; }
+.linkish { background: none; border: 0; box-shadow: none; padding: 0; min-height: 0; color: var(--blue); text-decoration: underline; font: inherit; cursor: pointer; }

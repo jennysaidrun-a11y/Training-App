@@ -24,6 +24,10 @@ Cal/OSHA (8 CCR, Title 8) apply.
   and a timeline (`.tl`: ruler, a block per clip (pictures show as thumbnails; drag one to change the order, tap to jump
   there), a block per voiceover line). Dragging on the ruler or voice track scrubs with the
   picture following; dragging a voice block moves that line (the picture shows where it lands) and re-makes the voice.
+  Draw and Text (a filled text box typed right on the picture) work on a video frame or a picture clip. Nothing closes on a
+  click outside; the clips and voiceover lines auto save in the browser (`localStorage` "video-draft:…") and come back when
+  the same videos are opened again ("Start over" drops them). The lesson editor keeps unsaved changes the same way
+  ("lesson-draft:<id>"; workers only see changes after Save lesson, since a saved lesson is live).
   Frames are taken from the player when the browser shows the video, else by the server. Effects are toggle buttons that change the preview at once (CSS filters/turn, Web Audio filters); "Exact preview"
   renders 5 s with `preview: true` (not kept in the library). `trainer/video.py`
   runs ffmpeg from the `imageio-ffmpeg` pip package (no other install) and makes a new 720p MP4; routes

@@ -395,6 +395,25 @@
     }
     let active = 0, cutFrom = null, busy = false;
     const opts = { mute: false, turn: 0, extras: new Set(["clean", "level"]) };
+    // Auto save: the clips and voiceover lines are kept in this browser as you work, so closing
+    // the editor (or the page) loses nothing; opening the same videos again picks up from there.
+    const draftKey = "video-draft:" + lessonName() + ":" + JSON.stringify(clips.map((c) => c.video)) + (o.script ? ":" + o.script.length + o.script.slice(0, 40) : "");
+    const startClips = structuredClone(clips);
+    let draftTimer = 0, draftOn = false;
+    const draftState = () => JSON.stringify({ clips: clips.map(({ asked, ...c }) => c), lines: voLines.map(({ text, at, dur }) => ({ text, at, dur })), audio: vo.audio, mode: vo.mode });
+    let startState = "";
+    function keepDraft() {
+      if (!draftOn) return;
+      clearTimeout(draftTimer);
+      draftTimer = setTimeout(() => {
+        try {
+          const st = draftState();
+          if (st === startState) localStorage.removeItem(draftKey);
+          else localStorage.setItem(draftKey, JSON.stringify({ at: Date.now(), state: st }));
+        } catch (e) { /* storage full or off */ }
+      }, 500);
+    }
+    const dropDraft = () => { clearTimeout(draftTimer); try { localStorage.removeItem(draftKey); } catch (e) { /* ignore */ } };
     const player = el("video", { class: "vedit-player", controls: true, playsinline: true, preload: "metadata" });
     const still = el("img", { class: "vedit-player vedit-still", alt: "", hidden: true });
     const list = el("div", { class: "vedit-clips" });
@@ -505,6 +524,7 @@
     const totalLen = () => clips.reduce((n, c) => n + lenOf(c), 0);
     const pct = (t, T) => `${Math.max(0, Math.min(100, 100 * t / (T || 1)))}%`;
     function drawTimeline() {
+      keepDraft();
       const T = Math.max(totalLen(), ...voiceItems().map((v) => v.at + v.dur), 0.1);
       tlBody.dataset.total = T;
       const step = T > 120 ? 30 : T > 40 ? 10 : T > 12 ? 5 : 1;
@@ -629,7 +649,7 @@
     }
     // Freeze frame: the server takes the picture at t, the picture editor draws on it, and the
     // marked-up picture goes into the video right there (the clip is sliced around it).
-    async function grabFrame(i, t) {
+    async function grabFrame(i, t, startTool) {
       const c = clips[i];
       player.pause(); say("Taking the picture…");
       try {
@@ -652,7 +672,7 @@
           src = r.image;
         }
         say("Draw on the picture, then save it.");
-        openImageEditor({ src, label: `${o.label || "Video"} frame at ${clock(t)}`, onDone: (link) => {
+        openImageEditor({ src, tool: startTool, label: `${o.label || "Video"} frame at ${clock(t)}`, onDone: (link) => {
           if (clips.length >= 19) { say("That's too many clips for one video. Remove one first."); return; }
           const at = sliceAt(i, t) ? i + 1 : (t <= (c.start || 0) + 0.1 ? i : i + 1);
           clips.splice(at, 0, { video: link, still: true, seconds: 4, duration: 4, start: 0, end: null, cuts: [] });
@@ -1049,6 +1069,15 @@
       const tool = (icon, label, help, fn) => el("button", { type: "button", class: "tb-btn", title: help, "aria-label": label, onclick: fn },
         el("span", { class: "tb-ico", "aria-hidden": "true" }, icon), el("span", { class: "tb-lbl" }, label));
       const clip = () => { const c = clips[active]; if (!c || c.still) { say("Tap a video clip on the timeline first."); return null; } return c; };
+      // Draw / Text: on a video, the frame you're on becomes a picture shown for a few seconds;
+      // on a picture, that picture is marked up in place.
+      const markUp = (startTool) => {
+        const c = clips[active];
+        if (!c) { say("Add a video or a picture first."); return; }
+        if (!c.still) { grabFrame(active, player.currentTime, startTool); return; }
+        stopAll();
+        openImageEditor({ src: c.video, tool: startTool, label: o.label || "Picture", onDone: (link) => { c.video = link; load(active); say("Saved on the picture."); } });
+      };
       const cutBtn = tool("⛔", "Cut", "Cut out a part: tap here at the start of the part, then again at its end", () => {
         const c = clip(); if (!c) return;
         const t = player.currentTime;
@@ -1063,7 +1092,8 @@
         tool("⇤", "Start", "Start the clip here (trim the beginning)", () => { const c = clip(); if (!c) return; c.start = player.currentTime; if (c.end != null && c.end < c.start) c.end = null; drawClips(); }),
         tool("⇥", "End", "End the clip here (trim the end)", () => { const c = clip(); if (!c) return; c.end = Math.max(player.currentTime, c.start || 0); drawClips(); }),
         cutBtn,
-        tool("📸", "Draw", "Draw on this frame; it shows here for a few seconds", () => { if (clip()) grabFrame(active, player.currentTime); }),
+        tool("✏️", "Draw", "Draw on this frame or picture", () => markUp("pen")),
+        tool("🔤", "Text", "Put a text box on this frame or picture", () => markUp("tbox")),
         tool("🎙", "Voice", "Add a voiceover line that starts here", () => {
           voPanel.hidden = false;
           voLines.push({ text: "", at: Math.round(timelinePos() * 10) / 10, dur: 0 });
@@ -1090,7 +1120,7 @@
         const r = await res.json().catch(() => ({}));
         if (!res.ok || !r.video) throw new Error(r.error || r.detail || "The video couldn't be made. Try again.");
         const kept = clips[0] && clips[0].video === original && !clips[0].still ? keepPieces(clips[0]) : null;
-        busy = false; close();
+        busy = false; dropDraft(); close();
         if (o.onDone) o.onDone(r, kept);
       } catch (e) {
         busy = false; makeBtn.disabled = false; makeBtn.textContent = "Make the video"; status.textContent = e.message;
@@ -1113,13 +1143,35 @@
         list, addBox, driveRow,
         el("div", { class: "row vedit-foot" }, total, el("span", { class: "grow" }),
           el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), makeBtn)));
-    back.addEventListener("click", (e) => { if (e.target === back) close(); });
     document.addEventListener("keydown", onKey);
     document.body.append(back);
     applyPreview();
     load(0);
     // Opened for a slide's voiceover: its text is ready in the script box.
     if (o.script) { setLines(splitScript(o.script)); voPanel.hidden = false; say("The slide's words are in the voiceover below, one line each. Time them with ⏱ if you like, then Make the voice."); }
+    startState = draftState();
+    const startLines = structuredClone(voLines);
+    let kept = null;
+    try { kept = JSON.parse(localStorage.getItem(draftKey) || "null"); } catch (e) { kept = null; }
+    if (kept && Date.now() - kept.at < 30 * 864e5) {
+      try {
+        const st = JSON.parse(kept.state);
+        if (st.clips && st.clips.length) {
+          clips.splice(0, clips.length, ...st.clips);
+          voLines = st.lines || [];
+          if (voLines.length) voPanel.hidden = false;
+          if (st.audio) { vo.audio = st.audio; vo.mode = st.mode || "replace"; vo.on = true; voAudio.src = st.audio; voAudio.hidden = false; fx.voice.setAttribute("aria-pressed", "true"); voSync(); }
+          drawLines(); load(0);
+          status.replaceChildren("Picked up where you left off. ", el("button", { type: "button", class: "linkish", onclick: () => {
+            if (!window.confirm("Start over from the original videos? Your changes here will be thrown away.")) return;
+            clips.splice(0, clips.length, ...structuredClone(startClips)); voLines = structuredClone(startLines);
+            vo.audio = ""; vo.on = false; voAudio.removeAttribute("src"); voAudio.hidden = true; fx.voice.setAttribute("aria-pressed", "false"); voSync();
+            dropDraft(); drawLines(); load(0); say("Started over.");
+          } }, "Start over"));
+        }
+      } catch (e) { dropDraft(); }
+    }
+    draftOn = true;
   }
 
   // ---- Picture editor -------------------------------------------------------------
@@ -1128,7 +1180,7 @@
   // a new picture (the original stays in the library).
   const COLORS = [["#e02424", "Red"], ["#f5c518", "Yellow"], ["#16a34a", "Green"], ["#2563eb", "Blue"], ["#111111", "Black"], ["#ffffff", "White"]];
   const TOOLS = [["pen", "✏️", "Marker"], ["hi", "🖍️", "Highlighter"], ["arrow", "➜", "Arrow"], ["box", "▭", "Box"], ["ring", "◯", "Circle"],
-    ["num", "①", "Numbers"], ["text", "T", "Text"], ["blur", "▦", "Blur"], ["crop", "⛶", "Crop"]];
+    ["num", "①", "Numbers"], ["text", "T", "Text"], ["tbox", "🔤", "Text box"], ["blur", "▦", "Blur"], ["crop", "⛶", "Crop"]];
   function drawOp(c, op, base, u) {
     const w = u * [1.5, 3, 5][op.size];
     c.save();
@@ -1162,6 +1214,13 @@
       c.fillStyle = op.color === "#ffffff" || op.color === "#f5c518" ? "#111" : "#fff";
       c.font = `bold ${Math.round(r * 1.2)}px system-ui, sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
       c.fillText(String(op.n), a[0], a[1] + r * 0.05);
+    } else if (op.tool === "tbox") {          // text on a filled box: easy to read over any picture
+      const px = Math.round(u * [7, 11, 17][op.size]), pad = px * 0.45, lines = op.text.split("\n");
+      c.font = `bold ${px}px system-ui, sans-serif`; c.textBaseline = "top";
+      const w = Math.max(...lines.map((l) => c.measureText(l).width)) + pad * 2, h = lines.length * px * 1.2 + pad * 2 - px * 0.2;
+      c.beginPath(); (c.roundRect ? c.roundRect(a[0], a[1], w, h, px * 0.3) : c.rect(a[0], a[1], w, h)); c.fill();
+      c.fillStyle = op.color === "#ffffff" || op.color === "#f5c518" ? "#111" : "#fff";
+      lines.forEach((line, i) => c.fillText(line, a[0] + pad, a[1] + pad + i * px * 1.2));
     } else if (op.tool === "text") {
       const px = Math.round(u * [7, 11, 17][op.size]);
       c.font = `bold ${px}px system-ui, sans-serif`; c.textBaseline = "top";
@@ -1182,9 +1241,10 @@
   }
   // o: {src, label (optional, names the new copy), onDone(link)}
   function openImageEditor(o) {
-    let base = null, ops = [], tool = "pen", color = COLORS[0][0], size = 1, nextNum = 1, drag = null, busy = false, changed = false;
+    let base = null, ops = [], tool = TOOLS.some(([k]) => k === o.tool) ? o.tool : "pen", color = COLORS[0][0], size = 1, nextNum = 1, drag = null, busy = false, changed = false;
     const history = [];
     const view = el("canvas", { class: "iedit-canvas", "aria-label": "Picture to mark up" });
+    const stage = el("div", { class: "iedit-stage" }, view);
     const ctx = view.getContext("2d");
     const status = el("p", { class: "muted vedit-status", role: "status", "aria-live": "polite" });
     const unit = () => Math.max(base.width, base.height) / 400;
@@ -1234,15 +1294,46 @@
       e.preventDefault();
       const p = at(e);
       if (tool === "num") { snapshot(); ops.push({ tool, color, size, a: p, n: nextNum++ }); redraw(); return; }
-      if (tool === "text") {
-        const t = (window.prompt("Text to put on the picture") || "").trim();
-        if (t) { snapshot(); ops.push({ tool, color, size, a: p, text: t }); redraw(); }
-        return;
-      }
+      if (tool === "text" || tool === "tbox") { typeAt(p, e); return; }
       view.setPointerCapture(e.pointerId);
       drag = tool === "pen" || tool === "hi" ? { tool, color, size, pts: [p] } : { tool, color, size, a: p, b: p };
       redraw();
     });
+    // Text: a box opens right where you tapped; type, then Enter (Shift+Enter for a new line) or tap away.
+    let typing = null;
+    function typeAt(p, e) {
+      if (typing) typing.done();
+      const r = view.getBoundingClientRect(), sr = stage.getBoundingClientRect(), k = r.width / view.width;
+      const px = Math.max(14, Math.round(unit() * [7, 11, 17][size] * k));
+      const box = el("textarea", { class: "iedit-type", rows: "1", placeholder: "Type here", "aria-label": "Text to put on the picture",
+        style: `left:${r.left - sr.left + p[0] * k}px;top:${r.top - sr.top + p[1] * k}px;font-size:${px}px;` +
+          (tool === "tbox" ? `background:${color};color:${color === "#ffffff" || color === "#f5c518" ? "#111" : "#fff"}` : `color:${color}`) });
+      const op = { tool, color, size, a: p };
+      const done = (keep = true) => {
+        if (!typing || typing.box !== box) return;
+        typing = null; box.remove();
+        const t = box.value.replace(/\s+$/, "");
+        if (keep && t.trim()) { snapshot(); ops.push({ ...op, text: t }); redraw(); }
+      };
+      box.addEventListener("keydown", (ev) => {
+        ev.stopPropagation();
+        if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); done(); }
+        if (ev.key === "Escape") { ev.preventDefault(); done(false); }
+      });
+      const room = Math.max(80, sr.right - (r.left + p[0] * k) - 8), meter = document.createElement("canvas").getContext("2d");
+      meter.font = `bold ${px}px system-ui, sans-serif`;
+      const fit = () => {          // the box grows with the words, up to the picture's edge
+        const w = Math.max(...box.value.split("\n").map((l) => meter.measureText(l || " ").width), meter.measureText("Type here").width);
+        box.style.width = Math.min(room, w + px * 1.2) + "px";
+        box.style.height = "auto"; box.style.height = box.scrollHeight + "px";
+      };
+      box.addEventListener("input", fit);
+      setTimeout(fit, 0);
+      box.addEventListener("blur", () => done());
+      stage.append(box);
+      typing = { box, done };
+      setTimeout(() => box.focus(), 0);
+    }
     view.addEventListener("pointermove", (e) => {
       if (!drag) return;
       const p = at(e);
@@ -1293,7 +1384,8 @@
       tool = key;
       toolBtns.forEach((b) => b.setAttribute("aria-pressed", b.dataset.tool === key ? "true" : "false"));
       status.textContent = { crop: "Drag over the part to keep.", blur: "Drag over faces, names or labels to hide them.",
-        num: "Tap to drop numbers in order: 1, 2, 3…", text: "Tap where the text should go." }[key] || "";
+        num: "Tap to drop numbers in order: 1, 2, 3…", text: "Tap where the text should go, then type.",
+        tbox: "Tap where the text box should go, then type. Pick its color above." }[key] || "";
       if (key === "hi" && color === COLORS[0][0]) setColor(COLORS[1][0]);
     }
     const swatches = COLORS.map(([c, name]) => el("button", { type: "button", class: "swatch", style: `background:${c}`, title: name, "aria-label": name,
@@ -1326,14 +1418,13 @@
       el("div", { class: "iedit-tools" }, ...toolBtns),
       el("div", { class: "row iedit-opts" }, el("div", { class: "iedit-swatches" }, ...swatches), sizeSel, el("span", { class: "grow" }),
         undoBtn, el("button", { type: "button", class: "ghost small", onclick: turn }, "↻ Turn")),
-      el("div", { class: "iedit-stage" }, view),
+      stage,
       status,
       el("div", { class: "row vedit-foot" }, el("span", { class: "muted small" }, "Saves a new copy. The original stays in the media library."),
         el("span", { class: "grow" }), el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), saveBtn));
-    back.addEventListener("click", (e) => { if (e.target === back) close(); });
     document.addEventListener("keydown", onKey);
     document.body.append(back);
-    setTool("pen");
+    setTool(tool);
   }
 
   // ---- Media library --------------------------------------------------------------

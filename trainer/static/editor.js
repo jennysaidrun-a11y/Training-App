@@ -31,7 +31,20 @@
     for (const kid of kids) if (kid != null && kid !== false) n.append(kid);
     return n;
   };
-  const touch = () => { dirty = true; saveNote.textContent = "Not saved yet"; };
+  // Auto save: every change is kept in this browser as it happens, so closing the page or a
+  // slip of the mouse loses nothing; it comes back next time the lesson is opened. Workers see
+  // changes only after "Save lesson" (a saved lesson is live).
+  const draftKey = "lesson-draft:" + (D.id || "new");
+  const baseDeck = JSON.stringify(D);
+  let draftTimer = 0;
+  const keepDraft = () => {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => {
+      try { localStorage.setItem(draftKey, JSON.stringify({ at: Date.now(), base: baseDeck, deck: D })); } catch (e) { /* storage full or off */ }
+    }, 600);
+  };
+  const dropDraft = () => { clearTimeout(draftTimer); try { localStorage.removeItem(draftKey); localStorage.removeItem("lesson-draft:new"); } catch (e) { /* ignore */ } };
+  const touch = () => { dirty = true; saveNote.textContent = "Not saved yet · kept on this device"; keepDraft(); };
   const rulesIndex = () => D.slides.length + 1;
   const fmtTime = (s) => (s == null || s === "" ? "" : typeof s === "number" ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : String(s));
   const parseTime = (t) => {
@@ -590,6 +603,7 @@
     slideErrors = {};
     if (ok) {
       dirty = false;
+      dropDraft();
       errorsBox.hidden = true;
       saveNote.textContent = "Saved ✓";
       if (!D.id) { D.id = r.id; history.replaceState(null, "", `/manage/lesson/${r.id}`); window.DECK_NEW = false; }
@@ -961,7 +975,6 @@
         steps, status);
       const close = () => { if (!building) back.remove(); };
       closeBtn.addEventListener("click", close);
-      back.addEventListener("click", (e) => { if (e.target === back) close(); });
       document.body.append(back);
       drawFiles();
       fetch("/api/manage/templates").then((r) => r.json()).then((r) => {
@@ -1049,7 +1062,6 @@
       el("div", { class: "row vedit-foot" }, el("span", { class: "grow" }), cancel, save), status);
     const close = () => back.remove();
     cancel.addEventListener("click", close);
-    back.addEventListener("click", (e) => { if (e.target === back) close(); });
     save.addEventListener("click", async () => {
       save.disabled = true;
       try {
@@ -1063,7 +1075,22 @@
     name.focus(); name.select();
   });
 
+  // Pick up unsaved changes from last time (same lesson, this device).
+  let picked = false;
+  try {
+    const kept = JSON.parse(localStorage.getItem(draftKey) || "null");
+    if (kept && kept.deck && JSON.stringify(kept.deck) !== baseDeck && Date.now() - kept.at < 30 * 864e5
+        && (kept.base === baseDeck || window.confirm("This lesson has unsaved changes from before, but it was also changed since. Bring back your unsaved changes?"))) {
+      Object.assign(D, kept.deck, { id: D.id });
+      picked = true;
+    }
+  } catch (e) { /* nothing kept */ }
   show(D.slides.length ? 1 : 0);
+  if (picked) {
+    dirty = true;
+    saveNote.replaceChildren("Picked up your unsaved changes. ",
+      el("button", { type: "button", class: "linkish", onclick: () => { if (window.confirm("Throw away the unsaved changes and go back to the saved lesson?")) { dropDraft(); dirty = false; location.reload(); } } }, "Undo that"));
+  }
   if (!D.slides.length && window.DECK_NEW) {
     D.slides.push({ type: "reading", heading: "", text: "" });
     show(0);
