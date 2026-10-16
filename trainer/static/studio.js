@@ -472,9 +472,10 @@
       let x = 0;
       tlVideo.replaceChildren(...clips.map((c, i) => {
         const len = lenOf(c), b = el("button", { type: "button", class: "tl-clip" + (i === active ? " on" : "") + (c.still ? " still" : ""),
-          style: `left:${pct(x, T)};width:${pct(len, T)}`, title: c.still ? `Picture, ${clock(len)}` : `Clip ${i + 1}, ${clock(len)}` },
-          c.still ? "🖼" : `${i + 1}`);
-        b.addEventListener("click", () => load(i));   // a press-and-drag on it scrubs, like the rest of the timeline
+          style: `left:${pct(x, T)};width:${pct(len, T)}` + (c.still ? `;background-image:url("${encodeURI(c.video)}")` : ""),
+          title: `${c.still ? "Picture" : "Clip " + (i + 1)}, ${clock(len)}. Drag it to change the order.` },
+          c.still ? "" : `${i + 1}`);
+        b.addEventListener("pointerdown", (e) => dragClip(e, b, i));
         x += len;
         return b;
       }));
@@ -505,6 +506,43 @@
       const up = () => { tlBody.removeEventListener("pointermove", go); tlBody.removeEventListener("pointerup", up); tlBody.removeEventListener("pointercancel", up); };
       tlBody.addEventListener("pointermove", go); tlBody.addEventListener("pointerup", up); tlBody.addEventListener("pointercancel", up);
     });
+    // Drag a clip or picture block left or right to change the order; a plain tap jumps there.
+    function dragClip(e, b, i) {
+      if (e.button) return;
+      e.stopPropagation(); e.preventDefault();
+      player.pause();
+      b.setPointerCapture(e.pointerId);
+      const x0 = e.clientX, w = tlBody.getBoundingClientRect().width;
+      let moved = false, to = i;
+      const mark = el("div", { class: "tl-drop" });
+      const move = (ev) => {
+        const dx = ev.clientX - x0;
+        if (!moved && Math.abs(dx) < 6) return;
+        if (!moved) { moved = true; b.classList.add("dragging"); tlVideo.append(mark); }
+        b.style.transform = `translateX(${dx}px)`;
+        // New place: before the first other clip whose middle is right of the pointer.
+        const t = timeAt(ev.clientX), T = +tlBody.dataset.total || 1;
+        let start = 0, edge = 0; to = 0;
+        clips.forEach((c, k) => {
+          if (k === i) return;
+          const len = lenOf(c);
+          if (start + len / 2 < t) { to += 1; edge = start + len; }
+          start += len;
+        });
+        if (to === 0) edge = 0;
+        mark.style.left = pct(edge, T);
+      };
+      const up = (ev) => {
+        b.removeEventListener("pointermove", move); b.removeEventListener("pointerup", up); b.removeEventListener("pointercancel", up);
+        mark.remove(); b.classList.remove("dragging"); b.style.transform = "";
+        if (!moved) { seekTimeline(timeAt(ev.clientX)); moveHead(); return; }
+        if (to === i) { drawTimeline(); return; }
+        clips.splice(to, 0, clips.splice(i, 1)[0]);
+        load(to);
+        say(`Moved to place ${to + 1} of ${clips.length}. Undo puts it back.`);
+      };
+      b.addEventListener("pointermove", move); b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
+    }
     function dragVoice(e, b, v) {
       e.stopPropagation(); e.preventDefault();
       player.pause();
@@ -1027,7 +1065,7 @@
             timeline)),
         status,
         effectsBar,
-        el("p", { class: "help" }, "Drag on the timeline to find the spot, then tap a tool on the left. The gold bar is what stays."),
+        el("p", { class: "help" }, "Drag along the top of the timeline to find a spot, or drag a clip or picture to change the order. Tools are on the left."),
         list, addBox, driveRow,
         el("div", { class: "row vedit-foot" }, total, el("span", { class: "grow" }),
           el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), makeBtn)));

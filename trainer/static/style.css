@@ -1029,7 +1029,10 @@ details.more-menu.down .menu { bottom: auto; top: calc(100% + 4px); left: 0; rig
 .tl-clip { position: absolute; top: 2px; bottom: 2px; min-height: 0; padding: 0 6px; margin: 0; overflow: hidden; white-space: nowrap;
            text-overflow: ellipsis; font-size: 0.72rem; font-weight: 700; text-align: left; color: var(--text);
            background: var(--wheat); border: 1px solid var(--blue-line); border-radius: 6px; box-shadow: none; cursor: pointer; }
-.tl-clip.still { background: var(--blue-soft); }
+.tl-clip { touch-action: none; cursor: grab; }
+.tl-clip.still { background-color: var(--blue-soft); background-size: cover; background-position: center; }
+.tl-clip.dragging { cursor: grabbing; z-index: 3; opacity: 0.85; outline: 2px solid var(--gold); }
+.tl-drop { position: absolute; top: 0; bottom: 0; width: 0; border-left: 3px solid var(--red); z-index: 4; pointer-events: none; }
 .tl-clip.on { background: var(--gold); color: #fff; border-color: var(--gold-edge); }
 .tl-say { position: absolute; top: 3px; bottom: 3px; min-width: 14px; min-height: 0; padding: 0 6px; margin: 0; overflow: hidden;
           white-space: nowrap; text-overflow: ellipsis; font-size: 0.72rem; text-align: left; color: #fff;

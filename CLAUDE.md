@@ -21,7 +21,8 @@ Cal/OSHA (8 CCR, Title 8) apply.
   `/api/manage/video/frame` takes the frame, the picture editor marks it up, and it goes in as a still between the slices).
   Laid out like a video app: a vertical toolbox on the left (`.vedit-toolbox`: Slice, Start, End, Cut, Draw, Voice, Add,
   Sound, Undo; a row on phones), and under the picture ◀︎| Play |▶︎ (one frame; ← → or , .), Undo (every clip change; Ctrl+Z)
-  and a timeline (`.tl`: ruler, a block per clip, a block per voiceover line). Dragging on the timeline scrubs with the
+  and a timeline (`.tl`: ruler, a block per clip (pictures show as thumbnails; drag one to change the order, tap to jump
+  there), a block per voiceover line). Dragging on the ruler or voice track scrubs with the
   picture following; dragging a voice block moves that line (the picture shows where it lands) and re-makes the voice.
   Frames are taken from the player when the browser shows the video, else by the server. Effects are toggle buttons that change the preview at once (CSS filters/turn, Web Audio filters); "Exact preview"
   renders 5 s with `preview: true` (not kept in the library). `trainer/video.py`
