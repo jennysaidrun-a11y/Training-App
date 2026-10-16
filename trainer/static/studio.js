@@ -438,12 +438,54 @@
     // Play / pause, plus where you are, under the picture.
     const playBtn = el("button", { type: "button", class: "btn small vedit-play" }, "▶ Play");
     const timeLbl = el("span", { class: "muted vedit-time" }, "0:00.0");
-    playBtn.addEventListener("click", () => {
+    // Play runs through the whole new video: each clip's kept parts, then each picture for its
+    // seconds, in timeline order (the voiceover keeps going across them).
+    let playing = false, switching = false, stillAt = 0, stillRaf = 0;
+    function stopAll() { playing = false; cancelAnimationFrame(stillRaf); player.pause(); if (typeof voAudio !== "undefined") voAudio.pause(); showPlay(); }
+    function voPlayAt() { if (vo.on && vo.audio && !compare) { voAudio.currentTime = timelinePos(); voAudio.play().catch(() => {}); } }
+    function playClip() {
       const c = clips[active];
-      if (!c || c.still) return;
-      if (player.paused) player.play().catch(() => say("This browser can't play this video. You can still trim it by its times.")); else player.pause();
+      if (!c) { stopAll(); return; }
+      if (c.still) {
+        const t0 = performance.now() - stillAt * 1000, len = c.seconds || c.duration || 5;
+        voPlayAt();
+        const tick = () => {
+          if (!playing) return;
+          stillAt = (performance.now() - t0) / 1000;
+          if (stillAt >= len) { stillAt = len; nextClip(); return; }
+          moveHead(); timeLbl.textContent = clock(timelinePos());
+          stillRaf = requestAnimationFrame(tick);
+        };
+        stillRaf = requestAnimationFrame(tick);
+        showPlay();
+      } else {
+        const keep = keepPieces(c);
+        if (keep.length && player.currentTime >= keep[keep.length - 1][1] - 0.05) player.currentTime = keep[0][0];
+        player.play().catch(() => { stopAll(); say("This browser can't play this video. You can still trim it by its times."); });
+      }
+    }
+    function nextClip() {
+      cancelAnimationFrame(stillRaf);
+      if (active + 1 >= clips.length) { stopAll(); return; }
+      switching = true;
+      load(active + 1);
+      const c = clips[active];
+      if (!c.still) { const keep = keepPieces(c); player.currentTime = keep.length ? keep[0][0] : (c.start || 0); }
+      switching = false;
+      playClip();
+    }
+    playBtn.addEventListener("click", () => {
+      if (playing) { stopAll(); return; }
+      if (!clips.length) return;
+      const T = totalLen();
+      if (T && timelinePos() >= T - 0.05) seekTimeline(0);   // at the end: start again from the top
+      playing = true;
+      playClip();
     });
-    const showPlay = () => { playBtn.textContent = player.paused ? "▶ Play" : "⏸ Pause"; timeLbl.textContent = clock(player.currentTime); };
+    player.addEventListener("pause", () => { if (playing && !switching && !player.ended) { playing = false; showPlay(); } });
+    player.addEventListener("ended", () => { if (playing) nextClip(); });
+    player.addEventListener("play", () => { playing = true; });   // started from the video's own controls
+    const showPlay = () => { playBtn.textContent = playing ? "⏸ Pause" : "▶ Play"; timeLbl.textContent = clock(typeof timelinePos === "function" ? timelinePos() : player.currentTime); };
     for (const ev of ["play", "pause", "ended", "timeupdate", "seeked"]) player.addEventListener(ev, showPlay);
 
     // ---- Timeline, like video apps: the whole new video left to right, a video track (one block
@@ -499,7 +541,7 @@
     // Scrub: press anywhere on the timeline and drag; the picture follows.
     tlBody.addEventListener("pointerdown", (e) => {
       if (e.button) return;
-      player.pause();
+      stopAll();
       tlBody.setPointerCapture(e.pointerId);
       const go = (ev) => { seekTimeline(timeAt(ev.clientX)); moveHead(); };
       go(e);
@@ -510,7 +552,7 @@
     function dragClip(e, b, i) {
       if (e.button) return;
       e.stopPropagation(); e.preventDefault();
-      player.pause();
+      stopAll();
       b.setPointerCapture(e.pointerId);
       const x0 = e.clientX, w = tlBody.getBoundingClientRect().width;
       let moved = false, to = i;
@@ -545,7 +587,7 @@
     }
     function dragVoice(e, b, v) {
       e.stopPropagation(); e.preventDefault();
-      player.pause();
+      stopAll();
       b.setPointerCapture(e.pointerId);
       const grab = timeAt(e.clientX) - v.at;
       let at = v.at, raf = 0;
@@ -621,6 +663,7 @@
     }
 
     function load(i) {
+      if (i !== active || !switching) stillAt = 0;
       active = i; cutFrom = null;
       const c = clips[i];
       player.hidden = !c || !!c.still; still.hidden = !c || !c.still;
@@ -655,7 +698,7 @@
         const t = player.currentTime, keep = keepPieces(c);
         if (keep.length && !keep.some(([a, b]) => t >= a - 0.05 && t < b)) {
           const next = keep.find(([a]) => a > t);
-          if (next) player.currentTime = next[0]; else player.pause();
+          if (next) player.currentTime = next[0]; else if (playing) nextClip(); else player.pause();
         }
       }
     });
@@ -905,7 +948,7 @@
         const pieces = keepPieces(clips[k]), len = pieces.reduce((n, [a, b]) => n + b - a, 0);
         if (left <= len || k === clips.length - 1) {
           if (k !== active) load(k);
-          if (clips[k].still) return;
+          if (clips[k].still) { stillAt = Math.max(0, Math.min(left, len)); moveHead(); return; }
           for (const [a, b] of pieces) { if (left <= b - a) { player.currentTime = a + left; return; } left -= b - a; }
           return;
         }
@@ -982,7 +1025,8 @@
       let t = 0;
       for (let k = 0; k < active; k++) t += keepPieces(clips[k]).reduce((n, [a, b]) => n + b - a, 0);
       const c = clips[active];
-      if (!c || c.still) return t;
+      if (!c) return t;
+      if (c.still) return t + stillAt;
       for (const [a, b] of keepPieces(c)) { if (player.currentTime >= b) t += b - a; else { t += Math.max(0, player.currentTime - a); break; } }
       return t;
     }
