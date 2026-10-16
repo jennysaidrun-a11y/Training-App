@@ -30,7 +30,9 @@ Cal/OSHA (8 CCR, Title 8) apply.
   ("lesson-draft:<id>"; workers only see changes after Save lesson, since a saved lesson is live).
   Frames are taken from the player when the browser shows the video, else by the server. Effects are toggle buttons that change the preview at once (CSS filters/turn, Web Audio filters); "Exact preview"
   renders 5 s with `preview: true` (not kept in the library). `trainer/video.py`
-  runs ffmpeg from the `imageio-ffmpeg` pip package (no other install) and makes a new 720p MP4; routes
+  runs ffmpeg from the `imageio-ffmpeg` pip package (no other install) and makes a new 720p MP4 piece by piece
+  (`piece_command` per kept piece, two threads, then `finish_command` joins them and adds touch-ups/voice) so it fits
+  the 1 GB Fly machine (one big filter graph got ffmpeg OOM-killed on 4K phone video); routes
   `/api/manage/video/edit` and `/api/manage/video/info`. Only files already in `data/media` can be edited.
   Pictures can be clips too (shown still for N seconds), so a video can be made from pictures alone.
   Touch-ups (`video.EXTRAS`): clean up sound (highpass/lowpass + afftdn), even volume (loudnorm), fade,

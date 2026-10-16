@@ -1521,7 +1521,7 @@ def test_video_editor_touch_ups(client, env):
     assert abs(info["duration"] - 4) < 0.3 and info["audio"]
     leftovers = [p.name for p in app_module.media_dir().iterdir() if "pass1" in p.name or p.suffix == ".trf"]
     assert leftovers == []
-    cmd = " ".join(video.command(["x.mp4"], [(0, 0, 4)], [True], 0, "o.mp4", extras=("clean", "fade")))
+    cmd = " ".join(video.finish_command("join.txt", 4, True, "o.mp4", extras=("clean", "fade")))
     assert "afftdn" in cmd and "fade=t=out:st=3.4" in cmd and "loudnorm" not in cmd
 
 

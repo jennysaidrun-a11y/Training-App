@@ -1108,8 +1108,21 @@
         tool("↶", "Undo", "Undo the last change (Ctrl+Z)", undo));
     }
 
+    // Every clip's length, from the server when this browser can't read it (not only the clip on screen).
+    async function ensureLengths() {
+      await Promise.all(clips.filter((c) => !c.still && !c.duration).map((c) =>
+        fetch("/api/manage/video/info?v=" + encodeURIComponent(c.video)).then((r) => r.json()).then((r) => { if (r.duration) c.duration = r.duration; }).catch(() => {})));
+      drawClips();
+    }
     makeBtn.addEventListener("click", async () => {
-      if (busy || !clips.length || !clips.every((c) => c.duration)) return;
+      if (busy) return;
+      if (!clips.length) { say("Add a video or a picture first."); return; }
+      if (!clips.every((c) => c.duration)) {
+        say("Reading the video lengths…");
+        await ensureLengths();
+        const bad = clips.findIndex((c) => !c.duration);
+        if (bad >= 0) { say(`Clip ${bad + 1} can't be read. Remove it (✕) or add it again, then Make the video.`); return; }
+      }
       busy = true; makeBtn.disabled = true; makeBtn.textContent = "Making… keep this open"; player.pause();
       status.textContent = "Making the video… this can take a minute or two for a long video. Keep this open.";
       try {
@@ -1147,6 +1160,7 @@
     document.body.append(back);
     applyPreview();
     load(0);
+    ensureLengths();
     // Opened for a slide's voiceover: its text is ready in the script box.
     if (o.script) { setLines(splitScript(o.script)); voPanel.hidden = false; say("The slide's words are in the voiceover below, one line each. Time them with ⏱ if you like, then Make the voice."); }
     startState = draftState();
@@ -1161,7 +1175,7 @@
           voLines = st.lines || [];
           if (voLines.length) voPanel.hidden = false;
           if (st.audio) { vo.audio = st.audio; vo.mode = st.mode || "replace"; vo.on = true; voAudio.src = st.audio; voAudio.hidden = false; fx.voice.setAttribute("aria-pressed", "true"); voSync(); }
-          drawLines(); load(0);
+          drawLines(); load(0); ensureLengths();
           status.replaceChildren("Picked up where you left off. ", el("button", { type: "button", class: "linkish", onclick: () => {
             if (!window.confirm("Start over from the original videos? Your changes here will be thrown away.")) return;
             clips.splice(0, clips.length, ...structuredClone(startClips)); voLines = structuredClone(startLines);

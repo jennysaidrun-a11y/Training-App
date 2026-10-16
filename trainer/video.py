@@ -10,6 +10,7 @@ computers; the clips it came from are left as they were.
 import pathlib
 import re
 import subprocess
+import tempfile
 import threading
 from pathlib import Path
 
@@ -98,61 +99,61 @@ def plan(clips, infos):
     return out
 
 
-def command(paths, pieces, audio, turn, out_path, stills=None, extras=(), voice=None):
-    """The ffmpeg command line (a list, never run through a shell). audio: per input,
-    whether it has sound; None or all False makes a silent video. A clip without
-    sound gets silence, so it can sit next to clips that have some. stills: {input
-    index: seconds} for pictures, which are shown still for that long. extras: touch-ups
+# Kept small so a 1 GB server never runs out of memory: each piece is made on its own (one
+# input decoded at a time, two threads), then the pieces are joined and finished at 720p.
+ENCODE = ["-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-threads", "2"]
+
+
+def piece_command(path, a, b, still, has_audio, want_audio, turn, out_path):
+    """One kept piece (a to b seconds of a clip, or a picture shown b - a seconds) as a 720p,
+    30 fps piece with stereo 48 kHz sound (silence if the clip has none), ready to be joined."""
+    secs = str(round(b - a, 3))
+    cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-threads", "2"]
+    cmd += ["-loop", "1", "-framerate", "30", "-t", secs, "-i", str(path)] if still else ["-ss", str(a), "-t", secs, "-i", str(path)]
+    silent = want_audio and not has_audio
+    if silent:
+        cmd += ["-f", "lavfi", "-t", secs, "-i", "anullsrc=r=48000:cl=stereo"]
+    cmd += ["-filter_threads", "1", "-vf", f"{TURNS.get(int(turn or 0), '')}scale=1280:720:force_original_aspect_ratio=decrease,"
+            "pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p", "-map", "0:v:0"]
+    if want_audio:
+        cmd += ["-map", "1:a:0" if silent else "0:a:0", "-af", "aresample=48000,aformat=channel_layouts=stereo",
+                "-c:a", "aac", "-b:a", "192k"]
+    else:
+        cmd += ["-an"]
+    return cmd + ENCODE + ["-crf", "18", "-t", secs, str(out_path)]
+
+
+def finish_command(join_list, total, want_audio, out_path, extras=(), voice=None):
+    """Joins the pieces (listed in join_list for ffmpeg's concat reader) and adds the touch-ups
     from EXTRAS ("steady" is a second pass, see make). voice: (speech file, "replace" | "mix"):
     a voiceover laid over the whole video, replacing its sound or over it with the sound quieter."""
-    stills = stills or {}
-    audio = audio if audio and any(audio) and not (voice and voice[1] == "replace") else None
-    rot = TURNS.get(int(turn or 0), "")
-    parts, labels = [], []
-    for n, (i, a, b) in enumerate(pieces):
-        parts.append(f"[{i}:v]trim=start={a}:end={b},setpts=PTS-STARTPTS,{rot}"
-                     "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
-                     f"setsar=1,fps=30,format=yuv420p[v{n}]")
-        labels.append(f"[v{n}]")
-        if audio and audio[i]:
-            parts.append(f"[{i}:a]atrim=start={a}:end={b},asetpts=PTS-STARTPTS,aresample=48000,"
-                         f"aformat=channel_layouts=stereo[a{n}]")
-        elif audio:
-            parts.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={round(b - a, 3)}[a{n}]")
-        if audio:
-            labels.append(f"[a{n}]")
-    parts.append("".join(labels) + f"concat=n={len(pieces)}:v=1:a={1 if audio else 0}[vc]" + ("[ac]" if audio else ""))
-    total = round(sum(b - a for _, a, b in pieces), 3)
+    audio = want_audio and not (voice and voice[1] == "replace")
+    total = round(total, 3)
     fade = "fade" in extras and total > 3 * FADE
     vpost = [BRIGHT] if "bright" in extras else []
     if fade:
         vpost += [f"fade=t=in:st=0:d={FADE}", f"fade=t=out:st={round(total - FADE, 3)}:d={FADE}"]
-    parts.append(f"[vc]{','.join(vpost) or 'null'}[v]")
+    parts = [f"[0:v]{','.join(vpost) or 'null'}[v]"]
     fades = [f"afade=t=in:st=0:d={FADE}", f"afade=t=out:st={round(total - FADE, 3)}:d={FADE}"] if fade else []
     mix = bool(voice and audio and voice[1] == "mix")
     if audio:
         apost = ([CLEAN] if "clean" in extras else []) + ([LEVEL] if "level" in extras else []) + fades
         apost.append("aresample=48000")   # loudnorm works at a high rate; back to normal
-        parts.append(f"[ac]{','.join(apost)}[{'ao' if mix else 'a'}]")
+        parts.append(f"[0:a]{','.join(apost)}[{'ao' if mix else 'a'}]")
     if voice:
-        vo = f"[{len(paths)}:a]aresample=48000,aformat=channel_layouts=stereo,apad,atrim=duration={total}"
+        vo = f"[1:a]aresample=48000,aformat=channel_layouts=stereo,apad,atrim=duration={total}"
         if mix:   # the voice over the video's own sound, which drops to a quarter
             parts.append(vo + "[vo]")
             parts.append("[ao]volume=0.25[bg];[bg][vo]amix=inputs=2:duration=first:normalize=0" + (f",{','.join(fades)}" if fades else "") + "[a]")
         else:
             parts.append(vo + (f",{','.join(fades)}" if fades else "") + "[a]")
-    cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y"]
-    for i, p in enumerate(paths):
-        if i in stills:
-            cmd += ["-loop", "1", "-framerate", "30", "-t", str(stills[i])]
-        cmd += ["-i", str(p)]
+    cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-threads", "2",
+           "-f", "concat", "-safe", "0", "-i", str(join_list)]
     if voice:
         cmd += ["-i", str(voice[0])]
-    cmd += ["-filter_complex", ";".join(parts), "-map", "[v]"]
+    cmd += ["-filter_threads", "1", "-filter_complex", ";".join(parts), "-map", "[v]"]
     cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", "128k"] if audio or voice else ["-an"]
-    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart", str(out_path)]
-    return cmd
+    return cmd + ENCODE + ["-crf", "23", "-movflags", "+faststart", str(out_path)]
 
 
 def steady_commands(src, out_path):
@@ -186,9 +187,21 @@ def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run, extr
     first = out_path.with_name(out_path.stem + "-pass1.mp4") if "steady" in extras else out_path
     if not lock.acquire(blocking=False):
         raise EditError("Another video is being made right now. Try again in a minute.")
+    want_audio = bool(audio and any(audio))
+    run = lambda cmd, **kw: runner(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT, **kw)
     try:
-        r = runner(command(paths, pieces, audio, turn, first, stills, extras, voice), capture_output=True, text=True,
-                   encoding="utf-8", errors="replace", timeout=TIMEOUT)
+        with tempfile.TemporaryDirectory(prefix=".making-", dir=str(out_path.parent)) as tmp:
+            names = []
+            for n, (i, a, b) in enumerate(pieces):
+                piece = Path(tmp) / f"piece{n:03d}.mp4"
+                r = run(piece_command(paths[i], a, b, i in stills, bool(audio and audio[i]), want_audio, turn, piece))
+                if r.returncode != 0:
+                    break
+                names.append(piece.name)
+            else:
+                join_list = Path(tmp) / "join.txt"
+                join_list.write_text("".join(f"file '{name}'\n" for name in names))
+                r = run(finish_command(join_list, sum(b - a for _, a, b in pieces), want_audio, first, extras, voice))
         if r.returncode == 0 and "steady" in extras:
             cmds, trf = steady_commands(first, out_path)
             try:
