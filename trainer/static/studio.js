@@ -1114,7 +1114,155 @@
         fetch("/api/manage/video/info?v=" + encodeURIComponent(c.video)).then((r) => r.json()).then((r) => { if (r.duration) c.duration = r.duration; }).catch(() => {})));
       drawClips();
     }
-    makeBtn.addEventListener("click", async () => {
+    // Make the video on this computer: the browser plays each kept part into a 1280x720 picture
+    // (turned, with the effects and fades) and records it with the sound and voiceover as it plays,
+    // then uploads the finished file. It takes as long as the video is long, and the server only
+    // tidies the file. The server way (makeOnServer) is the backup.
+    const recType = () => (window.MediaRecorder && window.AudioContext && HTMLCanvasElement.prototype.captureStream
+      // H.264 MP4 only, so the video plays everywhere (iPads too); other browsers use the server.
+      && ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4;codecs=avc1,mp4a"].find((t) => MediaRecorder.isTypeSupported(t))) || "";
+    async function makeHere(step) {
+      const type = recType(), W = 1280, H = 720, T = totalLen(), on = (k) => opts.extras.has(k);
+      const cv = el("canvas", { width: W, height: H }), g = cv.getContext("2d");
+      const ac = new AudioContext();
+      await ac.resume();
+      const out = ac.createMediaStreamDestination(), master = ac.createGain();
+      master.connect(out);
+      const vid = el("video", { playsinline: true, preload: "auto" });
+      const hp = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), comp = ac.createDynamicsCompressor(), vgain = ac.createGain();
+      hp.type = "highpass"; lp.type = "lowpass";
+      hp.frequency.value = on("clean") ? 80 : 10; lp.frequency.value = on("clean") ? 12000 : 22000;
+      if (on("level")) { comp.threshold.value = -30; comp.ratio.value = 6; } else { comp.threshold.value = 0; comp.ratio.value = 1; }
+      const voice = vo.on && vo.audio;
+      vgain.gain.value = opts.mute || (voice && vo.mode === "replace") ? 0 : (on("level") ? 1.8 : 1) * (voice ? 0.35 : 1);
+      ac.createMediaElementSource(vid).connect(hp).connect(lp).connect(comp).connect(vgain).connect(master);
+      let vAud = null;
+      if (voice) { vAud = new Audio(vo.audio); vAud.preload = "auto"; ac.createMediaElementSource(vAud).connect(master); }
+      const stream = new MediaStream([...cv.captureStream(30).getVideoTracks(), ...out.stream.getAudioTracks()]);
+      const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 6e6, audioBitsPerSecond: 160000 });
+      const chunks = [];
+      rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      const stopped = new Promise((ok) => { rec.onstop = ok; });
+      const wait = (target, ev) => new Promise((ok, bad) => {
+        const done = () => { target.removeEventListener(ev, done); target.removeEventListener("error", fail); ok(); };
+        const fail = () => { target.removeEventListener(ev, done); bad(new Error("A clip couldn't be played on this computer.")); };
+        target.addEventListener(ev, done); target.addEventListener("error", fail);
+      });
+      let pos = 0;    // seconds of the new video made so far
+      function draw(src, sw, sh) {
+        const k = on("fade") ? Math.max(0, Math.min(1, pos / 0.6, (T - pos) / 0.6)) : 1;
+        g.fillStyle = "#000"; g.fillRect(0, 0, W, H);
+        if (!sw || !sh) return;
+        const side = opts.turn % 180 !== 0, fw = side ? sh : sw, fh = side ? sw : sh, s = Math.min(W / fw, H / fh);
+        g.save();
+        g.filter = on("bright") ? "brightness(1.08) contrast(1.1) saturate(1.15)" : "none";
+        g.translate(W / 2, H / 2); g.rotate((opts.turn || 0) * Math.PI / 180);
+        g.drawImage(src, -sw * s / 2, -sh * s / 2, sw * s, sh * s);
+        g.restore();
+        if (k < 1) { g.fillStyle = `rgba(0,0,0,${1 - k})`; g.fillRect(0, 0, W, H); }
+        master.gain.value = k;
+      }
+      const say2 = () => step(`${clock(pos)} of ${clock(T)}`);
+      const voiceGo = () => { if (vAud && pos < vAud.duration + 0.1) { vAud.currentTime = pos; vAud.play().catch(() => {}); } };
+      const voiceStop = () => { if (vAud) vAud.pause(); };
+      if (vAud) await Promise.race([wait(vAud, "canplaythrough"), new Promise((ok) => setTimeout(ok, 8000))]);
+      rec.start(1000); rec.pause();
+      try {
+        for (const c of clips) {
+          if (c.still) {
+            const img = new Image();
+            img.src = c.video;
+            await img.decode().catch(() => { throw new Error("A picture couldn't be loaded on this computer."); });
+            const len = c.seconds || c.duration || 5, from = pos, t0 = performance.now();
+            draw(img, img.naturalWidth, img.naturalHeight);
+            rec.resume(); voiceGo();
+            await new Promise((ok) => {
+              const tick = () => {
+                pos = from + Math.min(len, (performance.now() - t0) / 1000);
+                draw(img, img.naturalWidth, img.naturalHeight); say2();
+                if (pos - from >= len) ok(); else requestAnimationFrame(tick);
+              };
+              requestAnimationFrame(tick);
+            });
+            rec.pause(); voiceStop(); pos = from + len;
+            continue;
+          }
+          if (vid.getAttribute("src") !== c.video) { vid.src = c.video; await wait(vid, "loadedmetadata"); }
+          for (const [a, b] of keepPieces(c)) {
+            const from = pos;
+            vid.currentTime = a; await wait(vid, "seeked");
+            draw(vid, vid.videoWidth, vid.videoHeight);
+            rec.resume(); voiceGo();
+            await vid.play().catch(() => { throw new Error("A clip couldn't be played on this computer."); });
+            await new Promise((ok) => {
+              let over = false;
+              const end = () => { over = true; };
+              vid.addEventListener("ended", end, { once: true });
+              const tick = () => {
+                pos = from + Math.max(0, Math.min(b, vid.currentTime) - a);
+                draw(vid, vid.videoWidth, vid.videoHeight); say2();
+                if (over || vid.currentTime >= b - 0.02 || vid.paused) { vid.removeEventListener("ended", end); ok(); }
+                else requestAnimationFrame(tick);
+              };
+              tick();
+            });
+            vid.pause(); rec.pause(); voiceStop(); pos = from + (b - a);
+          }
+        }
+        rec.resume();
+        rec.stop();
+        await stopped;
+      } finally {
+        if (rec.state !== "inactive") rec.stop();
+        vid.removeAttribute("src"); voiceStop(); ac.close().catch(() => {});
+      }
+      const blob = new Blob(chunks, { type: "video/mp4" });
+      if (!blob.size) throw new Error("Nothing was recorded. Keep this window in front while it makes the video.");
+      const form = new FormData();
+      form.append("video_file", blob, "made.mp4");
+      form.append("lesson", lessonName());
+      form.append("label", o.label ? `${o.label} (edited)` : "Made video");
+      form.append("made_here", "1");
+      const link = await new Promise((ok, bad) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/manage/video");
+        xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) step(`saving it to the app, ${Math.round(100 * ev.loaded / ev.total)}%`); };
+        xhr.onload = () => {
+          let r = {}; try { r = JSON.parse(xhr.responseText); } catch (e) { /* below */ }
+          if (xhr.status === 200 && r.video) ok(r.video); else bad(new Error(r.error || r.detail || "The finished video couldn't be saved. Try again."));
+        };
+        xhr.onerror = () => bad(new Error("The finished video couldn't be saved. Check the connection and try again."));
+        xhr.send(form);
+      });
+      return { video: link, duration: T };
+    }
+    // The server way: ffmpeg on the online server, as a background job it reports on every two seconds.
+    async function makeOnServer() {
+      status.textContent = "Making the video on the server… this can take a while for a long video. Keep this open.";
+      const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lesson: lessonName(), label: o.label ? `${o.label} (edited)` : "", mute: opts.mute, turn: opts.turn, extras: [...opts.extras],
+          ...(vo.on && vo.audio ? { voiceover: { audio: vo.audio, mode: vo.mode } } : {}),
+          background: true,
+          clips: clips.map((c) => ({ video: c.video, start: c.start || 0, end: c.end, cuts: c.cuts, ...(c.still ? { seconds: c.seconds } : {}) })) }) });
+      let r = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(r.error || r.detail || "The video couldn't be made. Try again.");
+      let misses = 0;     // a dropped connection just retries
+      while (r.job && !r.video) {
+        await new Promise((ok) => setTimeout(ok, 2000));
+        let p;
+        try { p = await fetch("/api/manage/video/edit/" + r.job); } catch (e) { if (++misses > 30) throw new Error("Lost touch with the app. Check the connection, then make the video again."); continue; }
+        const j = await p.json().catch(() => ({}));
+        if (!p.ok) throw new Error(j.error || "The video couldn't be made. Try again.");
+        misses = 0;
+        if (j.state === "failed") throw new Error(j.error || "The video couldn't be made. Try again.");
+        if (j.state === "done") r = j; else status.textContent = `Making the video on the server: ${j.step || "working…"} Keep this open.`;
+      }
+      if (!r.video) throw new Error("The video couldn't be made. Try again.");
+      return r;
+    }
+    // Made on this computer when the browser can (much faster than the small server); the server
+    // makes it when this browser can't record, or for "Steady shaky video".
+    async function makeVideo(onServer) {
       if (busy) return;
       if (!clips.length) { say("Add a video or a picture first."); return; }
       if (!clips.every((c) => c.duration)) {
@@ -1123,37 +1271,22 @@
         const bad = clips.findIndex((c) => !c.duration);
         if (bad >= 0) { say(`Clip ${bad + 1} can't be read. Remove it (✕) or add it again, then Make the video.`); return; }
       }
-      busy = true; makeBtn.disabled = true; makeBtn.textContent = "Making… keep this open"; player.pause();
-      status.textContent = "Making the video… this can take a minute or two for a long video. Keep this open.";
+      const here = !onServer && recType() && !opts.extras.has("steady");
+      busy = true; makeBtn.disabled = true; makeBtn.textContent = "Making… keep this open"; stopAll();
       try {
-        const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lesson: lessonName(), label: o.label ? `${o.label} (edited)` : "", mute: opts.mute, turn: opts.turn, extras: [...opts.extras],
-            ...(vo.on && vo.audio ? { voiceover: { audio: vo.audio, mode: vo.mode } } : {}),
-            background: true,
-            clips: clips.map((c) => ({ video: c.video, start: c.start || 0, end: c.end, cuts: c.cuts, ...(c.still ? { seconds: c.seconds } : {}) })) }) });
-        let r = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(r.error || r.detail || "The video couldn't be made. Try again.");
-        // Made in the background: ask how it's going every two seconds (a dropped connection just retries).
-        let misses = 0;
-        while (r.job && !r.video) {
-          await new Promise((ok) => setTimeout(ok, 2000));
-          let p;
-          try { p = await fetch("/api/manage/video/edit/" + r.job); } catch (e) { if (++misses > 30) throw new Error("Lost touch with the app. Check the connection, then make the video again."); continue; }
-          const j = await p.json().catch(() => ({}));
-          if (!p.ok) throw new Error(j.error || "The video couldn't be made. Try again.");
-          misses = 0;
-          if (j.state === "failed") throw new Error(j.error || "The video couldn't be made. Try again.");
-          if (j.state === "done") r = j; else status.textContent = `Making the video: ${j.step || "working…"} Keep this open.`;
-        }
-        if (!r.video) throw new Error("The video couldn't be made. Try again.");
+        const r = here
+          ? await makeHere((m) => { status.textContent = `Making the video on this computer: ${m}. Keep this window open and in front.`; })
+          : await makeOnServer();
         const kept = clips[0] && clips[0].video === original && !clips[0].still ? keepPieces(clips[0]) : null;
         busy = false; dropDraft(); close();
         if (o.onDone) o.onDone(r, kept);
       } catch (e) {
-        busy = false; makeBtn.disabled = false; makeBtn.textContent = "Make the video"; status.textContent = e.message;
+        busy = false; makeBtn.disabled = false; makeBtn.textContent = "Make the video";
+        status.replaceChildren(e.message + " ", here ? el("button", { type: "button", class: "linkish", onclick: () => makeVideo(true) }, "Make it on the server instead") : "");
         status.scrollIntoView({ block: "center", behavior: "smooth" });
       }
-    });
+    }
+    makeBtn.addEventListener("click", () => makeVideo(false));
 
     const back = el("div", { class: "vedit-back", role: "dialog", "aria-modal": "true", "aria-label": "Edit video" },
       el("div", { class: "vedit card" },

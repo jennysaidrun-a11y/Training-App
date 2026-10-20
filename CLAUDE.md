@@ -34,7 +34,11 @@ Cal/OSHA (8 CCR, Title 8) apply.
   (`piece_command` per kept piece, two threads, then `finish_command` joins them and adds touch-ups/voice) so it fits
   the 1 GB Fly machine (one big filter graph got ffmpeg OOM-killed on 4K phone video); routes
   `/api/manage/video/edit` and `/api/manage/video/info`. "Make the video" runs as a background job
-  (`background: true` returns `{job}`; the editor polls `/api/manage/video/edit/<job>` for step/state) so no request hangs. Only files already in `data/media` can be edited.
+  (`background: true` returns `{job}`; the editor polls `/api/manage/video/edit/<job>` for step/state) so no request hangs.
+  Normally it's made on the manager's own computer instead (`makeHere`: the browser plays each kept part into a 1280x720 canvas
+  with the turn/effects/fades and records it with the sound and voiceover via MediaRecorder, H.264 MP4 only, in real time),
+  then uploaded with `made_here` so the server only re-indexes it (`video.tidy`, stream copy). The server way is used when the
+  browser can't record H.264, for "Steady", or from "Make it on the server instead" after a failure. Only files already in `data/media` can be edited.
   Pictures can be clips too (shown still for N seconds), so a video can be made from pictures alone.
   Touch-ups (`video.EXTRAS`): clean up sound (highpass/lowpass + afftdn), even volume (loudnorm), fade,
   brighter/sharper (eq + unsharp), steady (vid.stab two-pass after the main encode).

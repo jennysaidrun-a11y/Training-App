@@ -7,6 +7,7 @@ package (pip installs a ready-made copy on Windows, Mac and Linux, so nothing el
 set up). Every edit makes a new 720p MP4 (H.264 + AAC) that plays on iPads, phones and
 computers; the clips it came from are left as they were.
 """
+import os
 import pathlib
 import re
 import subprocess
@@ -48,6 +49,21 @@ def probe(path, runner=subprocess.run):
         raise EditError("That video couldn't be read. Try uploading it again.")
     h, mi, s = m.groups()
     return {"duration": int(h) * 3600 + int(mi) * 60 + float(s), "audio": bool(re.search(r"Stream #.*Audio:", r.stderr))}
+
+
+def tidy(path, runner=subprocess.run):
+    """A video made in a browser (recorded as it played) gets a proper index, so it shows its length
+    and can be jumped around in. Copies the streams as they are: seconds of work, nothing re-made."""
+    path = pathlib.Path(path)
+    out = path.with_name(".tidy-" + path.name)
+    cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(path), "-c", "copy"]
+    cmd += ["-movflags", "+faststart"] if path.suffix == ".mp4" else []
+    r = runner(cmd + [str(out)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
+    if r.returncode != 0 or not out.is_file() or out.stat().st_size == 0:
+        out.unlink(missing_ok=True)
+        return False
+    os.replace(out, path)
+    return True
 
 
 def frame(src, t, out_path, runner=subprocess.run):

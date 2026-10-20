@@ -1265,7 +1265,11 @@ async def upload_video(request: Request):
         return JSONResponse({"error": f"'{upload.filename}' isn't a video the app can play. Use an .mp4, .mov, .m4v or .webm file."}, status_code=400)
     if (upload.size or 0) > MAX_VIDEO_BYTES:
         return JSONResponse({"error": "That video is over 2 GB. Please use a shorter or smaller copy."}, status_code=400)
-    return {"video": _save_upload(upload, str(form.get("lesson") or "lesson"), str(form.get("label") or ""))}
+    link = _save_upload(upload, str(form.get("lesson") or "lesson"), str(form.get("label") or ""))
+    # Made in the browser ("Make the video" on this computer): give it a proper index (no re-making).
+    if form.get("made_here") and ext in (".mp4", ".webm"):
+        await run_in_threadpool(video.tidy, media_dir() / link.rsplit("/", 1)[-1])
+    return {"video": link}
 
 
 def _media_file(link, types=VIDEO_TYPES):

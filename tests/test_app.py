@@ -1680,3 +1680,19 @@ def test_speech_and_voiceover(client, anon, env, monkeypatch):
     assert r.status_code == 200 and video.probe(app_module.media_dir() / r.json()["video"].rsplit("/", 1)[-1])["audio"]
     assert client.post("/api/manage/video/edit", json={"voiceover": {"audio": "/speech/nope.m4a", "mode": "mix"},
                                                        "clips": [{"video": "/media/" + a.name}]}).status_code == 400
+
+
+def test_video_made_in_the_browser_is_tidied(client, env, tmp_path):
+    """A video recorded in the browser is saved as it is; the server only gives it a proper index."""
+    from trainer import app as app_module, video
+    src = tmp_path / "made.mp4"
+    _clip(src, 2)
+    r = client.post("/api/manage/video", data={"lesson": "allergens", "made_here": "1"},
+                    files={"video_file": ("made.mp4", src.read_bytes(), "video/mp4")})
+    path = app_module.media_dir() / r.json()["video"].rsplit("/", 1)[-1]
+    assert abs(video.probe(path)["duration"] - 2) < 0.3
+    assert not list(app_module.media_dir().glob(".tidy-*"))
+    # Something that isn't really a video is kept as uploaded (nothing to tidy).
+    r = client.post("/api/manage/video", data={"lesson": "allergens", "made_here": "1"},
+                    files={"video_file": ("made.webm", b"webm" * 100, "video/webm")})
+    assert r.status_code == 200
