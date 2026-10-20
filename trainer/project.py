@@ -160,6 +160,11 @@ def job(job_id):
         return dict(j) if j else None
 
 
+def busy():
+    with _jobs_lock:
+        return any(j["state"] == "running" for j in _jobs.values())
+
+
 def start(spec, media_dir, finish, run=None):
     """spec: {videos: [Path], photos: [(link, Path, label)], template, transcript, notes, lesson}.
     finish(result) settles Claude's draft (citations checked, pictures) and returns it.

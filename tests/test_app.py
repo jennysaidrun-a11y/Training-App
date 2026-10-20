@@ -1696,3 +1696,39 @@ def test_video_made_in_the_browser_is_tidied(client, env, tmp_path):
     r = client.post("/api/manage/video", data={"lesson": "allergens", "made_here": "1"},
                     files={"video_file": ("made.webm", b"webm" * 100, "video/webm")})
     assert r.status_code == 200
+
+
+def test_same_video_added_twice_is_kept_once(client, env):
+    from trainer import app as app_module
+    data = b"\x00\x00\x00\x18ftypmp42" + b"v" * 5000
+    one = client.post("/api/manage/video", data={"lesson": "allergens"}, files={"video_file": ("a.mp4", data, "video/mp4")}).json()["video"]
+    two = client.post("/api/manage/video", data={"lesson": "allergens"}, files={"video_file": ("b.mp4", data, "video/mp4")}).json()["video"]
+    other = client.post("/api/manage/video", data={"lesson": "allergens"}, files={"video_file": ("c.mp4", data + b"x", "video/mp4")}).json()["video"]
+    assert one == two != other
+    assert len(list(app_module.media_dir().glob("*.mp4"))) == 2
+
+
+def test_server_stays_awake_while_working(env, monkeypatch):
+    """While a video is being made, the app keeps a request open to itself so Fly doesn't stop it."""
+    import time
+    from trainer import app as app_module
+    calls = []
+
+    class R:
+        def read(self):
+            return b""
+
+    def get(url, timeout):
+        calls.append(url)
+        time.sleep(0.05)
+        return R()
+    app_module._video_jobs["t"] = {"at": time.time(), "state": "running"}
+    try:
+        app_module.keep_awake("https://example.fly.dev", get=get)
+        app_module.keep_awake("https://example.fly.dev", get=get)   # only one keeper at a time
+        time.sleep(0.3)
+        assert calls and calls[0] == f"https://example.fly.dev/awake?key={app_module.AWAKE_KEY}"
+    finally:
+        app_module._video_jobs["t"]["state"] = "done"
+    time.sleep(0.2)
+    assert not app_module._awake["on"]

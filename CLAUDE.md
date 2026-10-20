@@ -38,7 +38,10 @@ Cal/OSHA (8 CCR, Title 8) apply.
   Normally it's made on the manager's own computer instead (`makeHere`: the browser plays each kept part into a 1280x720 canvas
   with the turn/effects/fades and records it with the sound and voiceover via MediaRecorder, H.264 MP4 only, in real time),
   then uploaded with `made_here` so the server only re-indexes it (`video.tidy`, stream copy). The server way is used when the
-  browser can't record H.264, for "Steady", or from "Make it on the server instead" after a failure. Only files already in `data/media` can be edited.
+  browser can't record H.264, for "Steady", or from "Make it on the server instead" after a failure.
+  While a video or project job runs, `app.keep_awake` keeps one slow request open to the app's own Fly address (`/awake`,
+  secret key per start) so Fly's auto-stop doesn't stop the machine mid-job. A video copied in twice (upload or Drive) is kept
+  once (`_keep_one_copy`, same size + sha256); renders and uploads refuse when the disk is nearly full (`FULL`). Only files already in `data/media` can be edited.
   Pictures can be clips too (shown still for N seconds), so a video can be made from pictures alone.
   Touch-ups (`video.EXTRAS`): clean up sound (highpass/lowpass + afftdn), even volume (loudnorm), fade,
   brighter/sharper (eq + unsharp), steady (vid.stab two-pass after the main encode).

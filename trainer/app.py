@@ -1,5 +1,7 @@
 """The training app: worker pages, the lesson player and the manager pages."""
+import asyncio
 import datetime as dt
+import hashlib
 import json
 import pathlib
 import os
@@ -11,6 +13,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from urllib.parse import quote
+from urllib.request import urlopen
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -1265,6 +1268,8 @@ async def upload_video(request: Request):
         return JSONResponse({"error": f"'{upload.filename}' isn't a video the app can play. Use an .mp4, .mov, .m4v or .webm file."}, status_code=400)
     if (upload.size or 0) > MAX_VIDEO_BYTES:
         return JSONResponse({"error": "That video is over 2 GB. Please use a shorter or smaller copy."}, status_code=400)
+    if (upload.size or 0) + 100 * 1024 * 1024 > _space_left():
+        return JSONResponse({"error": FULL}, status_code=400)
     link = _save_upload(upload, str(form.get("lesson") or "lesson"), str(form.get("label") or ""))
     # Made in the browser ("Make the video" on this computer): give it a proper index (no re-making).
     if form.get("made_here") and ext in (".mp4", ".webm"):
@@ -1300,7 +1305,7 @@ DRIVE_FILE_ID = re.compile(r"^[A-Za-z0-9_-]{20,}$")
 DRIVE_API = "https://www.googleapis.com/drive/v3/files/"
 
 
-def _drive_copy(link, lesson_id, get=None, file_id=None, token=None, name=""):
+def _drive_copy(link, lesson_id, get=None, file_id=None, token=None, name="", want=None):
     """Copies a Google Drive video or picture into data/media: from a share link, or a file
     picked with the Drive button (file_id + the manager's short-lived Google token, used
     once and never stored). Returns (kind, /media/ link) with kind "video" or "image";
@@ -1335,6 +1340,8 @@ def _drive_copy(link, lesson_id, get=None, file_id=None, token=None, name=""):
         if ext not in MEDIA_TYPES and ext not in HEIC_TYPES:
             raise ValueError("That file isn't a video or picture the app can use (MP4, MOV, WebM, JPG, PNG, WebP, GIF or iPhone HEIC).")
         kind = "video" if ext in VIDEO_TYPES else "image"
+        if want in ("video", "image") and kind != want:     # checked before copying anything
+            raise ValueError("That Drive file is a picture, not a video." if want == "video" else "That Drive file is a video, not a picture.")
         cap = MAX_VIDEO_BYTES if kind == "video" else MAX_IMAGE_BYTES
         name = f"{content.slugify(lesson_id)}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}{ext}"
         path, size, head = media_dir() / name, 0, b""
@@ -1357,7 +1364,7 @@ def _drive_copy(link, lesson_id, get=None, file_id=None, token=None, name=""):
         except BaseException:
             path.unlink(missing_ok=True)
             raise
-    return kind, _library_add(f"/media/{name}", os.path.splitext(fname[-1])[0] if fname[-1] else "From Google Drive")
+    return kind, _keep_one_copy(media_dir() / name, os.path.splitext(fname[-1])[0] if fname[-1] else "From Google Drive")
 
 
 @app.post("/api/manage/drive")
@@ -1372,13 +1379,9 @@ async def from_drive(request: Request):
     except (ValueError, AttributeError):
         return JSONResponse({"error": "Paste a Google Drive link."}, status_code=400)
     try:
-        kind, media = await run_in_threadpool(lambda: _drive_copy(link, lesson_id, **picked))
+        kind, media = await run_in_threadpool(lambda: _drive_copy(link, lesson_id, want=want, **picked))
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-    if want in ("video", "image") and kind != want:
-        (media_dir() / media.rsplit("/", 1)[-1]).unlink(missing_ok=True)
-        return JSONResponse({"error": "That Drive file is a picture, not a video." if want == "video"
-                             else "That Drive file is a video, not a picture."}, status_code=400)
     return {"kind": kind, kind: media}
 
 
@@ -1554,6 +1557,8 @@ async def edit_video(request: Request):
         if not preview:
             _library_add(f"/media/{out}", label)
         return {"video": f"/media/{out}", **made}
+    if _space_left() < 300 * 1024 * 1024:
+        return JSONResponse({"error": FULL}, status_code=400)
     if body.get("background") and not preview:
         # A long video is made in the background and the page asks how it's going, so no
         # request is left hanging (the online server's proxy drops very long ones).
@@ -1572,6 +1577,7 @@ async def edit_video(request: Request):
             except Exception:
                 j.update(state="failed", error="The video couldn't be made. Try again.")
         threading.Thread(target=work, daemon=True).start()
+        keep_awake()
         return {"job": job}
     try:
         return await run_in_threadpool(run)
@@ -1580,6 +1586,79 @@ async def edit_video(request: Request):
 
 
 _video_jobs, _video_jobs_lock = {}, threading.Lock()
+
+
+# The online server (Fly) stops itself when no request is open, even in the middle of making a
+# video in the background. While a video or a project is being made, the app keeps one slow
+# request open to itself through Fly's front door, so it stays on until the work is done.
+AWAKE_KEY = secrets.token_hex(16)
+_awake = {"on": False}
+_awake_lock = threading.Lock()
+
+
+def _busy():
+    return any(j.get("state") == "running" for j in list(_video_jobs.values())) or project.busy()
+
+
+def keep_awake(base=None, get=urlopen):
+    base = base or (f"https://{os.environ['FLY_APP_NAME']}.fly.dev" if os.environ.get("FLY_APP_NAME") else "")
+    if not base:
+        return
+    with _awake_lock:
+        if _awake["on"]:
+            return
+        _awake["on"] = True
+
+    def loop():
+        try:
+            while _busy():
+                try:
+                    get(f"{base}/awake?key={AWAKE_KEY}", timeout=60).read()
+                except Exception:
+                    time.sleep(5)
+        finally:
+            with _awake_lock:
+                _awake["on"] = False
+    threading.Thread(target=loop, daemon=True).start()
+
+
+@app.get("/awake")
+async def awake(key: str = ""):
+    if not secrets.compare_digest(key, AWAKE_KEY):
+        raise HTTPException(404)
+    await asyncio.sleep(25)
+    return {"ok": True}
+
+
+FULL = "The app's storage is full. Delete videos you don't need in Lessons > Media, then try again."
+
+
+def _space_left():
+    return shutil.disk_usage(media_dir()).free
+
+
+def _sha(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _keep_one_copy(path, label):
+    """A video just saved to data/media that's identical to one already there (the same video
+    copied in twice) is dropped and the earlier copy used, so it doesn't take the space twice."""
+    if path.suffix.lower() not in VIDEO_TYPES:     # pictures are small; only videos are worth it
+        return _library_add(f"/media/{path.name}", label)
+    size, digest = path.stat().st_size, None
+    for other in media_dir().iterdir():
+        if other == path or other.name.startswith(".") or other.suffix.lower() != path.suffix.lower() or not other.is_file() or other.stat().st_size != size:
+            continue
+        digest = digest or _sha(path)
+        if _sha(other) == digest:
+            path.unlink(missing_ok=True)
+            return f"/media/{other.name}" if other.name in _library() else _library_add(f"/media/{other.name}", label)
+    return _library_add(f"/media/{path.name}", label)
 
 
 @app.get("/api/manage/video/edit/{job_id}")
@@ -1732,6 +1811,7 @@ async def build_project(request: Request):
     job = project.start({"videos": videos, "photos": photos, "template": template, "lesson": str(body.get("lesson") or "lesson"),
                          "transcript": str(body.get("transcript") or "")[:project.MAX_TRANSCRIPT],
                          "notes": str(body.get("notes") or "")}, media_dir(), _settle_draft)
+    keep_awake()
     return {"job": job}
 
 
@@ -1933,7 +2013,7 @@ def _save_upload(upload, lesson_id, label=""):
     name = f"{content.slugify(lesson_id)}-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}{ext}"
     with open(media_dir() / name, "wb") as out:
         shutil.copyfileobj(upload.file, out, 1024 * 1024)
-    return _library_add(f"/media/{name}", label or os.path.splitext(upload.filename)[0])
+    return _keep_one_copy(media_dir() / name, label or os.path.splitext(upload.filename)[0])
 
 
 def _save_picture(ext, data):
