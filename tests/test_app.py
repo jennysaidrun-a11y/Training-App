@@ -1525,6 +1525,24 @@ def test_video_editor_touch_ups(client, env):
     assert "afftdn" in cmd and "fade=t=out:st=3.4" in cmd and "loudnorm" not in cmd
 
 
+def test_video_made_in_the_background(client, env):
+    """A long edit runs in the background; the page asks how it's going until the video is ready."""
+    import time
+    from trainer import app as app_module, video
+    a = app_module.media_dir() / "bg-20990101000000.mp4"
+    _clip(a, 2)
+    r = client.post("/api/manage/video/edit", json={"background": True, "clips": [{"video": "/media/" + a.name}, {"video": "/media/" + a.name, "cuts": [[0.5, 1]]}]})
+    assert r.status_code == 200 and r.json()["job"]
+    for _ in range(120):
+        j = client.get("/api/manage/video/edit/" + r.json()["job"]).json()
+        if j["state"] != "running":
+            break
+        time.sleep(0.5)
+    assert j["state"] == "done", j
+    assert abs(video.probe(app_module.media_dir() / j["video"].rsplit("/", 1)[-1])["duration"] - 3.5) < 0.3
+    assert client.get("/api/manage/video/edit/nope").status_code == 404
+
+
 def test_media_studio_library(client, anon, env):
     from trainer import app as app_module
     assert "<h1>Media</h1>" in client.get("/manage/studio").text

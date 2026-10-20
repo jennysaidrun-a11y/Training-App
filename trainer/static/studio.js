@@ -1129,9 +1129,23 @@
         const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lesson: lessonName(), label: o.label ? `${o.label} (edited)` : "", mute: opts.mute, turn: opts.turn, extras: [...opts.extras],
             ...(vo.on && vo.audio ? { voiceover: { audio: vo.audio, mode: vo.mode } } : {}),
+            background: true,
             clips: clips.map((c) => ({ video: c.video, start: c.start || 0, end: c.end, cuts: c.cuts, ...(c.still ? { seconds: c.seconds } : {}) })) }) });
-        const r = await res.json().catch(() => ({}));
-        if (!res.ok || !r.video) throw new Error(r.error || r.detail || "The video couldn't be made. Try again.");
+        let r = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(r.error || r.detail || "The video couldn't be made. Try again.");
+        // Made in the background: ask how it's going every two seconds (a dropped connection just retries).
+        let misses = 0;
+        while (r.job && !r.video) {
+          await new Promise((ok) => setTimeout(ok, 2000));
+          let p;
+          try { p = await fetch("/api/manage/video/edit/" + r.job); } catch (e) { if (++misses > 30) throw new Error("Lost touch with the app. Check the connection, then make the video again."); continue; }
+          const j = await p.json().catch(() => ({}));
+          if (!p.ok) throw new Error(j.error || "The video couldn't be made. Try again.");
+          misses = 0;
+          if (j.state === "failed") throw new Error(j.error || "The video couldn't be made. Try again.");
+          if (j.state === "done") r = j; else status.textContent = `Making the video: ${j.step || "working…"} Keep this open.`;
+        }
+        if (!r.video) throw new Error("The video couldn't be made. Try again.");
         const kept = clips[0] && clips[0].video === original && !clips[0].still ? keepPieces(clips[0]) : null;
         busy = false; dropDraft(); close();
         if (o.onDone) o.onDone(r, kept);

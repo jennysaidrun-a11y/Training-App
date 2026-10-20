@@ -168,10 +168,11 @@ def steady_commands(src, out_path):
              "-movflags", "+faststart", out_path.name]], out_path.parent / trf
 
 
-def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run, extras=(), voice=None):
+def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run, extras=(), voice=None, progress=None):
     """Makes the edited video at out_path. clips: [{start, end, cuts}] matching paths;
     a picture's clip also has "seconds" (how long it shows). extras: touch-ups (EXTRAS).
-    Returns {"duration": new length in seconds}."""
+    progress(text), if given, hears each step. Returns {"duration": new length in seconds}."""
+    say = progress or (lambda text: None)
     stills, infos = {}, []
     for i, (c, p) in enumerate(zip(clips, paths)):
         if "seconds" in c:
@@ -185,14 +186,15 @@ def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run, extr
     extras = tuple(x for x in extras if x in EXTRAS)
     out_path = Path(out_path)
     first = out_path.with_name(out_path.stem + "-pass1.mp4") if "steady" in extras else out_path
-    if not lock.acquire(blocking=False):
-        raise EditError("Another video is being made right now. Try again in a minute.")
+    if not lock.acquire(timeout=1):
+        raise EditError("Another video is being made right now. Try again when it's done.")
     want_audio = bool(audio and any(audio))
     run = lambda cmd, **kw: runner(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT, **kw)
     try:
         with tempfile.TemporaryDirectory(prefix=".making-", dir=str(out_path.parent)) as tmp:
             names = []
             for n, (i, a, b) in enumerate(pieces):
+                say(f"Preparing part {n + 1} of {len(pieces)}…")
                 piece = Path(tmp) / f"piece{n:03d}.mp4"
                 r = run(piece_command(paths[i], a, b, i in stills, bool(audio and audio[i]), want_audio, turn, piece))
                 if r.returncode != 0:
@@ -201,8 +203,10 @@ def make(clips, paths, out_path, mute=False, turn=0, runner=subprocess.run, extr
             else:
                 join_list = Path(tmp) / "join.txt"
                 join_list.write_text("".join(f"file '{name}'\n" for name in names))
+                say("Putting the parts together…")
                 r = run(finish_command(join_list, sum(b - a for _, a, b in pieces), want_audio, first, extras, voice))
         if r.returncode == 0 and "steady" in extras:
+            say("Steadying the picture…")
             cmds, trf = steady_commands(first, out_path)
             try:
                 for cmd in cmds:

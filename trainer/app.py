@@ -1537,14 +1537,53 @@ async def edit_video(request: Request):
             if not vpath or vo.get("mode") not in ("replace", "mix"):
                 return JSONResponse({"error": "Make the voiceover again, then make the video."}, status_code=400)
             voice = (vpath, vo["mode"])
-        made = await run_in_threadpool(lambda: video.make(clips, paths, media_dir() / out, bool(body.get("mute")), turn,
-                                                          extras=extras, voice=voice))
     except video.EditError as e:
-        (media_dir() / out).unlink(missing_ok=True)
         return JSONResponse({"error": str(e)}, status_code=400)
-    if not preview:
-        _library_add(f"/media/{out}", str(body.get("label") or "") or "Edited video " + dt.date.today().isoformat())
-    return {"video": f"/media/{out}", **made}
+    label = str(body.get("label") or "") or "Edited video " + dt.date.today().isoformat()
+
+    def run(progress=None):
+        try:
+            made = video.make(clips, paths, media_dir() / out, bool(body.get("mute")), turn, extras=extras, voice=voice, progress=progress)
+        except Exception:
+            (media_dir() / out).unlink(missing_ok=True)
+            raise
+        if not preview:
+            _library_add(f"/media/{out}", label)
+        return {"video": f"/media/{out}", **made}
+    if body.get("background") and not preview:
+        # A long video is made in the background and the page asks how it's going, so no
+        # request is left hanging (the online server's proxy drops very long ones).
+        job = secrets.token_hex(8)
+        with _video_jobs_lock:
+            for k in [k for k, j in _video_jobs.items() if time.time() - j["at"] > 6 * 3600]:
+                _video_jobs.pop(k)
+            _video_jobs[job] = {"at": time.time(), "state": "running", "step": "Starting…"}
+
+        def work():
+            j = _video_jobs[job]
+            try:
+                j.update(run(lambda text: j.update(step=text)), state="done")
+            except video.EditError as e:
+                j.update(state="failed", error=str(e))
+            except Exception:
+                j.update(state="failed", error="The video couldn't be made. Try again.")
+        threading.Thread(target=work, daemon=True).start()
+        return {"job": job}
+    try:
+        return await run_in_threadpool(run)
+    except video.EditError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+_video_jobs, _video_jobs_lock = {}, threading.Lock()
+
+
+@app.get("/api/manage/video/edit/{job_id}")
+def edit_video_status(job_id: str):
+    j = _video_jobs.get(job_id)
+    if not j:
+        return JSONResponse({"error": "The server restarted while making the video. Make it again."}, status_code=404)
+    return {k: v for k, v in j.items() if k != "at"}
 
 
 @app.post("/api/manage/image")
