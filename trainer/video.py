@@ -113,8 +113,8 @@ def piece_command(path, a, b, still, has_audio, want_audio, turn, out_path):
     silent = want_audio and not has_audio
     if silent:
         cmd += ["-f", "lavfi", "-t", secs, "-i", "anullsrc=r=48000:cl=stereo"]
-    cmd += ["-filter_threads", "1", "-vf", f"{TURNS.get(int(turn or 0), '')}scale=1280:720:force_original_aspect_ratio=decrease,"
-            "pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p", "-map", "0:v:0"]
+    cmd += ["-filter_threads", "1", "-vf", f"fps=30,{TURNS.get(int(turn or 0), '')}scale=1280:720:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
+            "pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p", "-map", "0:v:0"]
     if want_audio:
         cmd += ["-map", "1:a:0" if silent else "0:a:0", "-af", "aresample=48000,aformat=channel_layouts=stereo",
                 "-c:a", "aac", "-b:a", "192k"]

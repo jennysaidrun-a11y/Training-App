@@ -59,6 +59,9 @@ function Save-Work {
 
 function Sync {
   Save-Work
+  # A video being made right now must not be cut off by a restart; update once it's done.
+  if (Get-ChildItem data\media -Directory -Force -Filter ".making-*" -ErrorAction SilentlyContinue |
+      Where-Object { $_.LastWriteTime -gt (Get-Date).AddMinutes(-60) }) { return }
   git fetch -q origin $Branch
   if ($LASTEXITCODE -ne 0) { return }
   # Only when GitHub has something new (our own saved edits alone are not an update).

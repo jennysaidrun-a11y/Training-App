@@ -30,7 +30,13 @@ PORT=${PORT:-8000}
 req_hash() { sha1sum requirements.txt 2>/dev/null | cut -c1-40; }
 script_hash() { sha1sum update.sh | cut -c1-40; }
 
+# A video being made right now (its work folder in data/media) must not be cut off by a restart.
+busy() { [ -n "$(find data/media -maxdepth 1 -name '.making-*' -mmin -60 2>/dev/null | head -1)" ]; }
+
 start_app() {
+  if busy && pgrep -f "python -m trainer" > /dev/null; then
+    echo "A video is being made; the app restarts after it."; return
+  fi
   pkill -f "python -m trainer" 2>/dev/null
   sleep 1
   # 9>&- : the app must not inherit the updater's lock, or a restarted updater
@@ -48,6 +54,7 @@ save_work() {
 
 sync() {
   save_work
+  busy && return   # pick up new code once the video is done
   timeout 120 git fetch -q origin "$BRANCH" || return
   # Only when GitHub has something new (our own saved edits alone are not an update).
   if [ -n "$(git rev-list -1 "HEAD..origin/$BRANCH")" ]; then
