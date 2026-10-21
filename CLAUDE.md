@@ -41,6 +41,8 @@ Cal/OSHA (8 CCR, Title 8) apply.
   with the turn/effects/fades and records it with the sound and voiceover via MediaRecorder, H.264 MP4 only, in real time),
   then uploaded with `made_here` so the server only re-indexes it (`video.tidy`, stream copy). The server way is used when the
   browser can't record H.264, for "Steady", or from "Make it on the server instead" after a failure.
+  Fly's auto-stop is off (`fly.toml`): the app turns the server off itself (`_idle_watch`: 15 quiet minutes, no open
+  request, nothing being made; writes `IDLE_FLAG`, and `update.sh` then saves and exits 0), and Fly starts it on the next visit.
   While a video or project job runs, `app.keep_awake` keeps one slow request open to the app's own Fly address (`/awake`,
   secret key per start) so Fly's auto-stop doesn't stop the machine mid-job. A video copied in twice (upload or Drive) is kept
   once (`_keep_one_copy`, same size + sha256); renders and uploads refuse when the disk is nearly full (`FULL`). On each Fly start `fly/start.sh` runs `fly/dedupe.py`
