@@ -486,6 +486,7 @@
       if (document.querySelector(".iedit-canvas") || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
       if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undo(); }
       else if (e.key === " " && e.target.tagName !== "BUTTON") { e.preventDefault(); playBtn.click(); }
+      else if ((e.key === "Delete" || e.key === "Backspace") && !e.target.closest(".tl-say")) { e.preventDefault(); removeActive(); }
       else if ((e.key === "ArrowLeft" || e.key === ",") && !e.target.closest(".tl-say")) { e.preventDefault(); frameStep(-1); }
       else if ((e.key === "ArrowRight" || e.key === ".") && !e.target.closest(".tl-say")) { e.preventDefault(); frameStep(1); }
     };
@@ -514,6 +515,16 @@
       say("Undone.");
     }
     undoBtn.addEventListener("click", undo);
+    // Delete the clip or picture picked on the timeline (e.g. a slice you don't want).
+    function removeActive() {
+      if (!clips[active]) { say("Tap a clip or picture on the timeline first."); return; }
+      if (clips.length < 2) { say("That's the only clip. Add another one before deleting this."); return; }
+      stopAll();
+      const was = clips[active].still ? "Picture" : "Clip";
+      clips.splice(active, 1);
+      load(Math.max(0, Math.min(active, clips.length - 1)));
+      say(`${was} deleted. Undo brings it back.`);
+    }
     // Play / pause, plus where you are, under the picture.
     const playBtn = el("button", { type: "button", class: "btn small vedit-play" }, "▶ Play");
     const timeLbl = el("span", { class: "muted vedit-time" }, "0:00.0");
@@ -1152,6 +1163,7 @@
       });
       return el("div", { class: "vedit-toolbox", role: "toolbar", "aria-label": "Tools", "aria-orientation": "vertical" },
         tool("✂️", "Slice", "Split the clip in two here", () => { if (!clip()) return; if (!sliceAt(active, player.currentTime)) say("Stop the video somewhere in the middle of a clip, then slice."); else load(active + 1); }),
+        tool("🗑", "Delete", "Delete the selected clip or picture (Delete key); Undo brings it back", removeActive),
         tool("⇤", "Start", "Start the clip here (trim the beginning)", () => { const c = clip(); if (!c) return; c.start = player.currentTime; if (c.end != null && c.end < c.start) c.end = null; drawClips(); }),
         tool("⇥", "End", "End the clip here (trim the end)", () => { const c = clip(); if (!c) return; c.end = Math.max(player.currentTime, c.start || 0); drawClips(); }),
         cutBtn,

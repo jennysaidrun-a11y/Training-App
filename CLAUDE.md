@@ -21,7 +21,7 @@ Cal/OSHA (8 CCR, Title 8) apply.
   library picture or edit; saves a new copy), video editor and Google Drive.
 - Video editor ("✂ Edit video": trim, cut out parts, slice a clip in two, join clips, mute, turn, "📸 Draw on this frame":
   `/api/manage/video/frame` takes the frame, the picture editor marks it up, and it goes in as a still between the slices).
-  Laid out like a video app: a vertical toolbox on the left (`.vedit-toolbox`: Slice, Start, End, Cut, Draw, Voice, Add,
+  Laid out like a video app: a vertical toolbox on the left (`.vedit-toolbox`: Slice, Delete (also the Delete key), Start, End, Cut, Draw, Voice, Add,
   Sound, Undo; a row on phones), and under the picture ◀︎| Play (runs through every clip and picture in order) |▶︎ (one frame; ← → or , .), Undo (every clip change; Ctrl+Z)
   and a timeline (`.tl`: ruler, a block per clip (pictures show as thumbnails; drag one to change the order, tap to jump
   there), a block per voiceover line). Dragging on the ruler or voice track scrubs with the
