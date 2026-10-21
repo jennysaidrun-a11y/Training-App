@@ -28,7 +28,9 @@ Cal/OSHA (8 CCR, Title 8) apply.
   picture following; dragging a voice block moves that line (the picture shows where it lands) and re-makes the voice.
   Draw and Text (a filled text box typed right on the picture) work on a video frame or a picture clip. Nothing closes on a
   click outside; the clips and voiceover lines auto save in the browser (`localStorage` "video-draft:…") and come back when
-  the same videos are opened again ("Start over" drops them). The lesson editor keeps unsaved changes the same way
+  the same videos are opened again ("Start over" drops them). They're also saved in the app as drafts (`/api/manage/drafts`,
+  `data/media/drafts.json`, every 2 s after a change; Media > Drafts lists and reopens them on any computer; a blank "Make a video"
+  starts fresh; making the video deletes its draft; a draft's clips count as used). The lesson editor keeps unsaved changes the same way
   ("lesson-draft:<id>"; workers only see changes after Save lesson, since a saved lesson is live).
   Frames are taken from the player when the browser shows the video, else by the server. Effects are toggle buttons that change the preview at once (CSS filters/turn, Web Audio filters); "Exact preview"
   renders 5 s with `preview: true` (not kept in the library). `trainer/video.py`
@@ -37,8 +39,9 @@ Cal/OSHA (8 CCR, Title 8) apply.
   the 1 GB Fly machine (one big filter graph got ffmpeg OOM-killed on 4K phone video); routes
   `/api/manage/video/edit` and `/api/manage/video/info`. "Make the video" runs as a background job
   (`background: true` returns `{job}`; the editor polls `/api/manage/video/edit/<job>` for step/state) so no request hangs.
-  Normally it's made on the manager's own computer instead (`makeHere`: the browser plays each kept part into a 1280x720 canvas
+  Normally it's made on the manager's own computer instead (`makeHere`: clips are first copied into the browser (blob URLs) so playback never waits on the network; the browser plays each kept part into a 1280x720 canvas
   with the turn/effects/fades and records it with the sound and voiceover via MediaRecorder, H.264 MP4 only, in real time),
+  pausing while the window is hidden; stuck 10 s, or any failure there, switches to the server way by itself;
   then uploaded with `made_here` so the server only re-indexes it ("Keep working ↘" tucks the editor away while it's made;
   `makingBar` shows progress in the corner, tap to reopen; `video.tidy`, stream copy). The server way is used when the
   browser can't record H.264, for "Steady", or from "Make it on the server instead" after a failure.

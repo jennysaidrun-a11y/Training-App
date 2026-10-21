@@ -2119,6 +2119,12 @@ def _media_users():
         for link in links:
             if str(link).startswith("/media/"):
                 users.setdefault(link.rsplit("/", 1)[-1], []).append(lesson.get("title", "") + note)
+    for d in _drafts().values():          # and the ones a draft uses, so the draft still opens
+        for c in (d.get("project") or {}).get("clips") or []:
+            src = str(c.get("video", "")).rsplit("/", 1)[-1]
+            label = f"the draft {d.get('name') or 'Video draft'}"
+            if label not in users.get(src, []):
+                users.setdefault(src, []).append(label)
     # The clips and pictures a made video's edit uses stay too, so the edit can be opened again.
     for name, entry in _library().items():
         for c in (entry.get("project") or {}).get("clips") or []:
@@ -2173,15 +2179,77 @@ async def media_rename(request: Request):
 
 # A video made in the video editor keeps its edit (clips, cuts, pictures, voiceover lines, effects)
 # in its library entry, so opening it again in the editor brings the edit back to adjust.
+def _good_project(proj):
+    return isinstance(proj, dict) and isinstance(proj.get("clips"), list) and len(json.dumps(proj)) <= 200_000 and len(proj["clips"]) <= 60 \
+        and all(isinstance(c, dict) and str(c.get("video", "")).startswith("/media/") and MEDIA_NAME.match(str(c["video"])[7:]) for c in proj["clips"])
+
+
+# Drafts: a video edit saves itself here as you work (the editor sends it every few seconds), so it
+# can be opened again from Media > Drafts on any computer, until the video is made.
+DRAFT_ID = re.compile(r"^[a-f0-9]{12,32}$")
+
+
+def _drafts():
+    try:
+        return json.loads((media_dir() / "drafts.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _drafts_write(drafts):
+    tmp = media_dir() / "drafts.json.tmp"
+    tmp.write_text(json.dumps(drafts, indent=1, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, media_dir() / "drafts.json")
+
+
+@app.get("/api/manage/drafts")
+def drafts_list(key: str = ""):
+    rows = [{"id": i, "name": d.get("name") or "Video draft", "at": d.get("at", 0), "key": d.get("key", ""),
+             "clips": len((d.get("project") or {}).get("clips") or []),
+             "first": ((d.get("project") or {}).get("clips") or [{}])[0].get("video", "")} for i, d in _drafts().items()]
+    if key:
+        rows = [r for r in rows if r["key"] == key]
+    return {"drafts": sorted(rows, key=lambda r: -r["at"])}
+
+
+@app.get("/api/manage/drafts/{draft_id}")
+def draft_get(draft_id: str):
+    d = _drafts().get(draft_id) if DRAFT_ID.match(draft_id) else None
+    if not d:
+        return JSONResponse({"error": "That draft isn't there any more."}, status_code=404)
+    return {"id": draft_id, "name": d.get("name"), "key": d.get("key", ""), "project": d.get("project")}
+
+
+@app.put("/api/manage/drafts/{draft_id}")
+async def draft_save(draft_id: str, request: Request):
+    body = await request.json()
+    if not DRAFT_ID.match(draft_id) or not _good_project(body.get("project")):
+        return JSONResponse({"error": "That draft couldn't be saved."}, status_code=400)
+    with _library_lock:
+        drafts = _drafts()
+        if draft_id not in drafts and len(drafts) >= 200:
+            return JSONResponse({"error": "There are too many drafts. Delete some in Media > Drafts."}, status_code=400)
+        drafts[draft_id] = {"name": re.sub(r"\s+", " ", str(body.get("name") or "")).strip()[:120] or "Video draft",
+                            "key": str(body.get("key") or "")[:2000], "at": int(time.time()), "project": body["project"]}
+        _drafts_write(drafts)
+    return {"ok": True}
+
+
+@app.delete("/api/manage/drafts/{draft_id}")
+def draft_delete(draft_id: str):
+    with _library_lock:
+        drafts = _drafts()
+        if drafts.pop(draft_id, None) is not None:
+            _drafts_write(drafts)
+    return {"ok": True}
+
+
 @app.post("/api/manage/media/project")
 async def media_project_save(request: Request):
     body = await request.json()
     path = _media_file(body.get("link"))
     proj = body.get("project")
-    if not path or not isinstance(proj, dict) or not isinstance(proj.get("clips"), list):
-        return JSONResponse({"error": "That edit couldn't be kept."}, status_code=400)
-    if len(json.dumps(proj)) > 200_000 or len(proj["clips"]) > 60 or not all(
-            isinstance(c, dict) and str(c.get("video", "")).startswith("/media/") and MEDIA_NAME.match(str(c["video"])[7:]) for c in proj["clips"]):
+    if not path or not _good_project(proj):
         return JSONResponse({"error": "That edit couldn't be kept."}, status_code=400)
     with _library_lock:
         lib = _library()

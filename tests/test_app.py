@@ -1738,6 +1738,28 @@ def test_server_stays_awake_while_working(env, monkeypatch):
     assert not app_module._awake["on"]
 
 
+def test_video_drafts_save_list_and_delete(client, anon, env):
+    """A video edit saves itself as a draft in the app; its clips can't be deleted while it's there."""
+    from trainer import app as app_module
+    a = app_module.media_dir() / "dr-20990101000000.mp4"
+    _clip(a, 2)
+    proj = {"clips": [{"video": "/media/" + a.name, "start": 0, "end": 1}], "lines": [], "opts": {}}
+    assert anon.put("/api/manage/drafts/abcdef123456", json={"project": proj}).status_code == 401
+    assert client.put("/api/manage/drafts/../x", json={"project": proj}).status_code in (400, 404, 405)
+    assert client.put("/api/manage/drafts/abcdef123456", json={"project": {"clips": [{"video": "https://evil/x.mp4"}]}}).status_code == 400
+    r = client.put("/api/manage/drafts/abcdef123456", json={"name": "Mixer video", "key": "k1", "project": proj})
+    assert r.status_code == 200, r.text
+    rows = client.get("/api/manage/drafts").json()["drafts"]
+    assert [(d["id"], d["name"], d["clips"]) for d in rows] == [("abcdef123456", "Mixer video", 1)]
+    assert client.get("/api/manage/drafts?key=k1").json()["drafts"] and not client.get("/api/manage/drafts?key=k2").json()["drafts"]
+    assert client.get("/api/manage/drafts/abcdef123456").json()["project"] == proj
+    r = client.post("/api/manage/media/delete", json={"link": "/media/" + a.name})
+    assert r.status_code == 400 and "draft" in r.json()["error"]
+    assert client.delete("/api/manage/drafts/abcdef123456").status_code == 200
+    assert client.get("/api/manage/drafts/abcdef123456").status_code == 404
+    assert client.post("/api/manage/media/delete", json={"link": "/media/" + a.name}).status_code == 200
+
+
 def test_server_turns_itself_off_only_when_idle(client, env, monkeypatch, tmp_path):
     """Online, the app stops the server after a quiet spell, but never while a video is being made."""
     import time

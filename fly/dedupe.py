@@ -46,11 +46,11 @@ def dedupe(media, content):
         shutil.rmtree(leftover, ignore_errors=True) if leftover.is_dir() else leftover.unlink(missing_ok=True)
         freed += size
     used = used_names(content)
-    try:     # the clips a made video's saved edit uses (library.json "project") count as used too
-        lib_text = (media / "library.json").read_text(encoding="utf-8")
-        used |= set(re.findall(r"/media/([A-Za-z0-9._-]+)", lib_text))
-    except OSError:
-        pass
+    for kept in ("library.json", "drafts.json"):   # clips a made video's edit or a draft uses count as used too
+        try:
+            used |= set(re.findall(r"/media/([A-Za-z0-9._-]+)", (media / kept).read_text(encoding="utf-8")))
+        except OSError:
+            pass
     by_size = {}
     for path in media.iterdir():
         if path.is_file() and path.suffix.lower() in VIDEO and not path.name.startswith("."):

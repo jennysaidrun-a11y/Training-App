@@ -72,7 +72,7 @@
     const secs = (t) => t.split(":").reduce((a, b) => a * 60 + parseFloat(b), 0);
     const copy = () => {
       const t = status.textContent || "Making the video…";
-      text.textContent = t.replace(/ ?Keep this (window )?open( and in front)?\.?/i, "") + (/on this computer/.test(t) ? " Keep this window open." : "");
+      text.textContent = t.replace(/ ?Keep this open\.?/, "");
       const m = t.match(/(\d+(?::\d+)*(?:\.\d+)?) of (\d+(?::\d+)*(?:\.\d+)?)/), pc = t.match(/(\d+)%/);
       const f = pc ? +pc[1] / 100 : m && secs(m[2]) ? secs(m[1]) / secs(m[2]) : null;
       fill.style.width = f == null ? "" : Math.max(2, Math.min(100, f * 100)) + "%";
@@ -402,7 +402,7 @@
   // Trim, cut out parts, add more clips or pictures (from the device or Google Drive),
   // mute, turn. The server makes the new MP4 with ffmpeg (free and open source); the
   // clips themselves aren't changed.
-  const clock = (t) => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s < 10 ? "0" : ""}${s.toFixed(1)}`; };
+  const clock = (t) => { t = Math.round(Math.max(0, t || 0) * 10) / 10; const m = Math.floor(t / 60), s = (t - m * 60).toFixed(1); return `${m}:${s < 10 ? "0" : ""}${s}`; };
   function keepPieces(c) {          // same rule as the server (trainer/video.py keep_pieces)
     const dur = c.duration || 0, start = Math.min(c.start || 0, dur), end = c.end == null ? dur : Math.max(start, Math.min(c.end, dur));
     let pieces = [[start, end]];
@@ -436,27 +436,48 @@
     // the finished video so opening that video again brings the edit back to adjust.
     const project = () => ({ clips: clips.map(({ asked, ...c }) => c), lines: voLines.map(({ text, at, dur }) => ({ text, at, dur })), audio: vo.audio, mode: vo.mode,
       opts: { mute: opts.mute, turn: opts.turn, extras: [...opts.extras] } });
-    const draftState = () => JSON.stringify(project());
+    const draftState = () => { const p = project(); return JSON.stringify({ ...p, clips: p.clips.map(({ duration, ...c }) => c) }); };   // lengths read later aren't changes
     let startState = "";
+    // Drafts are also saved in the app (Media > Drafts), so an edit opens again from any tab or computer.
+    let draftId = o.draft || null, serverTimer = 0, sentState = "", serverKey = draftKey;
+    let draftName = o.name || (o.label ? `${o.label} (edit)` : lessonName() !== "studio" ? `${lessonName()} video` : "New video");
+    const savedNote = el("span", { class: "muted small vedit-saved", role: "status" });
+    function sendDraft() {
+      const st = draftState();
+      if (st === sentState || (!draftId && st === startState) || !clips.length) return;
+      draftId = draftId || [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
+      savedNote.textContent = "Saving draft…";
+      fetch("/api/manage/drafts/" + draftId, { method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: draftName, key: serverKey, project: project() }) })
+        .then((r) => { if (r.ok) { sentState = st; savedNote.textContent = "✓ Draft saved"; } else savedNote.textContent = "Draft not saved yet"; })
+        .catch(() => { savedNote.textContent = "Draft not saved yet"; });
+    }
     function keepDraft() {
       if (!draftOn) return;
       clearTimeout(draftTimer);
       draftTimer = setTimeout(() => {
         try {
           const st = draftState();
-          if (st === startState) localStorage.removeItem(draftKey);
-          else localStorage.setItem(draftKey, JSON.stringify({ at: Date.now(), state: st }));
+          if (st === startState && !draftId) localStorage.removeItem(draftKey);
+          else localStorage.setItem(draftKey, JSON.stringify({ at: Date.now(), state: st, id: draftId }));
         } catch (e) { /* storage full or off */ }
       }, 500);
+      clearTimeout(serverTimer);
+      serverTimer = setTimeout(sendDraft, 2000);
     }
-    const dropDraft = () => { clearTimeout(draftTimer); try { localStorage.removeItem(draftKey); } catch (e) { /* ignore */ } };
+    const dropDraft = () => {
+      clearTimeout(draftTimer); clearTimeout(serverTimer);
+      try { localStorage.removeItem(draftKey); } catch (e) { /* ignore */ }
+      if (draftId) fetch("/api/manage/drafts/" + draftId, { method: "DELETE" }).catch(() => {});
+      draftId = null; sentState = "";
+    };
     const player = el("video", { class: "vedit-player", controls: true, playsinline: true, preload: "metadata" });
     const still = el("img", { class: "vedit-player vedit-still", alt: "", hidden: true });
     const list = el("div", { class: "vedit-clips" });
     const total = el("span", { class: "vedit-total" });
     const status = el("p", { class: "muted vedit-status", role: "status", "aria-live": "polite" });
     const makeBtn = el("button", { type: "button", class: "btn" }, "Make the video");
-    const close = () => { if (!busy) { player.pause(); back.remove(); document.removeEventListener("keydown", onKey); } };
+    const close = () => { if (!busy) { player.pause(); back.remove(); document.removeEventListener("keydown", onKey); if (o.onClose) setTimeout(o.onClose, 2500); } };
     const onKey = (e) => {
       if (back.hidden) return;        // tucked away while the video is made: keys belong to the page
       if (e.key === "Escape") close();
@@ -1208,19 +1229,55 @@
       const voiceGo = () => { if (vAud && pos < vAud.duration + 0.1) { vAud.currentTime = pos; vAud.play().catch(() => {}); } };
       const voiceStop = () => { if (vAud) vAud.pause(); };
       if (vAud) await Promise.race([wait(vAud, "canplaythrough"), new Promise((ok) => setTimeout(ok, 8000))]);
+      // Every clip is copied to this computer first, so playing it never waits on the network or the
+      // app (a stalled download or an app update used to freeze it partway).
+      const local = {};
+      const fetchClip = async (link, i) => {
+        for (let tries = 1; ; tries++) {
+          try {
+            const res = await fetch(link);
+            if (!res.ok) throw new Error("not found");
+            const size = +res.headers.get("content-length") || 0, reader = res.body.getReader(), parts = [];
+            let got = 0;
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              parts.push(value); got += value.length;
+              step(`getting clip ${i + 1} of ${clips.length} ready${size ? `, ${Math.round(100 * got / size)}%` : ""}`);
+            }
+            return URL.createObjectURL(new Blob(parts, { type: res.headers.get("content-type") || "" }));
+          } catch (e) {
+            if (tries >= 4) throw new Error(`Clip ${i + 1} couldn't be loaded. Check the connection and try again.`);
+            step(`the connection dropped, trying clip ${i + 1} again`);
+            await new Promise((ok) => setTimeout(ok, 4000));
+          }
+        }
+      };
+      // A hidden window (minimized or covered) stops the browser drawing, so the recording pauses
+      // until it's back in front instead of saving frozen frames.
+      const hold = async () => {
+        if (!document.hidden) return false;
+        vid.pause(); rec.pause(); voiceStop();
+        step("paused: bring this window back to the front to keep going");
+        await new Promise((ok) => { const back = () => { if (!document.hidden) { document.removeEventListener("visibilitychange", back); ok(); } }; document.addEventListener("visibilitychange", back); });
+        return true;
+      };
       rec.start(1000); rec.pause();
       try {
+        for (const [i, c] of clips.entries()) if (!local[c.video]) local[c.video] = await fetchClip(c.video, i);
         for (const c of clips) {
           if (c.still) {
             const img = new Image();
-            img.src = c.video;
+            img.src = local[c.video];
             await img.decode().catch(() => { throw new Error("A picture couldn't be loaded on this computer."); });
             const len = c.seconds || c.duration || 5, from = pos, t0 = performance.now();
+            let held = 0;
             draw(img, img.naturalWidth, img.naturalHeight);
             rec.resume(); voiceGo();
             await new Promise((ok) => {
-              const tick = () => {
-                pos = from + Math.min(len, (performance.now() - t0) / 1000);
+              const tick = async () => {
+                if (document.hidden) { const h0 = performance.now(); await hold(); held += performance.now() - h0; rec.resume(); voiceGo(); }
+                pos = from + Math.min(len, (performance.now() - t0 - held) / 1000);
                 draw(img, img.naturalWidth, img.naturalHeight); say2();
                 if (pos - from >= len) ok(); else requestAnimationFrame(tick);
               };
@@ -1229,21 +1286,34 @@
             rec.pause(); voiceStop(); pos = from + len;
             continue;
           }
-          if (vid.getAttribute("src") !== c.video) { vid.src = c.video; await wait(vid, "loadedmetadata"); }
+          if (vid.getAttribute("src") !== local[c.video]) { vid.src = local[c.video]; await wait(vid, "loadedmetadata"); }
           for (const [a, b] of keepPieces(c)) {
             const from = pos;
-            vid.currentTime = a; await wait(vid, "seeked");
+            // A slice that starts where the last one ended needs no jump; "seeked" may never come for it.
+            if (Math.abs(vid.currentTime - a) > 0.01 || vid.ended) {
+              vid.currentTime = a;
+              await Promise.race([wait(vid, "seeked"), new Promise((ok) => setTimeout(ok, 6000))]);
+            }
             draw(vid, vid.videoWidth, vid.videoHeight);
             rec.resume(); voiceGo();
-            await vid.play().catch(() => { throw new Error("A clip couldn't be played on this computer."); });
-            await new Promise((ok) => {
-              let over = false;
+            await Promise.race([vid.play(), new Promise((ok, bad) => setTimeout(() => bad(new Error("late")), 10000))])
+              .catch(() => { throw new Error("A clip couldn't be played on this computer."); });
+            await new Promise((ok, bad) => {
+              let over = false, last = vid.currentTime, lastAt = performance.now();
               const end = () => { over = true; };
               vid.addEventListener("ended", end, { once: true });
-              const tick = () => {
+              const tick = async () => {
+                if (document.hidden) {
+                  await hold();
+                  rec.resume(); voiceGo(); await vid.play().catch(() => {}); lastAt = performance.now();
+                }
                 pos = from + Math.max(0, Math.min(b, vid.currentTime) - a);
                 draw(vid, vid.videoWidth, vid.videoHeight); say2();
-                if (over || vid.currentTime >= b - 0.02 || vid.paused) { vid.removeEventListener("ended", end); ok(); }
+                if (vid.currentTime > last + 0.001) { last = vid.currentTime; lastAt = performance.now(); }
+                else if (performance.now() - lastAt > 10000) {     // stuck: let the server make it instead
+                  vid.removeEventListener("ended", end); bad(new Error("The video stopped moving on this computer.")); return;
+                }
+                if (over || vid.currentTime >= b - 0.02 || (vid.paused && !document.hidden)) { vid.removeEventListener("ended", end); ok(); }
                 else requestAnimationFrame(tick);
               };
               tick();
@@ -1257,6 +1327,7 @@
       } finally {
         if (rec.state !== "inactive") rec.stop();
         vid.removeAttribute("src"); voiceStop(); ac.close().catch(() => {});
+        Object.values(local).forEach((u) => URL.revokeObjectURL(u));
       }
       const blob = new Blob(chunks, { type: "video/mp4" });
       if (!blob.size) throw new Error("Nothing was recorded. Keep this window in front while it makes the video.");
@@ -1344,7 +1415,7 @@
       awayBtn.hidden = false;
       try {
         const r = here
-          ? await makeHere((m) => { status.textContent = `Making the video on this computer: ${m}. Keep this window open and in front.`; })
+          ? await makeHere((m) => { status.textContent = `Recording the video on this computer: ${m}. Keep this window open.`; })
           : await makeOnServer();
         const kept = clips[0] && clips[0].video === original && !clips[0].still ? keepPieces(clips[0]) : null;
         await fetch("/api/manage/media/project", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -1353,6 +1424,11 @@
         pill.done("✓ The video is made and saved in Media.");
         if (o.onDone) o.onDone(r, kept);
       } catch (e) {
+        if (here && !e.retry) {          // it couldn't be made on this computer: the server makes it instead, by itself
+          busy = false;
+          status.textContent = `${e.message} Making it on the server instead…`;
+          return makeVideo(true);
+        }
         busy = false; makeBtn.disabled = false; makeBtn.textContent = "Make the video"; awayBtn.hidden = true;
         pill.done("The video didn't finish. Tap to see why.", () => { back.hidden = false; });
         status.replaceChildren(e.message + " ", here ? el("button", { type: "button", class: "linkish", onclick: () => makeVideo(true) }, "Make it on the server instead") : "");
@@ -1367,7 +1443,7 @@
 
     const back = el("div", { class: "vedit-back", role: "dialog", "aria-modal": "true", "aria-label": "Edit video" },
       el("div", { class: "vedit card" },
-        el("div", { class: "row vedit-top" }, el("h2", {}, clips.length ? "Edit video" : "Make a video"), el("span", { class: "grow" }),
+        el("div", { class: "row vedit-top" }, el("h2", {}, clips.length || o.draft ? "Edit video" : "Make a video"), savedNote, el("span", { class: "grow" }),
           el("button", { type: "button", class: "ghost small", onclick: close }, "Close")),
         el("div", { class: "vedit-work" }, toolbox(),
           el("div", { class: "vedit-center" },
@@ -1402,26 +1478,48 @@
       drawLines(); load(0); ensureLengths();
     }
     let kept = null;
-    try { kept = JSON.parse(localStorage.getItem(draftKey) || "null"); } catch (e) { kept = null; }
+    // A blank "Make a video" always starts fresh; earlier work is in Media > Drafts.
+    try { kept = o.draft || !startClips.length ? null : JSON.parse(localStorage.getItem(draftKey) || "null"); } catch (e) { kept = null; }
+    const startOver = () => el("button", { type: "button", class: "linkish", onclick: () => {
+      if (!window.confirm("Start over from the original videos? Your changes here will be thrown away.")) return;
+      clips.splice(0, clips.length, ...structuredClone(startClips)); voLines = structuredClone(startLines);
+      vo.audio = ""; vo.on = false; voAudio.removeAttribute("src"); voAudio.hidden = true; fx.voice.setAttribute("aria-pressed", "false"); voSync();
+      dropDraft(); savedNote.textContent = ""; drawLines(); load(0); say("Started over.");
+    } }, "Start over");
+    if (o.draft) {                       // opened from Media > Drafts
+      fetch("/api/manage/drafts/" + encodeURIComponent(o.draft)).then((r) => r.json()).then((r) => {
+        if (!r.project) { say(r.error || "That draft couldn't be opened."); return; }
+        serverKey = r.key || draftKey; draftName = r.name || draftName;
+        applyProject(r.project); startState = sentState = draftState(); savedNote.textContent = "✓ Draft saved";
+        say("Opened your draft. Changes save by themselves.");
+      }).catch(() => say("That draft couldn't be opened. Check the connection and try again."));
+    } else if (startClips.length && !(kept && Date.now() - kept.at < 30 * 864e5)) {
+      // Not in this browser: the same videos may have a draft saved from another tab or computer.
+      fetch("/api/manage/drafts?key=" + encodeURIComponent(draftKey)).then((r) => r.json()).then(async (r) => {
+        const d = (r.drafts || [])[0];
+        if (!d || draftState() !== startState) return;
+        const full = await (await fetch("/api/manage/drafts/" + d.id)).json();
+        if (!full.project || draftState() !== startState) return;
+        applyProject(full.project); draftId = d.id; sentState = draftState(); savedNote.textContent = "✓ Draft saved";
+        status.replaceChildren("Picked up where you left off. ", startOver());
+      }).catch(() => {});
+    }
     if (kept && Date.now() - kept.at < 30 * 864e5) {
       try {
         const st = JSON.parse(kept.state);
         if (st.clips && st.clips.length) {
           applyProject(st);
           restored = true;
-          status.replaceChildren("Picked up where you left off. ", el("button", { type: "button", class: "linkish", onclick: () => {
-            if (!window.confirm("Start over from the original videos? Your changes here will be thrown away.")) return;
-            clips.splice(0, clips.length, ...structuredClone(startClips)); voLines = structuredClone(startLines);
-            vo.audio = ""; vo.on = false; voAudio.removeAttribute("src"); voAudio.hidden = true; fx.voice.setAttribute("aria-pressed", "false"); voSync();
-            dropDraft(); drawLines(); load(0); say("Started over.");
-          } }, "Start over"));
+          if (kept.id) draftId = kept.id;
+          status.replaceChildren("Picked up where you left off. ", startOver());
+          setTimeout(sendDraft, 1000);   // and make sure the app has it too
         }
       } catch (e) { dropDraft(); }
     }
     draftOn = true;
     // A video made here: open its edit (the clips, cuts, pictures, drawings, voiceover) to adjust,
     // unless this browser already has newer changes to it.
-    if (original && !restored) {
+    if (original && !restored && !o.draft) {
       fetch("/api/manage/media/project?link=" + encodeURIComponent(original)).then((r) => r.json()).then((r) => {
         if (!r.project || !(r.project.clips || []).length) return;
         applyProject(r.project);
@@ -1925,7 +2023,30 @@
     const status = el("p", { class: "muted vedit-status", role: "status", "aria-live": "polite" });
     const storage = el("p", { class: "muted small" });
     const say = (m) => { status.textContent = m || ""; };
+    // Drafts: video edits not made yet, newest first. They save themselves while you edit.
+    const drafts = el("details", { class: "studio-drafts", open: true, hidden: true });
+    const ago = (t) => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(t * 1000).toLocaleDateString(); };
+    const openDraft = (d) => openVideoEditor({ draft: d.id, onDone: () => refresh("New video saved."), onClose: refreshDrafts });
+    async function refreshDrafts() {
+      let list = [];
+      try { list = (await (await fetch("/api/manage/drafts")).json()).drafts || []; } catch (e) { return; }
+      drafts.hidden = !list.length;
+      drafts.replaceChildren(el("summary", {}, `Drafts (${list.length})`), el("div", { class: "media-grid" }, ...list.map((d) => {
+        const del = el("button", { type: "button", class: "ghost small danger", onclick: async () => {
+          if (!window.confirm(`Delete the draft "${d.name}"? The videos and pictures in it stay in Media.`)) return;
+          await fetch("/api/manage/drafts/" + d.id, { method: "DELETE" }).catch(() => {});
+          refreshDrafts(); refresh();
+        } }, "Delete draft");
+        return el("div", { class: "media-tile" },
+          d.first ? preview({ link: d.first, kind: /\.(png|jpe?g|gif|webp)$/i.test(d.first) ? "image" : "video" }) : null,
+          el("span", { class: "media-name" }, d.name),
+          el("span", { class: "muted small" }, `${d.clips} clip${d.clips === 1 ? "" : "s"} · saved ${ago(d.at)}`),
+          el("div", { class: "row" }, el("button", { type: "button", class: "small", onclick: () => openDraft(d) }, "Open"),
+            el("details", { class: "more-menu" }, el("summary", { "aria-label": "More" }, "⋯"), del)));
+      })));
+    }
     async function refresh(msg) {
+      refreshDrafts();
       try { data = await listMedia(); } catch (e) { say(e.message); return; }
       storage.textContent = `${data.items.length} file${data.items.length === 1 ? "" : "s"} · ${sizeText(data.total_bytes || 0)} used` +
         (data.free_bytes != null ? ` · ${sizeText(data.free_bytes)} free` : "");
@@ -1999,13 +2120,14 @@
     // Page header: one main button (Add files), the rest beside it, like a normal files app.
     const head = document.getElementById("studio-actions") || el("div", { class: "row" });
     head.replaceChildren(
-      el("button", { type: "button", class: "ghost small", onclick: () => openVideoEditor({ onDone: () => refresh("New video saved.") }) }, "🎬 Make a video"),
+      el("button", { type: "button", class: "ghost small", onclick: () => openVideoEditor({ onDone: () => refresh("New video saved."), onClose: refreshDrafts }) }, "🎬 Make a video"),
       driveButton(["video", "image"], true, () => {}, (m) => { if (m) say(m); else refresh("Copied from Google Drive."); }, "From Google Drive") || "",
       el("button", { type: "button", class: "small", onclick: () => pick.click() }, "+ Add files"));
     root.replaceChildren(
       ...(head.isConnected ? [] : [head]),
       el("div", { class: "studio-add" }, drop, el("div", { class: "row vedit-drive" }, driveLink, driveAdd)),
       status,
+      drafts,
       el("div", { class: "row studio-bar" }, chips, search, el("span", { class: "grow" }), storage),
       grid);
     refresh();
