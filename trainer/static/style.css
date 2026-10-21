@@ -875,8 +875,13 @@ body:has(.vedit-back) { overflow: hidden; }
 .media-name { font-weight: 700; color: var(--heading); overflow-wrap: anywhere; }
 .media-tile .pic-tools { padding: 0 8px; justify-content: flex-start; }
 .media-tile.pick { cursor: pointer; box-shadow: none; min-height: 0; padding-bottom: 10px; font: inherit; }
-.media-tile.pick > span { padding: 0 10px; }
+.media-tile.pick > span { padding: 0 10px; white-space: normal; text-align: left; align-self: stretch; min-width: 0; }
 .media-tile.pick[aria-pressed="true"] { border-color: var(--gold); outline: 3px solid var(--gold); }
+.media-tile.pick { position: relative; }
+.media-tile.pick > .pick-num { position: absolute; align-self: auto; width: auto; top: 6px; left: 6px; z-index: 1; min-width: 28px; height: 28px; border-radius: 14px; background: var(--gold);
+            color: #000; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 0 !important; }
+.lib-tabs { margin: 4px 0 8px; }
+.lib-upload.pic-drop { min-height: 0; padding: 14px 16px; flex-direction: row; }
 .vedit .media-grid { max-height: 60vh; overflow-y: auto; }
 .studio-add { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
 .studio-drop.pic-drop { min-height: 0; padding: 18px 16px; flex-direction: row; }

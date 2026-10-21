@@ -44,6 +44,9 @@ Cal/OSHA (8 CCR, Title 8) apply.
   once (`_keep_one_copy`, same size + sha256); renders and uploads refuse when the disk is nearly full (`FULL`). On each Fly start `fly/start.sh` runs `fly/dedupe.py`
   (standalone, baked into the image): removes repeat copies of the same video no lesson points to and leftover `.making-*`;
   removed names go in `media/aliases.json`, which the `/media` route and `_media_file` follow (`_same_as`). Only files already in `data/media` can be edited.
+  The toolbox ➕ Add (and "🖼 Choose pictures & edits") opens the selector (`openLibrary` with `multi`, `upload`): tabs All /
+  Pictures / Videos / My edits (`isEdit`: made videos, marked-up pictures, frames), numbered in the order tapped, files from
+  this computer added right there (tap or drag) come in ticked.
   Pictures can be clips too (shown still for N seconds), so a video can be made from pictures alone.
   Touch-ups (`video.EXTRAS`): clean up sound (highpass/lowpass + afftdn), even volume (loudnorm), fade,
   brighter/sharper (eq + unsharp), steady (vid.stab two-pass after the main encode).

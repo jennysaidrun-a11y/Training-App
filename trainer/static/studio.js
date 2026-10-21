@@ -791,8 +791,11 @@
     });
     const pickBtn = driveButton(["video", "image"], true, (k, v) => pushClip(k, v), (m) => { status.textContent = m; });
     if (pickBtn) { pickBtn.className = "btn blue small drive-btn"; driveBtn.textContent = "Add link"; driveLink.placeholder = "or paste a Google Drive link"; }
+    // The selector: pictures, videos and your edits from the library (or new ones from this computer), added in the order picked.
+    const openPicker = () => openLibrary({ kinds: ["video", "image"], multi: true, upload: true, title: "Add to the video",
+      onPick: (picked) => { picked.forEach((p) => pushClip(p.kind, p.link)); if (picked.length) say(`Added ${picked.length} to the end. Drag them on the timeline to change the order.`); } });
     const driveRow = el("div", { class: "vedit-drive-wrap" },
-      el("div", { class: "row" }, pickBtn, libraryButton(["video", "image"], true, (picked) => picked.forEach((p) => pushClip(p.kind, p.link)))),
+      el("div", { class: "row" }, pickBtn, el("button", { type: "button", class: "ghost small lib-btn", onclick: () => openPicker() }, "🖼 Choose pictures & edits")),
       el("div", { class: "row vedit-drive" }, driveLink, driveBtn));
     function addClip(f) {
       if (fileKind(f) === "image") {
@@ -1103,7 +1106,7 @@
           if (empty) { empty.scrollIntoView({ block: "center", behavior: "smooth" }); empty.focus(); }
           say("Type what the voice says from here, then Make the voice. Drag its block on the timeline to move it.");
         }),
-        tool("➕", "Add", "Add a video or picture at the end", () => pick.click()),
+        tool("➕", "Add", "Choose pictures, videos and your edits to add", openPicker),
         tool("🔇", "Sound", "Turn the video's own sound off or on", () => fx.mute && fx.mute.click()),
         tool("↶", "Undo", "Undo the last change (Ctrl+Z)", undo));
     }
@@ -1602,38 +1605,79 @@
       : el("img", { src: item.link, alt: "", loading: "lazy", class: "media-thumb" });
   }
   // A picker over the library. o: {kinds: ["video","image"], multi, onPick([{kind, link}])}
+  // Edits made in the app (videos made in the video editor, marked-up pictures and frames).
+  const isEdit = (it) => /\((edited|marked up)\)|marked-up picture|made video| frame at /i.test(it.label) || /-edited-|-frame-/.test(it.link);
+  // The selector: every picture, video and edit in the library, newest first, in tabs. With
+  // o.multi, tap to tick several; they're used in the order tapped (the number on each). With
+  // o.upload, files from this computer can be added right here (tap or drag) and come in ticked.
   function openLibrary(o) {
-    const chosen = new Set();
+    const chosen = [];
+    let items = [], tab = "all";
+    const kinds = o.kinds || ["video", "image"];
     const grid = el("div", { class: "media-grid" }, el("p", { class: "muted" }, "Loading…"));
+    const note = el("p", { class: "muted small", role: "status" });
     const useBtn = el("button", { type: "button", class: "btn", disabled: true }, "Use selected");
     const close = () => { back.remove(); document.removeEventListener("keydown", onKey); };
     const onKey = (e) => { if (e.key === "Escape") close(); };
-    let items = [];
-    listMedia().then((r) => {
-      items = r.items.filter((x) => !o.kinds || o.kinds.includes(x.kind));
-      if (!items.length) { grid.replaceChildren(el("p", { class: "muted" }, "Nothing here yet. Add videos and pictures in Lessons › Media, or upload them here in the lesson.")); return; }
-      grid.replaceChildren(...items.map((it) => {
-        const tile = el("button", { type: "button", class: "media-tile pick", "aria-pressed": "false" }, preview(it),
-          el("span", { class: "media-name" }, it.label), el("span", { class: "muted small" }, `${it.kind === "video" ? "Video" : "Picture"} · ${sizeText(it.size)}`));
+    const TABS = [["all", "All"], ...(kinds.includes("image") ? [["image", "Pictures"]] : []), ...(kinds.includes("video") ? [["video", "Videos"]] : []), ["edit", "My edits"]];
+    const tabs = el("nav", { class: "subnav lib-tabs" });
+    const drawTabs = () => tabs.replaceChildren(...TABS.map(([k, t]) => el("a", { href: "#", class: tab === k ? "on" : "",
+      onclick: (e) => { e.preventDefault(); tab = k; drawTabs(); draw(); } }, t)));
+    const pickedNow = () => { useBtn.disabled = !chosen.length; useBtn.textContent = chosen.length ? `Use ${chosen.length} selected` : "Use selected"; };
+    function draw() {
+      const shown = items.filter((it) => tab === "all" || (tab === "edit" ? isEdit(it) : it.kind === tab));
+      if (!shown.length) {
+        grid.replaceChildren(el("p", { class: "muted" }, tab === "edit" ? "No edits yet. Videos you make and pictures you mark up show here."
+          : items.length ? "Nothing here." : "Nothing here yet. Add videos and pictures from this computer, or in Lessons › Media."));
+        return;
+      }
+      grid.replaceChildren(...shown.map((it) => {
+        const n = chosen.indexOf(it);
+        const tile = el("button", { type: "button", class: "media-tile pick", "aria-pressed": n >= 0 ? "true" : "false" },
+          n >= 0 ? el("span", { class: "pick-num" }, String(n + 1)) : null, preview(it),
+          el("span", { class: "media-name" }, it.label),
+          el("span", { class: "muted small" }, [it.kind === "video" ? "Video" : "Picture", isEdit(it) ? "Your edit" : "", sizeText(it.size)].filter(Boolean).join(" · ")));
         tile.addEventListener("click", () => {
           if (!o.multi) { close(); o.onPick([{ kind: it.kind, link: it.link }]); return; }
-          if (chosen.has(it)) chosen.delete(it); else chosen.add(it);
-          tile.setAttribute("aria-pressed", chosen.has(it) ? "true" : "false");
-          useBtn.disabled = !chosen.size;
-          useBtn.textContent = chosen.size ? `Use ${chosen.size} selected` : "Use selected";
+          const at = chosen.indexOf(it);
+          if (at >= 0) chosen.splice(at, 1); else chosen.push(it);
+          pickedNow(); draw();
         });
         return tile;
       }));
-    }).catch((e) => grid.replaceChildren(el("p", { class: "muted" }, e.message)));
-    useBtn.addEventListener("click", () => { close(); o.onPick([...chosen].map((it) => ({ kind: it.kind, link: it.link }))); });
-    const back = modal("Media library",
-      el("div", { class: "row vedit-top" }, el("h2", {}, "Media library"), el("span", { class: "grow" }),
+    }
+    listMedia().then((r) => { items = r.items.filter((x) => kinds.includes(x.kind)); draw(); })
+      .catch((e) => grid.replaceChildren(el("p", { class: "muted" }, e.message)));
+    useBtn.addEventListener("click", () => { close(); o.onPick(chosen.map((it) => ({ kind: it.kind, link: it.link }))); });
+    let uploader = null;
+    if (o.upload) {
+      const file = el("input", { type: "file", multiple: true, accept: kinds.map((k) => (k === "video" ? "video/*,video/mp4,video/quicktime,video/webm" : "image/*,.heic,.heif")).join(",") });
+      const addFiles = async (fs) => {
+        for (const f of fs) {
+          note.textContent = `Adding ${f.name}…`;
+          try {
+            const r = await upload(f, (pc) => { note.textContent = `Adding ${f.name}: ${pc}%`; });
+            const it = { link: r.link, kind: r.kind, label: (f.name || "").replace(/\.[^.]+$/, "") || "New file", size: f.size };
+            items = [it, ...items.filter((x) => x.link !== it.link)];
+            if (!chosen.some((x) => x.link === it.link)) chosen.push(it);
+            tab = "all"; drawTabs(); pickedNow(); draw();
+            note.textContent = `${f.name} added and selected.`;
+          } catch (e) { note.textContent = e.message; }
+        }
+      };
+      file.addEventListener("change", () => { addFiles([...file.files]); file.value = ""; });
+      uploader = el("label", { class: "pic-drop upload lib-upload" }, file, el("span", {}, "⬆ Add from this computer (tap or drag files here)"));
+      dropZone(uploader, kinds, addFiles, () => { note.textContent = "That isn't a video or picture."; });
+    }
+    const back = modal("Choose pictures and videos",
+      el("div", { class: "row vedit-top" }, el("h2", {}, o.title || "Media library"), el("span", { class: "grow" }),
         el("button", { type: "button", class: "ghost small", onclick: close }, "Close")),
-      grid,
-      o.multi ? el("div", { class: "row vedit-foot" }, el("span", { class: "grow" }), el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), useBtn) : null);
-    back.addEventListener("click", (e) => { if (e.target === back) close(); });
+      tabs, uploader, note, grid,
+      o.multi ? el("div", { class: "row vedit-foot" }, el("span", { class: "muted small grow" }, "Tap to select. They go in the order you tap them."),
+        el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), useBtn) : null);
     document.addEventListener("keydown", onKey);
     document.body.append(back);
+    drawTabs();
   }
   const libraryButton = (kinds, multi, onPick, label = "From media library") =>
     el("button", { type: "button", class: "ghost small lib-btn", onclick: () => openLibrary({ kinds, multi, onPick }) }, label);
