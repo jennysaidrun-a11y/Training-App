@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import tempfile
 import threading
 import time
@@ -124,6 +125,8 @@ def _rules_loop():
 async def lifespan(_app):
     if os.environ.get("TRAINING_NO_RULES_LOOP") != "1":
         threading.Thread(target=_rules_loop, daemon=True).start()
+    if os.environ.get("FLY_APP_NAME"):
+        threading.Thread(target=_idle_watch, daemon=True).start()
     yield
 
 
@@ -157,6 +160,41 @@ def _same_site(request):
         return True     # some browsers and tools send neither; the cookies' SameSite rule still applies
     from urllib.parse import urlsplit
     return urlsplit(source).netloc == request.headers.get("host", request.url.netloc)
+
+
+# Online, the app turns the server off itself when nobody has used it for a while and nothing
+# is being made (Fly's own auto-stop stopped the server in the middle of making a video). Fly
+# starts it again on the next visit. update.sh sees IDLE_FLAG and exits cleanly.
+IDLE_STOP = 15 * 60
+IDLE_FLAG = pathlib.Path(os.environ.get("IDLE_FLAG", "/tmp/training-idle"))
+_visits = {"last": time.time(), "open": 0}
+
+
+def _idle():
+    return _visits["open"] == 0 and time.time() - _visits["last"] > IDLE_STOP and not _busy()
+
+
+def _idle_watch(stop=lambda: os.kill(os.getpid(), signal.SIGTERM), every=30):
+    while True:
+        time.sleep(every)
+        if _idle():
+            IDLE_FLAG.write_text(str(int(time.time())))
+            print("Nobody has used the app for a while and nothing is being made: turning the server off.", flush=True)
+            stop()
+            return
+
+
+@app.middleware("http")
+async def count_visits(request: Request, call_next):
+    if request.url.path in ("/health", "/awake"):     # Fly's checks and the app's own requests aren't visits
+        return await call_next(request)
+    _visits["open"] += 1
+    _visits["last"] = time.time()
+    try:
+        return await call_next(request)
+    finally:
+        _visits["open"] -= 1
+        _visits["last"] = time.time()
 
 
 @app.middleware("http")

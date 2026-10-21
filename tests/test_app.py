@@ -1660,6 +1660,7 @@ class _FakeVoice:
 def test_speech_and_voiceover(client, anon, env, monkeypatch):
     from trainer import app as app_module, tts, video
     monkeypatch.setattr(tts, "_voice", lambda key, model_dir: _FakeVoice())
+    monkeypatch.setattr(tts, "engine_ready", lambda engine: engine == "piper")   # the fake voice, even where Kokoro is installed
     assert anon.post("/api/speech", json={"text": "Hi"}).status_code == 401
     r = client.post("/api/speech", json={"text": "Lock out the mixer.", "voice": "en-m", "speed": "slow"})
     assert r.status_code == 200, r.text
@@ -1735,6 +1736,27 @@ def test_server_stays_awake_while_working(env, monkeypatch):
         app_module._video_jobs["t"]["state"] = "done"
     time.sleep(0.2)
     assert not app_module._awake["on"]
+
+
+def test_server_turns_itself_off_only_when_idle(client, env, monkeypatch, tmp_path):
+    """Online, the app stops the server after a quiet spell, but never while a video is being made."""
+    import time
+    from trainer import app as app_module
+    monkeypatch.setattr(app_module, "IDLE_FLAG", tmp_path / "idle")
+    client.get("/health")
+    monkeypatch.setitem(app_module._visits, "last", time.time() - app_module.IDLE_STOP - 5)
+    assert app_module._idle()                     # Fly's health checks don't count as visits
+    app_module._video_jobs["idle-t"] = {"at": time.time(), "state": "running"}
+    try:
+        assert not app_module._idle()             # making a video: stays on
+    finally:
+        app_module._video_jobs["idle-t"]["state"] = "done"
+    client.get("/")
+    assert not app_module._idle()                 # someone just used it
+    monkeypatch.setitem(app_module._visits, "last", time.time() - app_module.IDLE_STOP - 5)
+    stopped = []
+    app_module._idle_watch(stop=lambda: stopped.append(1), every=0)
+    assert stopped and (tmp_path / "idle").exists()
 
 
 def test_repeat_videos_removed_and_old_links_still_work(client, env):

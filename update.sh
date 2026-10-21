@@ -105,6 +105,14 @@ while true; do
   touch "$BEAT"
   sync
   command -v claude > /dev/null || install_claude > /dev/null 2>&1
+  if [ -f "${IDLE_FLAG:-/tmp/training-idle}" ] && ! pgrep -f "python -m trainer" > /dev/null; then
+    # Online: the app turned itself off because nobody was using it. Save, then stop the
+    # server cleanly; Fly starts it again on the next visit.
+    rm -f "${IDLE_FLAG:-/tmp/training-idle}"
+    sync
+    echo "Server going to sleep until the next visit."
+    exit 0
+  fi
   # Restart the app if it stopped for any reason.
   pgrep -f "python -m trainer" > /dev/null || start_app
 done
