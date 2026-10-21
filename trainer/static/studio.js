@@ -429,7 +429,8 @@
     const opts = { mute: false, turn: 0, extras: new Set(["clean", "level"]) };
     // Auto save: the clips and voiceover lines are kept in this browser as you work, so closing
     // the editor (or the page) loses nothing; opening the same videos again picks up from there.
-    const draftKey = "video-draft:" + lessonName() + ":" + JSON.stringify(clips.map((c) => c.video)) + (o.script ? ":" + o.script.length + o.script.slice(0, 40) : "");
+    // One kept edit per place: the lesson, the slide it was opened from (o.slot; the cover has none), and the starting videos.
+    const draftKey = "video-draft:" + lessonName() + ":" + JSON.stringify(clips.map((c) => c.video)) + (o.slot ? ":" + o.slot : "") + (o.script ? ":" + o.script.length + o.script.slice(0, 40) : "");
     const startClips = structuredClone(clips);
     let draftTimer = 0, draftOn = false;
     // The edit itself (clips, voiceover lines and voice, effects): auto saved as a draft, and kept with

@@ -388,7 +388,7 @@
                                 onclick: () => { [s.images[i + 1], s.images[i]] = [s.images[i], s.images[i + 1]]; touch(); draw(); } }, "→") : null,
           !String(src).startsWith("/media/") ? null : isVideoLink(src)
             ? el("button", { type: "button", class: "ghost small", "aria-label": "Edit this video",
-                        onclick: () => window.Studio.openVideoEditor({ video: src, onDone: (r) => { s.images[i] = r.video; touch(); draw(); drawRail(); } }) }, "✂ Edit")
+                        onclick: () => window.Studio.openVideoEditor({ video: src, slot: "slide-" + (D.slides.indexOf(s) + 1), onDone: (r) => { s.images[i] = r.video; touch(); draw(); drawRail(); } }) }, "✂ Edit")
             : el("button", { type: "button", class: "ghost small", "aria-label": "Mark up this picture",
                         onclick: () => openImageEditor({ src, onDone: (link) => { s.images[i] = link; touch(); draw(); drawRail(); } }) }, "✏️ Mark up"),
           el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove this picture",
@@ -415,7 +415,7 @@
       const menu = el("details", { class: "more-menu down" });
       const item = (label, fn, cls = "") => el("button", { type: "button", class: cls, onclick: () => { menu.removeAttribute("open"); fn(); } }, label);
       // A new or edited video replaces the one it came from, or goes after the pictures.
-      const editor = (opts, replace) => window.Studio.openVideoEditor({ ...opts, onDone: (r) => {
+      const editor = (opts, replace) => window.Studio.openVideoEditor({ ...opts, slot: "slide-" + (D.slides.indexOf(s) + 1), onDone: (r) => {
         const i = replace ? s.images.indexOf(replace) : -1;
         if (i >= 0) s.images[i] = r.video; else s.images = [...s.images, r.video];
         touch(); draw(`Video ready (${window.Studio.clock(r.duration)}). Save the lesson to keep it.`); drawRail();
