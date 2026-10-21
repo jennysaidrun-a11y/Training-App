@@ -1478,8 +1478,9 @@
       drawLines(); load(0); ensureLengths();
     }
     let kept = null;
-    // A blank "Make a video" always starts fresh; earlier work is in Media > Drafts.
-    try { kept = o.draft || !startClips.length ? null : JSON.parse(localStorage.getItem(draftKey) || "null"); } catch (e) { kept = null; }
+    // Your last edit from the same place comes back by itself (from this browser, or from the app's drafts
+    // when it was made in another tab or on another computer). Every draft is also in Media > Drafts.
+    try { kept = o.draft ? null : JSON.parse(localStorage.getItem(draftKey) || "null"); } catch (e) { kept = null; }
     const startOver = () => el("button", { type: "button", class: "linkish", onclick: () => {
       if (!window.confirm("Start over from the original videos? Your changes here will be thrown away.")) return;
       clips.splice(0, clips.length, ...structuredClone(startClips)); voLines = structuredClone(startLines);
@@ -1493,7 +1494,7 @@
         applyProject(r.project); startState = sentState = draftState(); savedNote.textContent = "✓ Draft saved";
         say("Opened your draft. Changes save by themselves.");
       }).catch(() => say("That draft couldn't be opened. Check the connection and try again."));
-    } else if (startClips.length && !(kept && Date.now() - kept.at < 30 * 864e5)) {
+    } else if (!(kept && Date.now() - kept.at < 30 * 864e5)) {
       // Not in this browser: the same videos may have a draft saved from another tab or computer.
       fetch("/api/manage/drafts?key=" + encodeURIComponent(draftKey)).then((r) => r.json()).then(async (r) => {
         const d = (r.drafts || [])[0];
