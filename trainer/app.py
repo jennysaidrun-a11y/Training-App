@@ -1664,10 +1664,15 @@ def _keep_one_copy(path, label):
 
 
 @app.get("/api/manage/video/edit/{job_id}")
-def edit_video_status(job_id: str):
+async def edit_video_status(job_id: str, wait: int = 0):
+    """How a background video is going. With wait, the answer is held (up to 25 s) until something
+    changes: the page then always has a request open, which keeps Fly from stopping the server."""
     j = _video_jobs.get(job_id)
     if not j:
         return JSONResponse({"error": "The server restarted while making the video. Make it again."}, status_code=404)
+    seen, until = (j.get("state"), j.get("step")), time.time() + 25
+    while wait and time.time() < until and (j.get("state"), j.get("step")) == seen and j.get("state") == "running":
+        await asyncio.sleep(0.5)
     return {k: v for k, v in j.items() if k != "at"}
 
 
@@ -2076,7 +2081,17 @@ def _media_users():
         for link in links:
             if str(link).startswith("/media/"):
                 users.setdefault(link.rsplit("/", 1)[-1], []).append(lesson.get("title", "") + note)
+    # The clips and pictures a made video's edit uses stay too, so the edit can be opened again.
+    for name, entry in _library().items():
+        for c in (entry.get("project") or {}).get("clips") or []:
+            src = str(c.get("video", "")).rsplit("/", 1)[-1]
+            if src != name and title_of(entry, name) not in users.get(src, []):
+                users.setdefault(src, []).append(title_of(entry, name))
     return users
+
+
+def title_of(entry, name):
+    return f"the edit of {entry.get('label') or name}"
 
 
 @app.get("/manage/studio", response_class=HTMLResponse)
@@ -2116,6 +2131,31 @@ async def media_rename(request: Request):
         lib[path.name] = {**lib.get(path.name, {"added": dt.date.today().isoformat()}), "label": label}
         _library_write(lib)
     return {"ok": True}
+
+
+# A video made in the video editor keeps its edit (clips, cuts, pictures, voiceover lines, effects)
+# in its library entry, so opening it again in the editor brings the edit back to adjust.
+@app.post("/api/manage/media/project")
+async def media_project_save(request: Request):
+    body = await request.json()
+    path = _media_file(body.get("link"))
+    proj = body.get("project")
+    if not path or not isinstance(proj, dict) or not isinstance(proj.get("clips"), list):
+        return JSONResponse({"error": "That edit couldn't be kept."}, status_code=400)
+    if len(json.dumps(proj)) > 200_000 or len(proj["clips"]) > 60 or not all(
+            isinstance(c, dict) and str(c.get("video", "")).startswith("/media/") and MEDIA_NAME.match(str(c["video"])[7:]) for c in proj["clips"]):
+        return JSONResponse({"error": "That edit couldn't be kept."}, status_code=400)
+    with _library_lock:
+        lib = _library()
+        lib[path.name] = {**lib.get(path.name, {"label": "Made video", "added": dt.date.today().isoformat()}), "project": proj}
+        _library_write(lib)
+    return {"ok": True}
+
+
+@app.get("/api/manage/media/project")
+def media_project_get(link: str = ""):
+    path = _media_file(link)
+    return {"project": _library().get(path.name, {}).get("project") if path else None}
 
 
 @app.post("/api/manage/media/delete")

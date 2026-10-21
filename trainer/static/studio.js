@@ -400,7 +400,11 @@
     const draftKey = "video-draft:" + lessonName() + ":" + JSON.stringify(clips.map((c) => c.video)) + (o.script ? ":" + o.script.length + o.script.slice(0, 40) : "");
     const startClips = structuredClone(clips);
     let draftTimer = 0, draftOn = false;
-    const draftState = () => JSON.stringify({ clips: clips.map(({ asked, ...c }) => c), lines: voLines.map(({ text, at, dur }) => ({ text, at, dur })), audio: vo.audio, mode: vo.mode });
+    // The edit itself (clips, voiceover lines and voice, effects): auto saved as a draft, and kept with
+    // the finished video so opening that video again brings the edit back to adjust.
+    const project = () => ({ clips: clips.map(({ asked, ...c }) => c), lines: voLines.map(({ text, at, dur }) => ({ text, at, dur })), audio: vo.audio, mode: vo.mode,
+      opts: { mute: opts.mute, turn: opts.turn, extras: [...opts.extras] } });
+    const draftState = () => JSON.stringify(project());
     let startState = "";
     function keepDraft() {
       if (!draftOn) return;
@@ -1122,8 +1126,10 @@
     // then uploads the finished file. It takes as long as the video is long, and the server only
     // tidies the file. The server way (makeOnServer) is the backup.
     const recType = () => (window.MediaRecorder && window.AudioContext && HTMLCanvasElement.prototype.captureStream
-      // H.264 MP4 only, so the video plays everywhere (iPads too); other browsers use the server.
-      && ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4;codecs=avc1,mp4a"].find((t) => MediaRecorder.isTypeSupported(t))) || "";
+      // MP4 (H.264 when the browser names it), so the video plays everywhere; other browsers use the server.
+      && ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4;codecs=avc1.4D401F,mp4a.40.2", "video/mp4;codecs=avc1.64001F,mp4a.40.2",
+        "video/mp4;codecs=avc1,mp4a.40.2", "video/mp4;codecs=avc1,mp4a", "video/mp4;codecs=avc1,opus", "video/mp4;codecs=avc1", "video/mp4"]
+        .find((t) => MediaRecorder.isTypeSupported(t))) || "";
     async function makeHere(step) {
       const type = recType(), W = 1280, H = 720, T = totalLen(), on = (k) => opts.extras.has(k);
       const cv = el("canvas", { width: W, height: H }), g = cv.getContext("2d");
@@ -1226,35 +1232,61 @@
       form.append("lesson", lessonName());
       form.append("label", o.label ? `${o.label} (edited)` : "Made video");
       form.append("made_here", "1");
-      const link = await new Promise((ok, bad) => {
+      // Saving it: if the app is restarting or the connection drops, it tries again for a few minutes
+      // (the finished video stays here meanwhile), so nothing has to be made twice.
+      const send = () => new Promise((ok, bad) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "/api/manage/video");
         xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) step(`saving it to the app, ${Math.round(100 * ev.loaded / ev.total)}%`); };
         xhr.onload = () => {
           let r = {}; try { r = JSON.parse(xhr.responseText); } catch (e) { /* below */ }
-          if (xhr.status === 200 && r.video) ok(r.video); else bad(new Error(r.error || r.detail || "The finished video couldn't be saved. Try again."));
+          if (xhr.status === 200 && r.video) ok(r.video);
+          else { const err = new Error(r.error || r.detail || "The finished video couldn't be saved. Try again."); err.retry = xhr.status >= 500 || !r.error; bad(err); }
         };
-        xhr.onerror = () => bad(new Error("The finished video couldn't be saved. Check the connection and try again."));
+        xhr.onerror = () => { const err = new Error("The finished video couldn't be saved. Check the connection and try again."); err.retry = true; bad(err); };
         xhr.send(form);
       });
-      return { video: link, duration: T };
+      for (let tries = 1; ; tries++) {
+        try { return { video: await send(), duration: T }; }
+        catch (e) {
+          if (!e.retry || tries >= 12) throw e;
+          step("the app is busy or restarting, trying to save again in 15 seconds");
+          await new Promise((ok) => setTimeout(ok, 15000));
+        }
+      }
     }
     // The server way: ffmpeg on the online server, as a background job it reports on every two seconds.
     async function makeOnServer() {
       status.textContent = "Making the video on the server… this can take a while for a long video. Keep this open.";
-      const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lesson: lessonName(), label: o.label ? `${o.label} (edited)` : "", mute: opts.mute, turn: opts.turn, extras: [...opts.extras],
-          ...(vo.on && vo.audio ? { voiceover: { audio: vo.audio, mode: vo.mode } } : {}),
-          background: true,
-          clips: clips.map((c) => ({ video: c.video, start: c.start || 0, end: c.end, cuts: c.cuts, ...(c.still ? { seconds: c.seconds } : {}) })) }) });
-      let r = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(r.error || r.detail || "The video couldn't be made. Try again.");
+      const body = JSON.stringify({ lesson: lessonName(), label: o.label ? `${o.label} (edited)` : "", mute: opts.mute, turn: opts.turn, extras: [...opts.extras],
+        ...(vo.on && vo.audio ? { voiceover: { audio: vo.audio, mode: vo.mode } } : {}),
+        background: true,
+        clips: clips.map((c) => ({ video: c.video, start: c.start || 0, end: c.end, cuts: c.cuts, ...(c.still ? { seconds: c.seconds } : {}) })) });
+      const begin = async () => {
+        const res = await fetch("/api/manage/video/edit", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(j.error || j.detail || "The video couldn't be made. Try again.");
+        return j;
+      };
+      let r = await begin(), restarts = 0;
       let misses = 0;     // a dropped connection just retries
       while (r.job && !r.video) {
-        await new Promise((ok) => setTimeout(ok, 2000));
+        // Asked with wait=1: the server answers when something changes, so a request is always open
+        // (Fly keeps the server on while one is).
         let p;
-        try { p = await fetch("/api/manage/video/edit/" + r.job); } catch (e) { if (++misses > 30) throw new Error("Lost touch with the app. Check the connection, then make the video again."); continue; }
+        try { p = await fetch("/api/manage/video/edit/" + r.job + "?wait=1"); }
+        catch (e) { if (++misses > 30) throw new Error("Lost touch with the app. Check the connection, then make the video again."); await new Promise((ok) => setTimeout(ok, 2000)); continue; }
         const j = await p.json().catch(() => ({}));
+        if (p.status >= 500) {      // the app is restarting: ask again shortly
+          if (++misses > 30) throw new Error("Lost touch with the app. Check the connection, then make the video again.");
+          await new Promise((ok) => setTimeout(ok, 3000)); continue;
+        }
+        if (p.status === 404 && restarts++ < 2) {     // the app restarted (an update): start it again by itself
+          status.textContent = "The app restarted, so the video is being started again. Keep this open.";
+          await new Promise((ok) => setTimeout(ok, 5000));
+          try { r = await begin(); } catch (e) { await new Promise((ok) => setTimeout(ok, 10000)); r = await begin(); }
+          continue;
+        }
         if (!p.ok) throw new Error(j.error || "The video couldn't be made. Try again.");
         misses = 0;
         if (j.state === "failed") throw new Error(j.error || "The video couldn't be made. Try again.");
@@ -1281,6 +1313,8 @@
           ? await makeHere((m) => { status.textContent = `Making the video on this computer: ${m}. Keep this window open and in front.`; })
           : await makeOnServer();
         const kept = clips[0] && clips[0].video === original && !clips[0].still ? keepPieces(clips[0]) : null;
+        await fetch("/api/manage/media/project", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ link: r.video, project: project() }) }).catch(() => {});
         busy = false; dropDraft(); close();
         if (o.onDone) o.onDone(r, kept);
       } catch (e) {
@@ -1315,17 +1349,26 @@
     if (o.script) { setLines(splitScript(o.script)); voPanel.hidden = false; say("The slide's words are in the voiceover below, one line each. Time them with ⏱ if you like, then Make the voice."); }
     startState = draftState();
     const startLines = structuredClone(voLines);
+    let restored = false;
+    function applyProject(st) {
+      clips.splice(0, clips.length, ...st.clips.map((c) => ({ start: 0, end: null, cuts: [], duration: 0, ...c })));
+      voLines = (st.lines || []).map((l) => ({ text: String(l.text || ""), at: l.at == null ? null : +l.at, dur: +l.dur || 0 }));
+      if (voLines.length) voPanel.hidden = false;
+      if (st.audio) { vo.audio = st.audio; vo.mode = st.mode || "replace"; vo.on = true; voAudio.src = st.audio; voAudio.hidden = false; fx.voice.setAttribute("aria-pressed", "true"); voSync(); }
+      if (st.opts) {
+        opts.mute = !!st.opts.mute; opts.turn = [0, 90, 180, 270].includes(+st.opts.turn) ? +st.opts.turn : 0; turn.value = String(opts.turn);
+        opts.extras = new Set((st.opts.extras || []).filter((k) => fx[k])); applyPreview();
+      }
+      drawLines(); load(0); ensureLengths();
+    }
     let kept = null;
     try { kept = JSON.parse(localStorage.getItem(draftKey) || "null"); } catch (e) { kept = null; }
     if (kept && Date.now() - kept.at < 30 * 864e5) {
       try {
         const st = JSON.parse(kept.state);
         if (st.clips && st.clips.length) {
-          clips.splice(0, clips.length, ...st.clips);
-          voLines = st.lines || [];
-          if (voLines.length) voPanel.hidden = false;
-          if (st.audio) { vo.audio = st.audio; vo.mode = st.mode || "replace"; vo.on = true; voAudio.src = st.audio; voAudio.hidden = false; fx.voice.setAttribute("aria-pressed", "true"); voSync(); }
-          drawLines(); load(0); ensureLengths();
+          applyProject(st);
+          restored = true;
           status.replaceChildren("Picked up where you left off. ", el("button", { type: "button", class: "linkish", onclick: () => {
             if (!window.confirm("Start over from the original videos? Your changes here will be thrown away.")) return;
             clips.splice(0, clips.length, ...structuredClone(startClips)); voLines = structuredClone(startLines);
@@ -1336,6 +1379,20 @@
       } catch (e) { dropDraft(); }
     }
     draftOn = true;
+    // A video made here: open its edit (the clips, cuts, pictures, drawings, voiceover) to adjust,
+    // unless this browser already has newer changes to it.
+    if (original && !restored) {
+      fetch("/api/manage/media/project?link=" + encodeURIComponent(original)).then((r) => r.json()).then((r) => {
+        if (!r.project || !(r.project.clips || []).length) return;
+        applyProject(r.project);
+        startState = draftState();
+        status.replaceChildren("Opened with your edits, ready to adjust. ", el("button", { type: "button", class: "linkish", onclick: () => {
+          clips.splice(0, clips.length, ...structuredClone(startClips)); voLines = [];
+          vo.audio = ""; vo.on = false; voAudio.removeAttribute("src"); voAudio.hidden = true; fx.voice.setAttribute("aria-pressed", "false"); voSync();
+          drawLines(); load(0); ensureLengths(); say("Editing the finished video as one clip.");
+        } }, "Edit the finished video instead"));
+      }).catch(() => {});
+    }
   }
 
   // ---- Picture editor -------------------------------------------------------------

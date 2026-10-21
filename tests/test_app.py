@@ -1540,6 +1540,9 @@ def test_video_made_in_the_background(client, env):
         time.sleep(0.5)
     assert j["state"] == "done", j
     assert abs(video.probe(app_module.media_dir() / j["video"].rsplit("/", 1)[-1])["duration"] - 3.5) < 0.3
+    # Asked with wait: answers at once when the job is already finished.
+    t0 = time.time()
+    assert client.get("/api/manage/video/edit/" + r.json()["job"] + "?wait=1").json()["state"] == "done" and time.time() - t0 < 2
     assert client.get("/api/manage/video/edit/nope").status_code == 404
 
 
@@ -1788,3 +1791,22 @@ def test_google_voices_when_key_set_within_free_allowance(env, tmp_path, monkeyp
     monkeypatch.delenv("GOOGLE_TTS_KEY")
     tts._google_make(["Other."], "vi", "normal", out, subprocess.run, post=post)
     assert len(sent) == 2
+
+
+def test_made_video_keeps_its_edit(client, env):
+    """The edit behind a made video is kept with it, and the clips it uses can't be deleted."""
+    from trainer import app as app_module
+    media = app_module.media_dir()
+    (media / "src-1.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"s" * 100)
+    (media / "made-1.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"m" * 100)
+    app_module._library_add("/media/src-1.mp4", "Mixer clip")
+    app_module._library_add("/media/made-1.mp4", "Made video")
+    proj = {"clips": [{"video": "/media/src-1.mp4", "start": 1, "end": 3, "cuts": []}], "lines": [{"text": "Lock it out.", "at": 0}],
+            "audio": "", "mode": "replace", "opts": {"mute": False, "turn": 0, "extras": ["fade"]}}
+    assert client.post("/api/manage/media/project", json={"link": "/media/made-1.mp4", "project": proj}).json()["ok"]
+    assert client.get("/api/manage/media/project?link=/media/made-1.mp4").json()["project"] == proj
+    assert client.get("/api/manage/media/project?link=/media/src-1.mp4").json()["project"] is None
+    r = client.post("/api/manage/media/delete", json={"link": "/media/src-1.mp4"})
+    assert r.status_code == 400 and "the edit of Made video" in r.json()["error"]
+    bad = {"clips": [{"video": "https://x.example/a.mp4"}]}
+    assert client.post("/api/manage/media/project", json={"link": "/media/made-1.mp4", "project": bad}).status_code == 400

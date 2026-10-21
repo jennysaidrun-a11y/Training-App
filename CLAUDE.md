@@ -44,6 +44,11 @@ Cal/OSHA (8 CCR, Title 8) apply.
   once (`_keep_one_copy`, same size + sha256); renders and uploads refuse when the disk is nearly full (`FULL`). On each Fly start `fly/start.sh` runs `fly/dedupe.py`
   (standalone, baked into the image): removes repeat copies of the same video no lesson points to and leftover `.making-*`;
   removed names go in `media/aliases.json`, which the `/media` route and `_media_file` follow (`_same_as`). Only files already in `data/media` can be edited.
+  A made video keeps its edit (clips, cuts, pictures, voiceover lines/voice, effects) in its library entry ("project",
+  `/api/manage/media/project`); opening that video in the editor reopens the edit ("Edit the finished video instead" for
+  the flat file). Clips an edit uses count as used (`_media_users`, `fly/dedupe.py`), so they can't be deleted.
+  Polling a server job uses `?wait=1` (held up to 25 s) so a request is always open and Fly doesn't auto-stop mid-job; a
+  restart (404) re-starts the job; uploads of a browser-made video retry for a few minutes.
   The toolbox ➕ Add (and "🖼 Choose pictures & edits") opens the selector (`openLibrary` with `multi`, `upload`): tabs All /
   Pictures / Videos / My edits (`isEdit`: made videos, marked-up pictures, frames), numbered in the order tapped, files from
   this computer added right there (tap or drag) come in ticked.
