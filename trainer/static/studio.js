@@ -458,8 +458,9 @@
       draftTimer = setTimeout(() => {
         try {
           const st = draftState();
-          if (st === startState && !draftId) localStorage.removeItem(draftKey);
-          else localStorage.setItem(draftKey, JSON.stringify({ at: Date.now(), state: st, id: draftId }));
+          // Only ever written, never cleared here: an editor opened fresh must not wipe an edit kept earlier
+          // (that's how one got lost). Start over and making the video are the only things that drop it.
+          if (st !== startState || draftId) localStorage.setItem(draftKey, JSON.stringify({ at: Date.now(), state: st, id: draftId }));
         } catch (e) { /* storage full or off */ }
       }, 500);
       clearTimeout(serverTimer);
@@ -1515,7 +1516,7 @@
           status.replaceChildren("Picked up where you left off. ", startOver());
           setTimeout(sendDraft, 1000);   // and make sure the app has it too
         }
-      } catch (e) { dropDraft(); }
+      } catch (e) { /* unreadable: leave it be */ }
     }
     draftOn = true;
     // A video made here: open its edit (the clips, cuts, pictures, drawings, voiceover) to adjust,
