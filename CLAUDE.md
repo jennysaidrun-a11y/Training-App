@@ -39,7 +39,8 @@ Cal/OSHA (8 CCR, Title 8) apply.
   (`background: true` returns `{job}`; the editor polls `/api/manage/video/edit/<job>` for step/state) so no request hangs.
   Normally it's made on the manager's own computer instead (`makeHere`: the browser plays each kept part into a 1280x720 canvas
   with the turn/effects/fades and records it with the sound and voiceover via MediaRecorder, H.264 MP4 only, in real time),
-  then uploaded with `made_here` so the server only re-indexes it (`video.tidy`, stream copy). The server way is used when the
+  then uploaded with `made_here` so the server only re-indexes it ("Keep working ↘" tucks the editor away while it's made;
+  `makingBar` shows progress in the corner, tap to reopen; `video.tidy`, stream copy). The server way is used when the
   browser can't record H.264, for "Steady", or from "Make it on the server instead" after a failure.
   Fly's auto-stop is off (`fly.toml`): the app turns the server off itself (`_idle_watch`: 15 quiet minutes, no open
   request, nothing being made; writes `IDLE_FLAG`, and `update.sh` then saves and exits 0), and Fly starts it on the next visit.

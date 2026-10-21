@@ -60,6 +60,38 @@
     return back;
   }
 
+  // The corner bar for a video being made while the editor is tucked away. It copies the editor's
+  // status line and fills as it goes ("1:20 of 4:00", "45%").
+  function makingBar(status, reopen) {
+    const fill = el("span", { class: "make-pill-fill" });
+    const text = el("span", { class: "make-pill-text" });
+    const bar = el("button", { type: "button", class: "make-pill", hidden: true, role: "status", "aria-live": "polite", title: "Open the video editor" },
+      el("span", { class: "make-pill-track" }, fill), text);
+    let onTap = reopen, timer = null;
+    bar.addEventListener("click", () => { bar.hidden = true; onTap(); });
+    const secs = (t) => t.split(":").reduce((a, b) => a * 60 + parseFloat(b), 0);
+    const copy = () => {
+      const t = status.textContent || "Making the video…";
+      text.textContent = t.replace(/ ?Keep this (window )?open( and in front)?\.?/i, "") + (/on this computer/.test(t) ? " Keep this window open." : "");
+      const m = t.match(/(\d+(?::\d+)*(?:\.\d+)?) of (\d+(?::\d+)*(?:\.\d+)?)/), pc = t.match(/(\d+)%/);
+      const f = pc ? +pc[1] / 100 : m && secs(m[2]) ? secs(m[1]) / secs(m[2]) : null;
+      fill.style.width = f == null ? "" : Math.max(2, Math.min(100, f * 100)) + "%";
+      fill.classList.toggle("unknown", f == null);
+    };
+    new MutationObserver(copy).observe(status, { childList: true, characterData: true, subtree: true });
+    return {
+      show() { copy(); bar.hidden = false; if (!bar.isConnected) document.body.append(bar); },
+      done(msg, tap) {
+        if (!bar.isConnected || bar.hidden) return;      // the editor was open: it shows the outcome itself
+        text.textContent = msg; fill.style.width = "100%"; fill.classList.remove("unknown");
+        bar.classList.toggle("bad", !!tap);
+        onTap = tap || (() => {});
+        clearTimeout(timer);
+        if (!tap) timer = setTimeout(() => bar.remove(), 10000);
+      },
+    };
+  }
+
   // Google Drive: paste a share link; the server copies the file into the app.
   const isDrive = (u) => /^https:\/\/(drive|docs)\.google\.com\//.test(String(u || "").trim());
   async function fromDrive(link, kind, picked) {
@@ -426,6 +458,7 @@
     const makeBtn = el("button", { type: "button", class: "btn" }, "Make the video");
     const close = () => { if (!busy) { player.pause(); back.remove(); document.removeEventListener("keydown", onKey); } };
     const onKey = (e) => {
+      if (back.hidden) return;        // tucked away while the video is made: keys belong to the page
       if (e.key === "Escape") close();
       if (document.querySelector(".iedit-canvas") || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
       if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undo(); }
@@ -1308,6 +1341,7 @@
       }
       const here = !onServer && recType() && !opts.extras.has("steady");
       busy = true; makeBtn.disabled = true; makeBtn.textContent = "Making… keep this open"; stopAll();
+      awayBtn.hidden = false;
       try {
         const r = here
           ? await makeHere((m) => { status.textContent = `Making the video on this computer: ${m}. Keep this window open and in front.`; })
@@ -1316,14 +1350,20 @@
         await fetch("/api/manage/media/project", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ link: r.video, project: project() }) }).catch(() => {});
         busy = false; dropDraft(); close();
+        pill.done("✓ The video is made and saved in Media.");
         if (o.onDone) o.onDone(r, kept);
       } catch (e) {
-        busy = false; makeBtn.disabled = false; makeBtn.textContent = "Make the video";
+        busy = false; makeBtn.disabled = false; makeBtn.textContent = "Make the video"; awayBtn.hidden = true;
+        pill.done("The video didn't finish. Tap to see why.", () => { back.hidden = false; });
         status.replaceChildren(e.message + " ", here ? el("button", { type: "button", class: "linkish", onclick: () => makeVideo(true) }, "Make it on the server instead") : "");
         status.scrollIntoView({ block: "center", behavior: "smooth" });
       }
     }
     makeBtn.addEventListener("click", () => makeVideo(false));
+    // While it's being made the editor can be tucked away: a small bar in the corner shows how far
+    // along it is (tap it to open the editor again), so other work can go on meanwhile.
+    const pill = makingBar(status, () => { back.hidden = false; });
+    const awayBtn = el("button", { type: "button", class: "ghost", hidden: true, onclick: () => { back.hidden = true; pill.show(); } }, "Keep working ↘");
 
     const back = el("div", { class: "vedit-back", role: "dialog", "aria-modal": "true", "aria-label": "Edit video" },
       el("div", { class: "vedit card" },
@@ -1339,7 +1379,7 @@
         el("p", { class: "help" }, "Drag along the top of the timeline to find a spot, or drag a clip or picture to change the order. Tools are on the left."),
         list, addBox, driveRow,
         el("div", { class: "row vedit-foot" }, total, el("span", { class: "grow" }),
-          el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), makeBtn)));
+          el("button", { type: "button", class: "ghost", onclick: close }, "Cancel"), awayBtn, makeBtn)));
     document.addEventListener("keydown", onKey);
     document.body.append(back);
     applyPreview();
