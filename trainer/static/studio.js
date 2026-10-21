@@ -2028,7 +2028,27 @@
     const drafts = el("details", { class: "studio-drafts", open: true, hidden: true });
     const ago = (t) => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(t * 1000).toLocaleDateString(); };
     const openDraft = (d) => openVideoEditor({ draft: d.id, onDone: () => refresh("New video saved."), onClose: refreshDrafts });
+    // Edits this browser kept by itself (before drafts were saved in the app, or while offline) are
+    // added to the app's drafts once, so every one of them shows in the list.
+    let synced = false;
+    async function syncLocalDrafts() {
+      synced = true;
+      const hash = (t) => { let a = 0x811c9dc5, b = 0x01000193; for (const ch of t) { a = Math.imul(a ^ ch.charCodeAt(0), 16777619) >>> 0; b = Math.imul(b ^ ch.charCodeAt(0), 2246822519) >>> 0; } return a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0"); };
+      let keys = [];
+      try { keys = Object.keys(localStorage).filter((k) => k.startsWith("video-draft:")); } catch (e) { return; }
+      for (const k of keys) {
+        try {
+          const kept = JSON.parse(localStorage.getItem(k) || "null"), st = kept && JSON.parse(kept.state);
+          if (!st || !(st.clips || []).length) continue;
+          const id = kept.id || hash(k), where = k.split(":")[1];
+          const res = await fetch("/api/manage/drafts/" + id, { method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: where && where !== "studio" ? `${where} video` : "Video edit", key: k, project: st }) });
+          if (res.ok && !kept.id) localStorage.setItem(k, JSON.stringify({ ...kept, id }));
+        } catch (e) { /* skip that one */ }
+      }
+    }
     async function refreshDrafts() {
+      if (!synced) await syncLocalDrafts();
       let list = [];
       try { list = (await (await fetch("/api/manage/drafts")).json()).drafts || []; } catch (e) { return; }
       drafts.hidden = !list.length;
