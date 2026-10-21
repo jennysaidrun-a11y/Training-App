@@ -16,7 +16,9 @@ Cal/OSHA (8 CCR, Title 8) apply.
 - Media studio (Lessons > Media, `/manage/studio`, `static/studio.js`, shared by the lesson editor): media
   library (`data/media/library.json`: every upload, Drive copy and edit is kept until a manager deletes it, never swept;
   files used by a lesson can't be deleted; `/api/manage/media*`), picture editor (canvas: marker, highlighter,
-  arrow, box, circle, numbers, text, blur, crop, turn, undo; saves a new copy), video editor and Google Drive.
+  arrow, box, circle, numbers, text, blur, crop, turn, undo/redo; ↖ Select (and every new shape) shows handles to move or
+  resize a mark after it's drawn (`opBox`/`opHandles`/`opResized`), 🗑 Delete; "🖼 Choose picture" switches to another
+  library picture or edit; saves a new copy), video editor and Google Drive.
 - Video editor ("✂ Edit video": trim, cut out parts, slice a clip in two, join clips, mute, turn, "📸 Draw on this frame":
   `/api/manage/video/frame` takes the frame, the picture editor marks it up, and it goes in as a still between the slices).
   Laid out like a video app: a vertical toolbox on the left (`.vedit-toolbox`: Slice, Start, End, Cut, Draw, Voice, Add,

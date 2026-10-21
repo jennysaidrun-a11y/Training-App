@@ -1400,7 +1400,7 @@
   // labels) and crop, turn, undo. Works with a finger, a pencil or a mouse, and saves
   // a new picture (the original stays in the library).
   const COLORS = [["#e02424", "Red"], ["#f5c518", "Yellow"], ["#16a34a", "Green"], ["#2563eb", "Blue"], ["#111111", "Black"], ["#ffffff", "White"]];
-  const TOOLS = [["pen", "✏️", "Marker"], ["hi", "🖍️", "Highlighter"], ["arrow", "➜", "Arrow"], ["box", "▭", "Box"], ["ring", "◯", "Circle"],
+  const TOOLS = [["move", "↖", "Select"], ["pen", "✏️", "Marker"], ["hi", "🖍️", "Highlighter"], ["arrow", "➜", "Arrow"], ["box", "▭", "Box"], ["ring", "◯", "Circle"],
     ["num", "①", "Numbers"], ["text", "T", "Text"], ["tbox", "🔤", "Text box"], ["blur", "▦", "Blur"], ["crop", "⛶", "Crop"]];
   function drawOp(c, op, base, u) {
     const w = u * [1.5, 3, 5][op.size];
@@ -1429,21 +1429,21 @@
       c.ellipse((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, Math.abs(b[0] - a[0]) / 2 || 1, Math.abs(b[1] - a[1]) / 2 || 1, 0, 0, Math.PI * 2);
       c.stroke();
     } else if (op.tool === "num") {
-      const r = u * [5, 8, 12][op.size];
+      const r = u * [5, 8, 12][op.size] * (op.k || 1);
       c.beginPath(); c.arc(a[0], a[1], r, 0, Math.PI * 2); c.fill();
       c.lineWidth = Math.max(2, r / 6); c.strokeStyle = "#fff"; c.stroke();
       c.fillStyle = op.color === "#ffffff" || op.color === "#f5c518" ? "#111" : "#fff";
       c.font = `bold ${Math.round(r * 1.2)}px system-ui, sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
       c.fillText(String(op.n), a[0], a[1] + r * 0.05);
     } else if (op.tool === "tbox") {          // text on a filled box: easy to read over any picture
-      const px = Math.round(u * [7, 11, 17][op.size]), pad = px * 0.45, lines = op.text.split("\n");
+      const px = Math.round(u * [7, 11, 17][op.size] * (op.k || 1)), pad = px * 0.45, lines = op.text.split("\n");
       c.font = `bold ${px}px system-ui, sans-serif`; c.textBaseline = "top";
       const w = Math.max(...lines.map((l) => c.measureText(l).width)) + pad * 2, h = lines.length * px * 1.2 + pad * 2 - px * 0.2;
       c.beginPath(); (c.roundRect ? c.roundRect(a[0], a[1], w, h, px * 0.3) : c.rect(a[0], a[1], w, h)); c.fill();
       c.fillStyle = op.color === "#ffffff" || op.color === "#f5c518" ? "#111" : "#fff";
       lines.forEach((line, i) => c.fillText(line, a[0] + pad, a[1] + pad + i * px * 1.2));
     } else if (op.tool === "text") {
-      const px = Math.round(u * [7, 11, 17][op.size]);
+      const px = Math.round(u * [7, 11, 17][op.size] * (op.k || 1));
       c.font = `bold ${px}px system-ui, sans-serif`; c.textBaseline = "top";
       c.lineWidth = Math.max(3, px / 5);
       c.strokeStyle = op.color === "#111111" ? "#fff" : "#111";
@@ -1460,16 +1460,82 @@
     }
     c.restore();
   }
+  // Shapes stay editable after they're drawn: the box around one, its handles, and moving or
+  // resizing it. A handle is [x, y, what]; dragging it gives the shape a new size.
+  const copyOp = (op) => JSON.parse(JSON.stringify(op));
+  function opBox(c, op, u) {
+    const [a, b] = [op.a, op.b || op.a];
+    if (op.pts) {
+      const xs = op.pts.map((p) => p[0]), ys = op.pts.map((p) => p[1]), x = Math.min(...xs), y = Math.min(...ys);
+      return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+    }
+    if (op.tool === "num") { const r = u * [5, 8, 12][op.size] * (op.k || 1); return { x: a[0] - r, y: a[1] - r, w: r * 2, h: r * 2 }; }
+    if (op.tool === "text" || op.tool === "tbox") {
+      const px = Math.round(u * [7, 11, 17][op.size] * (op.k || 1)), lines = op.text.split("\n"), pad = op.tool === "tbox" ? px * 0.45 : 0;
+      c.save(); c.font = `bold ${px}px system-ui, sans-serif`;
+      const w = Math.max(...lines.map((l) => c.measureText(l).width)) + pad * 2;
+      c.restore();
+      return { x: a[0], y: a[1], w, h: lines.length * px * 1.2 + pad * 2 - (pad ? px * 0.2 : 0) };
+    }
+    return { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]) };
+  }
+  function opHandles(c, op, u) {
+    if (op.tool === "arrow") return [[...op.a, "a"], [...op.b, "b"]];
+    const r = opBox(c, op, u);
+    if (op.tool === "text" || op.tool === "tbox" || op.tool === "num") return [[r.x + r.w, r.y + r.h, "grow"]];
+    if (op.pts) return [[r.x, r.y, "tl"], [r.x + r.w, r.y, "tr"], [r.x, r.y + r.h, "bl"], [r.x + r.w, r.y + r.h, "br"]];
+    return [[op.a[0], op.a[1], "aa"], [op.b[0], op.a[1], "ba"], [op.a[0], op.b[1], "ab"], [op.b[0], op.b[1], "bb"]];
+  }
+  function opHit(c, op, u, p) {
+    const pad = u * 6;
+    if (op.tool === "arrow") {
+      const [a, b] = [op.a, op.b], dx = b[0] - a[0], dy = b[1] - a[1], len = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len));
+      return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy) < pad;
+    }
+    const r = opBox(c, op, u);
+    return p[0] > r.x - pad && p[0] < r.x + r.w + pad && p[1] > r.y - pad && p[1] < r.y + r.h + pad;
+  }
+  function opMoved(op0, dx, dy) {
+    const op = copyOp(op0), sh = (q) => [q[0] + dx, q[1] + dy];
+    if (op.pts) op.pts = op.pts.map(sh);
+    if (op.a) op.a = sh(op.a);
+    if (op.b) op.b = sh(op.b);
+    return op;
+  }
+  function opResized(c, op0, u, what, p, from) {
+    const op = copyOp(op0);
+    if (what === "a" || what === "b") { op[what] = p; return op; }
+    if (what === "grow") {            // words and numbers keep their shape and get bigger or smaller
+      const anchor = op.a;
+      const was = Math.hypot(from[0] - anchor[0], from[1] - anchor[1]) || 1;
+      op.k = Math.max(0.3, Math.min(8, (op0.k || 1) * Math.hypot(p[0] - anchor[0], p[1] - anchor[1]) / was));
+      return op;
+    }
+    if (op.pts) {                     // a marker line stretches from the opposite corner
+      const r = opBox(c, op0, u), ox = what[1] === "l" ? r.x + r.w : r.x, oy = what[0] === "t" ? r.y + r.h : r.y;
+      const sx = r.w > 1 ? (p[0] - ox) / ((what[1] === "l" ? r.x : r.x + r.w) - ox) : 1;
+      const sy = r.h > 1 ? (p[1] - oy) / ((what[0] === "t" ? r.y : r.y + r.h) - oy) : 1;
+      op.pts = op0.pts.map(([x, y]) => [ox + (x - ox) * sx, oy + (y - oy) * sy]);
+      return op;
+    }
+    op[what[0]][0] = p[0]; op[what[1]][1] = p[1];     // boxes, circles and blur: that corner follows
+    return op;
+  }
   // o: {src, label (optional, names the new copy), onDone(link)}
   function openImageEditor(o) {
     let base = null, ops = [], tool = TOOLS.some(([k]) => k === o.tool) ? o.tool : "pen", color = COLORS[0][0], size = 1, nextNum = 1, drag = null, busy = false, changed = false;
-    const history = [];
+    const history = [], future = [];
+    let sel = -1, grab = null;              // the shape picked to move or resize, and the drag doing it
     const view = el("canvas", { class: "iedit-canvas", "aria-label": "Picture to mark up" });
     const stage = el("div", { class: "iedit-stage" }, view);
     const ctx = view.getContext("2d");
     const status = el("p", { class: "muted vedit-status", role: "status", "aria-live": "polite" });
     const unit = () => Math.max(base.width, base.height) / 400;
-    const snapshot = () => { history.push({ ops: ops.slice(), base, nextNum }); changed = true; undoBtn.disabled = false; };
+    const state = () => ({ ops: ops.slice(), base, nextNum });
+    const snapshot = () => { history.push(state()); future.length = 0; changed = true; steps(); };
+    function steps() { undoBtn.disabled = !history.length; redoBtn.disabled = !future.length; delBtn.hidden = sel < 0; }
+    function select(i) { sel = i; steps(); }
     function bake() {                       // the picture with every drawing on it
       const c = document.createElement("canvas");
       c.width = base.width; c.height = base.height;
@@ -1485,6 +1551,17 @@
       ctx.drawImage(base, 0, 0);
       for (const op of ops) drawOp(ctx, op, base, unit());
       if (drag && drag.tool !== "crop") drawOp(ctx, drag, base, unit());
+      if (sel >= 0 && ops[sel]) {
+        const u = unit(), r = opBox(ctx, ops[sel], u), hs = Math.max(8, u * 5);
+        ctx.save(); ctx.lineWidth = Math.max(1.5, u * 0.8);
+        if (ops[sel].tool !== "arrow") {
+          ctx.setLineDash([u * 3, u * 2]); ctx.strokeStyle = "#fff"; ctx.strokeRect(r.x - u * 2, r.y - u * 2, r.w + u * 4, r.h + u * 4);
+          ctx.lineDashOffset = u * 2.5; ctx.strokeStyle = "#2563eb"; ctx.strokeRect(r.x - u * 2, r.y - u * 2, r.w + u * 4, r.h + u * 4);
+        }
+        ctx.setLineDash([]);
+        for (const [x, y] of opHandles(ctx, ops[sel], u)) { ctx.fillStyle = "#fff"; ctx.strokeStyle = "#2563eb"; ctx.fillRect(x - hs / 2, y - hs / 2, hs, hs); ctx.strokeRect(x - hs / 2, y - hs / 2, hs, hs); }
+        ctx.restore();
+      }
       if (drag && drag.tool === "crop" && drag.b) {
         const [a, b] = [drag.a, drag.b], x = Math.min(a[0], b[0]), y = Math.min(a[1], b[1]), w = Math.abs(b[0] - a[0]), h = Math.abs(b[1] - a[1]);
         ctx.save(); ctx.fillStyle = "rgba(0,0,0,.5)";
@@ -1494,7 +1571,9 @@
         ctx.restore();
       }
     }
-    const img = new Image();
+    let img = null;
+    function load(src) {
+    img = new Image();
     img.onload = () => {
       const k = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
       base = document.createElement("canvas");
@@ -1503,7 +1582,21 @@
       redraw();
     };
     img.onerror = () => { status.textContent = "That picture couldn't be opened."; };
-    img.src = o.src;
+    img.src = src;
+    }
+    load(o.src);
+    // Mark up a different picture or edit from the library (the marks so far are dropped).
+    const chooseBtn = el("button", { type: "button", class: "ghost small", onclick: () => {
+      if (busy) return;
+      openLibrary({ kinds: ["image"], upload: true, title: "Choose a picture to mark up", onPick: ([it]) => {
+        if (!it || it.link === o.src) return;
+        if (changed && !window.confirm("Switch pictures? The marks on this one aren't saved.")) return;
+        o = { ...o, src: it.link, label: it.label || o.label };
+        base = null; ops = []; history.length = 0; future.length = 0; nextNum = 1; changed = false; sel = -1; steps();
+        status.textContent = "";
+        load(it.link);
+      } });
+    } }, "🖼 Choose picture");
 
     const at = (e) => {
       const r = view.getBoundingClientRect();
@@ -1513,7 +1606,28 @@
     view.addEventListener("pointerdown", (e) => {
       if (!base || busy) return;
       e.preventDefault();
-      const p = at(e);
+      const p = at(e), u = unit();
+      if (sel >= 0 && ops[sel]) {           // grab a handle to resize, or the shape itself to move it
+        const hs = Math.max(8, u * 5) * 1.6;
+        const h = opHandles(ctx, ops[sel], u).find(([x, y]) => Math.abs(p[0] - x) < hs && Math.abs(p[1] - y) < hs);
+        if (h || opHit(ctx, ops[sel], u, p)) {
+          const kept = future.slice();
+          snapshot();
+          grab = { op0: ops[sel], p0: p, from: h ? [h[0], h[1]] : null, what: h ? h[2] : null, future: kept };
+          view.setPointerCapture(e.pointerId);
+          return;
+        }
+      }
+      if (tool === "move") {
+        let i = ops.length - 1;
+        while (i >= 0 && !opHit(ctx, ops[i], u, p)) i--;
+        select(i);
+        if (i >= 0) { const kept = future.slice(); snapshot(); grab = { op0: ops[i], p0: p, future: kept }; view.setPointerCapture(e.pointerId); }
+        else status.textContent = "Tap a box, circle, arrow, text or line to move or resize it.";
+        redraw();
+        return;
+      }
+      if (sel >= 0) { select(-1); redraw(); }
       if (tool === "num") { snapshot(); ops.push({ tool, color, size, a: p, n: nextNum++ }); redraw(); return; }
       if (tool === "text" || tool === "tbox") { typeAt(p, e); return; }
       view.setPointerCapture(e.pointerId);
@@ -1534,7 +1648,7 @@
         if (!typing || typing.box !== box) return;
         typing = null; box.remove();
         const t = box.value.replace(/\s+$/, "");
-        if (keep && t.trim()) { snapshot(); ops.push({ ...op, text: t }); redraw(); }
+        if (keep && t.trim()) { snapshot(); ops.push({ ...op, text: t }); select(ops.length - 1); redraw(); }
       };
       box.addEventListener("keydown", (ev) => {
         ev.stopPropagation();
@@ -1556,12 +1670,22 @@
       setTimeout(() => box.focus(), 0);
     }
     view.addEventListener("pointermove", (e) => {
+      if (grab) {
+        const p = at(e);
+        ops[sel] = grab.what ? opResized(ctx, grab.op0, unit(), grab.what, p, grab.from) : opMoved(grab.op0, p[0] - grab.p0[0], p[1] - grab.p0[1]);
+        redraw();
+        return;
+      }
       if (!drag) return;
       const p = at(e);
       if (drag.pts) drag.pts.push(p); else drag.b = p;
       redraw();
     });
     const finish = () => {
+      if (grab) {                           // a tap without a drag changes nothing, so it isn't an undo step
+        if (ops[sel] === grab.op0) { history.pop(); future.push(...grab.future); steps(); }
+        grab = null; redraw(); return;
+      }
       if (!drag) return;
       const d = drag; drag = null;
       const big = d.pts || Math.hypot(d.b[0] - d.a[0], d.b[1] - d.a[1]) > unit() * 3;
@@ -1576,11 +1700,14 @@
           base = c; ops = [];
           setTool("pen");
         }
-      } else if (big) { snapshot(); ops.push(d); }
+      } else if (big) {
+        snapshot(); ops.push(d);
+        if (!d.pts) select(ops.length - 1);   // the new shape shows its handles, ready to resize
+      }
       redraw();
     };
     view.addEventListener("pointerup", finish);
-    view.addEventListener("pointercancel", () => { drag = null; redraw(); });
+    view.addEventListener("pointercancel", () => { drag = null; if (grab) { ops[sel] = grab.op0; grab = null; } redraw(); });
 
     function turn() {
       if (!base) return;
@@ -1589,22 +1716,29 @@
       c.width = flat.height; c.height = flat.width;
       const g = c.getContext("2d");
       g.translate(c.width, 0); g.rotate(Math.PI / 2); g.drawImage(flat, 0, 0);
-      base = c; ops = [];
+      base = c; ops = []; select(-1);
       redraw();
     }
-    const undoBtn = el("button", { type: "button", class: "ghost small", disabled: true, onclick: () => {
-      const h = history.pop();
+    const restore = (from, to) => {
+      const h = from.pop();
       if (!h) return;
-      ops = h.ops; base = h.base; nextNum = h.nextNum;
-      undoBtn.disabled = !history.length;
-      redraw();
-    } }, "↶ Undo");
+      to.push(state());
+      ops = h.ops; base = h.base; nextNum = h.nextNum; sel = -1; changed = true;
+      steps(); redraw();
+    };
+    const undoBtn = el("button", { type: "button", class: "ghost small", disabled: true, title: "Undo (Ctrl+Z)", onclick: () => restore(history, future) }, "↶ Undo");
+    const redoBtn = el("button", { type: "button", class: "ghost small", disabled: true, title: "Redo (Ctrl+Y)", onclick: () => restore(future, history) }, "↷ Redo");
+    const delBtn = el("button", { type: "button", class: "ghost small", hidden: true, title: "Delete the selected mark (Delete key)", onclick: () => {
+      if (sel < 0) return;
+      snapshot(); ops.splice(sel, 1); select(-1); redraw();
+    } }, "🗑 Delete");
     const toolBtns = TOOLS.map(([key, ico, label]) => el("button", { type: "button", class: "tool", "data-tool": key, title: label,
       "aria-pressed": key === tool ? "true" : "false", onclick: () => setTool(key) }, el("span", { "aria-hidden": "true" }, ico), el("small", {}, label)));
     function setTool(key) {
       tool = key;
       toolBtns.forEach((b) => b.setAttribute("aria-pressed", b.dataset.tool === key ? "true" : "false"));
-      status.textContent = { crop: "Drag over the part to keep.", blur: "Drag over faces, names or labels to hide them.",
+      if (["pen", "hi", "num", "crop"].includes(key) && sel >= 0) { select(-1); redraw(); }
+      status.textContent = { move: "Tap a mark to pick it. Drag it to move, or drag a corner to resize.", crop: "Drag over the part to keep.", blur: "Drag over faces, names or labels to hide them.",
         num: "Tap to drop numbers in order: 1, 2, 3…", text: "Tap where the text should go, then type.",
         tbox: "Tap where the text box should go, then type. Pick its color above." }[key] || "";
       if (key === "hi" && color === COLORS[0][0]) setColor(COLORS[1][0]);
@@ -1617,8 +1751,12 @@
     const saveBtn = el("button", { type: "button", class: "btn" }, "Save picture");
     const close = () => { if (busy) return; if (changed && !window.confirm("Close without saving the changes?")) return; back.remove(); document.removeEventListener("keydown", onKey); };
     const onKey = (e) => {
-      if (e.key === "Escape") close();
-      if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undoBtn.click(); }
+      if (document.body.lastElementChild !== back) return;     // the library is open on top
+      if (e.key === "Escape") { if (sel >= 0) { select(-1); redraw(); } else close(); }
+      const k = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); redoBtn.click(); }
+      else if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); undoBtn.click(); }
+      if ((e.key === "Delete" || e.key === "Backspace") && sel >= 0 && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); delBtn.click(); }
     };
     saveBtn.addEventListener("click", () => {
       if (!base || busy) return;
@@ -1634,11 +1772,11 @@
       }, png ? "image/png" : "image/jpeg", 0.9);
     });
     const back = modal("Mark up a picture",
-      el("div", { class: "row vedit-top" }, el("h2", {}, "Mark up picture"), el("span", { class: "grow" }),
+      el("div", { class: "row vedit-top" }, el("h2", {}, "Mark up picture"), chooseBtn, el("span", { class: "grow" }),
         el("button", { type: "button", class: "ghost small", onclick: close }, "Close")),
       el("div", { class: "iedit-tools" }, ...toolBtns),
       el("div", { class: "row iedit-opts" }, el("div", { class: "iedit-swatches" }, ...swatches), sizeSel, el("span", { class: "grow" }),
-        undoBtn, el("button", { type: "button", class: "ghost small", onclick: turn }, "↻ Turn")),
+        delBtn, undoBtn, redoBtn, el("button", { type: "button", class: "ghost small", onclick: turn }, "↻ Turn")),
       stage,
       status,
       el("div", { class: "row vedit-foot" }, el("span", { class: "muted small" }, "Saves a new copy. The original stays in the media library."),
@@ -1695,7 +1833,7 @@
           el("span", { class: "media-name" }, it.label),
           el("span", { class: "muted small" }, [it.kind === "video" ? "Video" : "Picture", isEdit(it) ? "Your edit" : "", sizeText(it.size)].filter(Boolean).join(" · ")));
         tile.addEventListener("click", () => {
-          if (!o.multi) { close(); o.onPick([{ kind: it.kind, link: it.link }]); return; }
+          if (!o.multi) { close(); o.onPick([{ kind: it.kind, link: it.link, label: it.label }]); return; }
           const at = chosen.indexOf(it);
           if (at >= 0) chosen.splice(at, 1); else chosen.push(it);
           pickedNow(); draw();
@@ -1719,6 +1857,7 @@
             if (!chosen.some((x) => x.link === it.link)) chosen.push(it);
             tab = "all"; drawTabs(); pickedNow(); draw();
             note.textContent = `${f.name} added and selected.`;
+            if (!o.multi) { close(); o.onPick([{ kind: it.kind, link: it.link, label: it.label }]); return; }
           } catch (e) { note.textContent = e.message; }
         }
       };
