@@ -56,7 +56,9 @@ Cal/OSHA (8 CCR, Title 8) apply.
   (free, CPU, model in `data/models`) unless one is pasted, and runs the Claude panel research with the photos
   (CLI: copied into its working folder with Read allowed; API: image blocks). Questions get `at` (video pause times) from
   the transcript. The result goes through `app._settle_draft` (citations checked) and lands as a draft to preview.
-- Text to speech (`trainer/tts.py`): all free, open source, CPU. Spanish is Kokoro (`kokoro-onnx`, int8 model from its
+- Text to speech (`trainer/tts.py`): Google Chirp 3 HD voices (`GOOGLE_VOICES`, REST with the `GOOGLE_TTS_KEY` GitHub secret,
+  staged to Fly) when set, capped at `FREE_CHARS` a month (`data/speech/google-usage.json`) so it stays in Google's free
+  allowance; otherwise free, open source, CPU. English and Spanish are Kokoro (`kokoro-onnx`, int8 model from its
   release page into `data/models/kokoro`), Vietnamese is VieNeu-TTS v3 Nano (`vieneu`, Hugging Face cache in `data/models/hf`;
   needs onnxruntime < 1.23), the rest Piper (`data/models/piper`), which is also the backup when those can't run. Kokoro and
   VieNeu run in a short child process (`trainer/tts_engines.py`, all of a voiceover's lines at once) so their models leave

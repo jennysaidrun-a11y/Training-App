@@ -1,4 +1,4 @@
-"""The Kokoro (Spanish) and VieNeu-TTS (Vietnamese) voices, run by tts.py in a short process of
+"""The Kokoro (English and Spanish) and VieNeu-TTS (Vietnamese) voices, run by tts.py in a short process of
 their own: `python -m trainer.tts_engines job.json`. The job names the engine, its voice, the
 speed and the lines ({text, wav}); each line is written as a WAV file. The models download once
 into data/models (Kokoro from its project's release page, VieNeu from Hugging Face via HF_HOME),
@@ -34,7 +34,7 @@ def kokoro(job):
         _download(KOKORO_BASE + name, folder / name)
     k = Kokoro(str(folder / KOKORO_FILES[0]), str(folder / KOKORO_FILES[1]))
     for it in job["items"]:
-        samples, rate = k.create(it["text"], voice=job["voice"], speed=job["speed"], lang="es")
+        samples, rate = k.create(it["text"], voice=job["voice"], speed=job["speed"], lang="en-us" if job["voice"][0] in "ab" else "es")
         sf.write(it["wav"], samples, rate)
 
 

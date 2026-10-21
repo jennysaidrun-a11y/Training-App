@@ -1756,3 +1756,35 @@ def test_repeat_videos_removed_and_old_links_still_work(client, env):
     assert json.loads((media / "aliases.json").read_text()) == {"a-1.mov": "a-2.mov", "a-3.mov": "a-2.mov"}
     assert client.get("/media/a-3.mov").content == data
     assert client.get("/media/a-9.mov").status_code == 404
+
+
+def test_google_voices_when_key_set_within_free_allowance(env, tmp_path, monkeypatch):
+    """With GOOGLE_TTS_KEY, Google's natural voices read the lines; past the month's free allowance
+    (or if Google fails) the free voices take over."""
+    import base64, json, subprocess
+    from trainer import tts, video
+    monkeypatch.setenv("GOOGLE_TTS_KEY", "k")
+    mp3 = tmp_path / "s.mp3"
+    subprocess.run([video.ffmpeg_exe(), "-loglevel", "error", "-f", "lavfi", "-i", "sine=d=1", str(mp3)], check=True)
+    sent = []
+
+    class R:
+        status_code = 200
+        def json(self):
+            return {"audioContent": base64.b64encode(mp3.read_bytes()).decode()}
+
+    def post(url, params, json, timeout):
+        sent.append(json)
+        return R()
+    out = tmp_path / "speech"
+    out.mkdir()
+    tts._google_make(["Lock it out.", "Tag it."], "vi", "normal", out, subprocess.run, post=post)
+    assert [s["voice"]["name"] for s in sent] == ["vi-VN-Chirp3-HD-Aoede"] * 2
+    assert (out / tts.file_name("Tag it.", "vi", "normal", "google")).is_file()
+    assert json.loads((out / "google-usage.json").read_text())["chars"] == len("Lock it out.") + len("Tag it.")
+    monkeypatch.setattr(tts, "FREE_CHARS", 30)
+    tts._google_make(["A much longer line than is left this month."], "vi", "normal", out, subprocess.run, post=post)
+    assert len(sent) == 2      # over the allowance: nothing sent
+    monkeypatch.delenv("GOOGLE_TTS_KEY")
+    tts._google_make(["Other."], "vi", "normal", out, subprocess.run, post=post)
+    assert len(sent) == 2

@@ -1,7 +1,8 @@
 """Text to speech: a natural voice reads a script, for video voiceovers and for "Listen" on
-lesson slides. All free, open source and run on the server's processor, no account:
-Kokoro reads Spanish and VieNeu-TTS reads Vietnamese (both clearer than Piper in those
-languages); Piper reads the rest and is the backup when those two can't run. Kokoro and
+lesson slides. Best first: Google's Chirp 3 HD voices (very natural, every language here) when
+the GOOGLE_TTS_KEY setting exists, kept inside Google's free monthly allowance (FREE_CHARS);
+otherwise the free open-source voices on the server's processor: Kokoro reads English and
+Spanish, VieNeu-TTS reads Vietnamese; Piper reads the rest and is the last backup. Kokoro and
 VieNeu run in their own short process (`tts_engines.py`) so their models leave memory when
 the speech is made. Each voice downloads once into data/models. Made speech is kept in
 data/speech (same text, same voice = same file).
@@ -23,8 +24,8 @@ VOICE_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
 # key: (label, language, path in the Piper voices collection, engine, the engine's voice).
 # The Piper voice is also the backup for the Kokoro and VieNeu voices.
 VOICES = {
-    "en-f": ("English · woman", "en", "en/en_US/lessac/medium/en_US-lessac-medium", "piper", None),
-    "en-m": ("English · man", "en", "en/en_US/ryan/medium/en_US-ryan-medium", "piper", None),
+    "en-f": ("English · woman", "en", "en/en_US/lessac/medium/en_US-lessac-medium", "kokoro", "af_heart"),
+    "en-m": ("English · man", "en", "en/en_US/ryan/medium/en_US-ryan-medium", "kokoro", "am_michael"),
     "es": ("Español · mujer", "es", "es/es_MX/claude/high/es_MX-claude-high", "kokoro", "ef_dora"),
     "es-m": ("Español · hombre", "es", "es/es_MX/claude/high/es_MX-claude-high", "kokoro", "em_alex"),
     "zh": ("中文", "zh", "zh/zh_CN/huayan/medium/zh_CN-huayan-medium", "piper", None),
@@ -32,6 +33,13 @@ VOICES = {
     "vi-m": ("Tiếng Việt · nam", "vi", "vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium", "vieneu", "Adam"),
     "ar": ("العربية", "ar", "ar/ar_JO/kareem/medium/ar_JO-kareem-medium", "piper", None),
 }
+# Google Chirp 3 HD voice for each of ours (Aoede is a woman's voice, Charon a man's).
+GOOGLE_VOICES = {"en-f": "en-US-Chirp3-HD-Aoede", "en-m": "en-US-Chirp3-HD-Charon", "es": "es-US-Chirp3-HD-Aoede",
+                 "es-m": "es-US-Chirp3-HD-Charon", "zh": "cmn-CN-Chirp3-HD-Aoede", "vi": "vi-VN-Chirp3-HD-Aoede",
+                 "vi-m": "vi-VN-Chirp3-HD-Charon", "ar": "ar-XA-Chirp3-HD-Aoede"}
+GOOGLE_URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
+GOOGLE_SPEEDS = {"slow": 0.85, "normal": 1.0, "fast": 1.15}
+FREE_CHARS = 900_000          # a month; Google's free allowance for these voices is 1 million characters
 LANG_VOICE = {"en": "en-f", "es": "es", "zh": "zh", "vi": "vi", "ar": "ar"}
 SPEEDS = {"slow": 1.2, "normal": 1.0, "fast": 0.85}   # Piper's length scale: bigger is slower
 ENGINE_SPEEDS = {"slow": 0.85, "normal": 1.0, "fast": 1.15}   # Kokoro / VieNeu: bigger is faster
@@ -135,6 +143,65 @@ def _engine_make(texts, voice, speed, out_dir, model_dir, runner):
                     pass
 
 
+def google_ready():
+    return bool(os.environ.get("GOOGLE_TTS_KEY", "").strip())
+
+
+_usage_lock = threading.Lock()
+
+
+def _spend(out_dir, chars):
+    """Counts the characters sent to Google this month; False once the free allowance would be passed."""
+    import datetime as dt
+    path, month = Path(out_dir) / "google-usage.json", dt.date.today().strftime("%Y-%m")
+    with _usage_lock:
+        try:
+            used = json.loads(path.read_text())
+        except (OSError, ValueError):
+            used = {}
+        if used.get("month") != month:
+            used = {"month": month, "chars": 0}
+        if used["chars"] + chars > FREE_CHARS:
+            return False
+        used["chars"] += chars
+        path.write_text(json.dumps(used))
+        return True
+
+
+def _google_audio(text, voice, speed, post=None):
+    import base64
+    import requests
+    post = post or requests.post
+    name = GOOGLE_VOICES[voice]
+    body = {"input": {"text": text}, "voice": {"languageCode": name.split("-Chirp")[0], "name": name},
+            "audioConfig": {"audioEncoding": "MP3", "speakingRate": GOOGLE_SPEEDS[speed]}}
+    r = post(GOOGLE_URL, params={"key": os.environ["GOOGLE_TTS_KEY"].strip()}, json=body, timeout=60)
+    if r.status_code == 400 and speed != "normal":        # a voice without pace control: normal speed
+        body["audioConfig"].pop("speakingRate")
+        r = post(GOOGLE_URL, params={"key": os.environ["GOOGLE_TTS_KEY"].strip()}, json=body, timeout=60)
+    if r.status_code != 200:
+        raise SpeechError("Google's voice didn't answer.")
+    return base64.b64decode(r.json()["audioContent"])
+
+
+def _google_make(texts, voice, speed, out_dir, runner, post=None):
+    """Google's voice for every line not made yet, within the month's free allowance. Stops at the
+    first problem; whatever is left is read by the free voices."""
+    if not google_ready() or voice not in GOOGLE_VOICES:
+        return
+    for t in [t for t in dict.fromkeys(texts) if not (out_dir / file_name(t, voice, speed, "google")).exists()]:
+        if not _spend(out_dir, len(t)):
+            return
+        try:
+            audio = _google_audio(t, voice, speed, post)
+        except Exception:
+            return
+        with tempfile.TemporaryDirectory() as tmp:
+            mp3 = Path(tmp) / "speech.mp3"
+            mp3.write_bytes(audio)
+            _encode(mp3, out_dir / file_name(t, voice, speed, "google"), runner)
+
+
 def speak(text, voice, speed, out_dir, model_dir, runner=subprocess.run):
     """Makes (or reuses) the speech for text. Returns (file name in out_dir, seconds)."""
     text = _clean(text)
@@ -145,8 +212,11 @@ def speak(text, voice, speed, out_dir, model_dir, runner=subprocess.run):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     with _lock:
-        _engine_make([text], voice, speed, out_dir, model_dir, runner)
-        out = out_dir / file_name(text, voice, speed, engine_of(voice))
+        _google_make([text], voice, speed, out_dir, runner)
+        out = out_dir / file_name(text, voice, speed, "google")
+        if not out.exists():
+            _engine_make([text], voice, speed, out_dir, model_dir, runner)
+            out = out_dir / file_name(text, voice, speed, engine_of(voice))
         if not out.exists():          # Piper: its own voice, or the backup
             out = out_dir / file_name(text, voice, speed)
         if not out.exists():
@@ -174,7 +244,10 @@ def track(lines, voice, speed, out_dir, model_dir, runner=subprocess.run, speak_
     if speak_fn is speak and voice in VOICES and speed in SPEEDS:   # Kokoro / VieNeu: all lines in one go
         out_dir.mkdir(parents=True, exist_ok=True)
         with _lock:
-            _engine_make([_clean(l["text"]) for l in lines], voice, speed, out_dir, model_dir, runner)
+            texts = [_clean(l["text"]) for l in lines]
+            _google_make(texts, voice, speed, out_dir, runner)
+            left = [t for t in texts if not (out_dir / file_name(t, voice, speed, "google")).exists()]
+            _engine_make(left, voice, speed, out_dir, model_dir, runner)
     parts, placed, t = [], [], 0.0
     for l in lines:
         name, secs = speak_fn(l["text"], voice, speed, out_dir, model_dir)
