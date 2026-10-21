@@ -1282,8 +1282,10 @@ def _media_file(link, types=VIDEO_TYPES):
     link = str(link or "")
     name = link.rsplit("/", 1)[-1]
     ext = "." + name.rsplit(".", 1)[-1] if "." in name else ""
-    if link == "/media/" + name and MEDIA_NAME.match(name) and ext in types and (media_dir() / name).is_file():
-        return media_dir() / name
+    if link == "/media/" + name and MEDIA_NAME.match(name) and ext in types:
+        for real in (name, _same_as(name)):
+            if (media_dir() / real).is_file():
+                return media_dir() / real
     return None
 
 
@@ -1977,8 +1979,20 @@ def media(name: str):
         raise HTTPException(404, "No such video")
     path = media_dir() / name
     if not path.is_file():
+        path = media_dir() / _same_as(name)
+    if not path.is_file():
         raise HTTPException(404, "No such video")
     return FileResponse(path, media_type=MEDIA_TYPES["." + name.rsplit(".", 1)[1]])
+
+
+def _same_as(name):
+    """A repeat copy removed to free space (fly/dedupe.py) answers with the copy that was kept,
+    so lessons and unsaved drafts that still point to it keep working."""
+    try:
+        kept = json.loads((media_dir() / "aliases.json").read_text(encoding="utf-8")).get(name, "")
+    except (OSError, ValueError):
+        kept = ""
+    return kept if MEDIA_NAME.match(kept or "") else name
 
 
 def heic_to_jpg(src, dst):

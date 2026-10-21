@@ -1732,3 +1732,27 @@ def test_server_stays_awake_while_working(env, monkeypatch):
         app_module._video_jobs["t"]["state"] = "done"
     time.sleep(0.2)
     assert not app_module._awake["on"]
+
+
+def test_repeat_videos_removed_and_old_links_still_work(client, env):
+    """fly/dedupe.py keeps one copy of a video saved several times; links to removed copies still play."""
+    import importlib.util, json, pathlib
+    from trainer import app as app_module
+    spec = importlib.util.spec_from_file_location("dedupe", pathlib.Path(__file__).parent.parent / "fly" / "dedupe.py")
+    dedupe = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dedupe)
+    media = app_module.media_dir()
+    data = b"\x00\x00\x00\x18ftypmp42" + b"z" * 4000
+    for n in ("a-1.mov", "a-2.mov", "a-3.mov"):
+        (media / n).write_bytes(data)
+    (media / "b-1.mov").write_bytes(data + b"!")
+    (media / ".making-x").mkdir()
+    lessons = media.parent / "content-test"
+    lessons.mkdir()
+    (lessons / "l.yaml").write_text("video: /media/a-2.mov\n")
+    assert dedupe.dedupe(media, lessons) == 2 * len(data)
+    assert sorted(p.name for p in media.iterdir() if p.suffix == ".mov") == ["a-2.mov", "b-1.mov"]
+    assert not (media / ".making-x").exists()
+    assert json.loads((media / "aliases.json").read_text()) == {"a-1.mov": "a-2.mov", "a-3.mov": "a-2.mov"}
+    assert client.get("/media/a-3.mov").content == data
+    assert client.get("/media/a-9.mov").status_code == 404

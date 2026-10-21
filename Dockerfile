@@ -11,4 +11,5 @@ RUN pip install -q --no-cache-dir -r /tmp/requirements.txt
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/root/.local/bin:$PATH"
 COPY fly/start.sh /start.sh
+COPY fly/dedupe.py /dedupe.py
 CMD ["bash", "/start.sh"]

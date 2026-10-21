@@ -19,5 +19,7 @@ if [ ! -d /data/repo/.git ]; then
   git clone -q -b "$BRANCH" "$REPO_URL" /data/repo.tmp && mv /data/repo.tmp /data/repo
 fi
 cd /data/repo
+# Free space first: repeat copies of the same video and half-made videos (see fly/dedupe.py).
+python3 /dedupe.py /data/repo/data/media /data/repo/content || echo "Couldn't check for repeat videos."
 export PORT=${PORT:-8080} HOST=0.0.0.0 SAVE_LABEL="Online" SKIP_CLAUDE=1
 exec bash update.sh
