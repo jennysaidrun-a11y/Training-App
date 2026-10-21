@@ -1760,6 +1760,17 @@ def test_video_drafts_save_list_and_delete(client, anon, env):
     assert client.post("/api/manage/media/delete", json={"link": "/media/" + a.name}).status_code == 200
 
 
+def test_lesson_unsaved_changes_kept_in_the_app(client, anon):
+    deck = {"title": "Draft title", "slides": []}
+    assert anon.put("/api/manage/lesson-draft/new", json={"deck": deck}).status_code == 401
+    assert client.put("/api/manage/lesson-draft/..%2Fx", json={"deck": deck}).status_code in (400, 404)
+    assert client.get("/api/manage/lesson-draft/mixer-safety").json() == {"deck": None}
+    assert client.put("/api/manage/lesson-draft/mixer-safety", json={"at": 5, "base": "b", "deck": deck}).status_code == 200
+    assert client.get("/api/manage/lesson-draft/mixer-safety").json() == {"at": 5, "base": "b", "deck": deck}
+    assert client.delete("/api/manage/lesson-draft/mixer-safety").status_code == 200
+    assert client.get("/api/manage/lesson-draft/mixer-safety").json() == {"deck": None}
+
+
 def test_server_turns_itself_off_only_when_idle(client, env, monkeypatch, tmp_path):
     """Online, the app stops the server after a quiet spell, but never while a video is being made."""
     import time

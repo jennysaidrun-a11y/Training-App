@@ -31,7 +31,8 @@ Cal/OSHA (8 CCR, Title 8) apply.
   the same videos are opened again ("Start over" drops them). They're also saved in the app as drafts (`/api/manage/drafts`,
   `data/media/drafts.json`, every 2 s after a change; Media > Drafts lists and reopens them on any computer; a blank "Make a video"
   starts fresh; making the video deletes its draft; a draft's clips count as used). The lesson editor keeps unsaved changes the same way
-  ("lesson-draft:<id>"; workers only see changes after Save lesson, since a saved lesson is live).
+  ("lesson-draft:<id>", and in the app: `/api/manage/lesson-draft/<id>`, `data/lesson-drafts.json`, every 2 s; opening the lesson
+  takes the newest of the two; workers only see changes after Save lesson, since a saved lesson is live).
   Frames are taken from the player when the browser shows the video, else by the server. Effects are toggle buttons that change the preview at once (CSS filters/turn, Web Audio filters); "Exact preview"
   renders 5 s with `preview: true` (not kept in the library). `trainer/video.py`
   runs ffmpeg from the `imageio-ffmpeg` pip package (no other install) and makes a new 720p MP4 piece by piece

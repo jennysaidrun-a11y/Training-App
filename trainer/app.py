@@ -2244,6 +2244,53 @@ def draft_delete(draft_id: str):
     return {"ok": True}
 
 
+# A lesson's unsaved changes, kept in the app as well as in the browser (lesson editor, every few
+# seconds), so they're never lost with a browser or a reload. Workers only see a lesson after Save.
+LESSON_DRAFT_ID = re.compile(r"^(new|[a-z0-9][a-z0-9-]{0,99})$")
+
+
+def _lesson_drafts_file():
+    return db.db_path().parent / "lesson-drafts.json"
+
+
+def _lesson_drafts():
+    try:
+        return json.loads(_lesson_drafts_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+@app.get("/api/manage/lesson-draft/{lid}")
+def lesson_draft_get(lid: str):
+    d = _lesson_drafts().get(lid) if LESSON_DRAFT_ID.match(lid) else None
+    return d or {"deck": None}
+
+
+@app.put("/api/manage/lesson-draft/{lid}")
+async def lesson_draft_save(lid: str, request: Request):
+    body = await request.json()
+    if not LESSON_DRAFT_ID.match(lid) or not isinstance(body.get("deck"), dict) or len(json.dumps(body)) > 2_000_000:
+        return JSONResponse({"error": "Those changes couldn't be kept."}, status_code=400)
+    with _library_lock:
+        drafts = _lesson_drafts()
+        drafts[lid] = {"at": int(body.get("at") or time.time() * 1000), "base": str(body.get("base") or ""), "deck": body["deck"]}
+        tmp = _lesson_drafts_file().with_suffix(".tmp")
+        tmp.write_text(json.dumps(drafts, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, _lesson_drafts_file())
+    return {"ok": True}
+
+
+@app.delete("/api/manage/lesson-draft/{lid}")
+def lesson_draft_delete(lid: str):
+    with _library_lock:
+        drafts = _lesson_drafts()
+        if drafts.pop(lid, None) is not None:
+            tmp = _lesson_drafts_file().with_suffix(".tmp")
+            tmp.write_text(json.dumps(drafts, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, _lesson_drafts_file())
+    return {"ok": True}
+
+
 @app.post("/api/manage/media/project")
 async def media_project_save(request: Request):
     body = await request.json()

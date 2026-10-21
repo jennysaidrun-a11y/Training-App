@@ -36,14 +36,26 @@
   // changes only after "Save lesson" (a saved lesson is live).
   const draftKey = "lesson-draft:" + (D.id || "new");
   const baseDeck = JSON.stringify(D);
-  let draftTimer = 0;
+  let draftTimer = 0, appTimer = 0;
+  // Unsaved changes are kept in this browser and in the app (so another tab, a reload or another
+  // computer gets them back). Workers see them only after Save lesson.
+  const draftUrl = () => "/api/manage/lesson-draft/" + (D.id || "new");
   const keepDraft = () => {
-    clearTimeout(draftTimer);
+    clearTimeout(draftTimer); clearTimeout(appTimer);
     draftTimer = setTimeout(() => {
       try { localStorage.setItem(draftKey, JSON.stringify({ at: Date.now(), base: baseDeck, deck: D })); } catch (e) { /* storage full or off */ }
     }, 600);
+    appTimer = setTimeout(() => {
+      fetch(draftUrl(), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ at: Date.now(), base: baseDeck, deck: D }) })
+        .then((r) => { if (r.ok && dirty) saveNote.textContent = "Not saved yet · changes kept in the app"; }).catch(() => {});
+    }, 2000);
   };
-  const dropDraft = () => { clearTimeout(draftTimer); try { localStorage.removeItem(draftKey); localStorage.removeItem("lesson-draft:new"); } catch (e) { /* ignore */ } };
+  const dropDraft = () => {
+    clearTimeout(draftTimer); clearTimeout(appTimer);
+    try { localStorage.removeItem(draftKey); localStorage.removeItem("lesson-draft:new"); } catch (e) { /* ignore */ }
+    fetch(draftUrl(), { method: "DELETE" }).catch(() => {});
+    if (D.id) fetch("/api/manage/lesson-draft/new", { method: "DELETE" }).catch(() => {});
+  };
   const touch = () => { dirty = true; saveNote.textContent = "Not saved yet · kept on this device"; keepDraft(); };
   const rulesIndex = () => D.slides.length + 1;
   const fmtTime = (s) => (s == null || s === "" ? "" : typeof s === "number" ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : String(s));
@@ -1075,22 +1087,25 @@
     name.focus(); name.select();
   });
 
-  // Pick up unsaved changes from last time (same lesson, this device).
-  let picked = false;
-  try {
-    const kept = JSON.parse(localStorage.getItem(draftKey) || "null");
-    if (kept && kept.deck && JSON.stringify(kept.deck) !== baseDeck && Date.now() - kept.at < 30 * 864e5
-        && (kept.base === baseDeck || window.confirm("This lesson has unsaved changes from before, but it was also changed since. Bring back your unsaved changes?"))) {
-      Object.assign(D, kept.deck, { id: D.id });
-      picked = true;
-    }
-  } catch (e) { /* nothing kept */ }
-  show(D.slides.length ? 1 : 0);
-  if (picked) {
-    dirty = true;
+  // Pick up unsaved changes from last time (same lesson): the newest of this browser's copy and the app's.
+  let picked = false, pickedAt = 0;
+  const pickUp = (kept) => {
+    if (!(kept && kept.deck && JSON.stringify(kept.deck) !== baseDeck && kept.at > pickedAt && Date.now() - kept.at < 30 * 864e5
+        && (kept.base === baseDeck || window.confirm("This lesson has unsaved changes from before, but it was also changed since. Bring back your unsaved changes?")))) return false;
+    Object.keys(D).forEach((k) => { if (k !== "id") delete D[k]; });
+    Object.assign(D, kept.deck, { id: D.id });
+    picked = true; pickedAt = kept.at; dirty = true;
     saveNote.replaceChildren("Picked up your unsaved changes. ",
       el("button", { type: "button", class: "linkish", onclick: () => { if (window.confirm("Throw away the unsaved changes and go back to the saved lesson?")) { dropDraft(); dirty = false; location.reload(); } } }, "Undo that"));
-  }
+    return true;
+  };
+  try { pickUp(JSON.parse(localStorage.getItem(draftKey) || "null")); } catch (e) { /* nothing kept */ }
+  show(D.slides.length ? 1 : 0);
+  if (picked) keepDraft();          // and make sure the app has them too
+  fetch(draftUrl()).then((r) => r.json()).then((kept) => {
+    if (dirty && !picked) return;   // already changing it here
+    if (pickUp(kept)) { show(D.slides.length ? 1 : 0); try { localStorage.setItem(draftKey, JSON.stringify(kept)); } catch (e) { /* ignore */ } }
+  }).catch(() => {});
   if (!D.slides.length && window.DECK_NEW) {
     D.slides.push({ type: "reading", heading: "", text: "" });
     show(0);
