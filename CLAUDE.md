@@ -14,7 +14,7 @@ Cal/OSHA (8 CCR, Title 8) apply.
   checked live with `rules.check_rule`). Uses the API when `ANTHROPIC_API_KEY` is set, else
   Claude Code (`claude -p`, the user's signed-in account; `update.sh` installs it). Tests stub both.
 - Media studio (Lessons > Media, `/manage/studio`, `static/studio.js`, shared by the lesson editor): media
-  library (`data/media/library.json`: every upload, Drive copy and edit is kept until a manager deletes it, never swept;
+  library (tiles show a small server-made still, `/api/manage/media/poster`, cached in `data/media/.posters`, never the video itself; `data/media/library.json`: every upload, Drive copy and edit is kept until a manager deletes it, never swept;
   files used by a lesson can't be deleted; `/api/manage/media*`), picture editor (canvas: marker, highlighter,
   arrow, box, circle, numbers, text, blur, crop, turn, undo/redo; ↖ Select (and every new shape) shows handles to move or
   resize a mark after it's drawn (`opBox`/`opHandles`/`opResized`), 🗑 Delete; "🖼 Choose picture" switches to another
@@ -44,7 +44,7 @@ Cal/OSHA (8 CCR, Title 8) apply.
   Normally it's made on the manager's own computer instead (`makeHere`: clips are first copied into the browser (blob URLs) so playback never waits on the network; the browser plays each kept part into a 1280x720 canvas
   with the turn/effects/fades and records it with the sound and voiceover via MediaRecorder, H.264 MP4 only, in real time),
   pausing while the window is hidden; stuck 10 s, or any failure there, switches to the server way by itself;
-  then uploaded with `made_here` so the server only re-indexes it ("Keep working ↘" tucks the editor away while it's made;
+  then uploaded with `made_here` so the server only re-indexes it (and reports `audio`; a silent file from an edit that should have sound is deleted and the server makes it instead) ("Keep working ↘" tucks the editor away while it's made;
   `makingBar` shows progress in the corner, tap to reopen; `video.tidy`, stream copy). The server way is used when the
   browser can't record H.264, for "Steady", or from "Make it on the server instead" after a failure.
   Fly's auto-stop is off (`fly.toml`): the app turns the server off itself (`_idle_watch`: 15 quiet minutes, no open
