@@ -1310,8 +1310,15 @@ async def upload_video(request: Request):
         return JSONResponse({"error": FULL}, status_code=400)
     link = _save_upload(upload, str(form.get("lesson") or "lesson"), str(form.get("label") or ""))
     # Made in the browser ("Make the video" on this computer): give it a proper index (no re-making).
+    # It says whether the file has sound, so the browser can tell when its recording lost it.
     if form.get("made_here") and ext in (".mp4", ".webm"):
-        await run_in_threadpool(video.tidy, media_dir() / link.rsplit("/", 1)[-1])
+        path = media_dir() / link.rsplit("/", 1)[-1]
+        await run_in_threadpool(video.tidy, path)
+        try:
+            sound = (await run_in_threadpool(video.probe, path))["audio"]
+        except video.EditError:
+            sound = False
+        return {"video": link, "audio": sound}
     return {"video": link}
 
 
@@ -2311,6 +2318,27 @@ def media_project_get(link: str = ""):
     return {"project": _library().get(path.name, {}).get("project") if path else None}
 
 
+# Library tiles show a small still of each video instead of loading the video itself (phone videos
+# can be hundreds of MB, and loading them all at once froze the page while a video was being made).
+_poster_lock = threading.Lock()
+
+
+@app.get("/api/manage/media/poster")
+def media_poster(link: str = ""):
+    path = _media_file(link)
+    if not path:
+        raise HTTPException(404, "No such video")
+    out = media_dir() / ".posters" / (path.name + ".jpg")
+    with _poster_lock:          # one at a time: the online server is small
+        if not out.is_file() or out.stat().st_mtime < path.stat().st_mtime:
+            out.parent.mkdir(exist_ok=True)
+            try:
+                video.poster(path, out)
+            except video.EditError:
+                raise HTTPException(404, "No picture for that video")
+    return FileResponse(out, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+
+
 @app.post("/api/manage/media/delete")
 async def media_delete(request: Request):
     body = await request.json()
@@ -2325,6 +2353,7 @@ async def media_delete(request: Request):
         lib.pop(path.name, None)
         _library_write(lib)
     path.unlink(missing_ok=True)
+    (media_dir() / ".posters" / (path.name + ".jpg")).unlink(missing_ok=True)
     return {"ok": True}
 
 

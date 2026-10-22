@@ -1703,12 +1703,31 @@ def test_video_made_in_the_browser_is_tidied(client, env, tmp_path):
     r = client.post("/api/manage/video", data={"lesson": "allergens", "made_here": "1"},
                     files={"video_file": ("made.mp4", src.read_bytes(), "video/mp4")})
     path = app_module.media_dir() / r.json()["video"].rsplit("/", 1)[-1]
-    assert abs(video.probe(path)["duration"] - 2) < 0.3
+    assert abs(video.probe(path)["duration"] - 2) < 0.3 and r.json()["audio"] is True
     assert not list(app_module.media_dir().glob(".tidy-*"))
+    # One that came out with no sound says so, so the browser can have the server make it instead.
+    _clip(src, 2, sound=False)
+    r = client.post("/api/manage/video", data={"lesson": "allergens", "made_here": "1"},
+                    files={"video_file": ("made.mp4", src.read_bytes(), "video/mp4")})
+    assert r.json()["audio"] is False
     # Something that isn't really a video is kept as uploaded (nothing to tidy).
     r = client.post("/api/manage/video", data={"lesson": "allergens", "made_here": "1"},
                     files={"video_file": ("made.webm", b"webm" * 100, "video/webm")})
     assert r.status_code == 200
+
+
+def test_library_tiles_get_a_small_still(client, anon, env):
+    """Library tiles show a still made from the video, not the (possibly huge) video itself."""
+    from trainer import app as app_module
+    a = app_module.media_dir() / "po-20990101000000.mp4"
+    _clip(a, 2)
+    assert anon.get("/api/manage/media/poster?link=/media/" + a.name).status_code in (401, 303, 307)
+    r = client.get("/api/manage/media/poster?link=/media/" + a.name)
+    assert r.status_code == 200 and r.content[:2] == b"\xff\xd8"
+    assert client.get("/api/manage/media/poster?link=https://evil/x.mp4").status_code == 404
+    app_module._library_add("/media/" + a.name, "x")
+    assert client.post("/api/manage/media/delete", json={"link": "/media/" + a.name}).status_code == 200
+    assert not list((app_module.media_dir() / ".posters").iterdir())
 
 
 def test_same_video_added_twice_is_kept_once(client, env):

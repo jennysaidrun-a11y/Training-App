@@ -1200,9 +1200,35 @@
         .find((t) => MediaRecorder.isTypeSupported(t))) || "";
     async function makeHere(step) {
       const type = recType(), W = 1280, H = 720, T = totalLen(), on = (k) => opts.extras.has(k);
+      // Every clip is copied to this computer first, so playing it never waits on the network or the
+      // app (a stalled download or an app update used to freeze it partway).
+      const local = {};
+      const fetchClip = async (link, i) => {
+        for (let tries = 1; ; tries++) {
+          try {
+            const res = await fetch(link);
+            if (!res.ok) throw new Error("not found");
+            const size = +res.headers.get("content-length") || 0, reader = res.body.getReader(), parts = [];
+            let got = 0;
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              parts.push(value); got += value.length;
+              step(`getting clip ${i + 1} of ${clips.length} ready${size ? `, ${Math.round(100 * got / size)}%` : ""}`);
+            }
+            return URL.createObjectURL(new Blob(parts, { type: res.headers.get("content-type") || "" }));
+          } catch (e) {
+            if (tries >= 4) throw new Error(`Clip ${i + 1} couldn't be loaded. Check the connection and try again.`);
+            step(`the connection dropped, trying clip ${i + 1} again`);
+            await new Promise((ok) => setTimeout(ok, 4000));
+          }
+        }
+      };
+      for (const [i, c] of clips.entries()) if (!local[c.video]) local[c.video] = await fetchClip(c.video, i);
       const cv = el("canvas", { width: W, height: H }), g = cv.getContext("2d");
       const ac = new AudioContext();
-      await ac.resume();
+      await Promise.race([ac.resume(), new Promise((ok) => setTimeout(ok, 3000))]);
+      if (ac.state !== "running") { ac.close().catch(() => {}); throw new Error("The sound couldn't be recorded on this computer."); }
       const out = ac.createMediaStreamDestination(), master = ac.createGain();
       master.connect(out);
       const vid = el("video", { playsinline: true, preload: "auto" });
@@ -1216,6 +1242,7 @@
       let vAud = null;
       if (voice) { vAud = new Audio(vo.audio); vAud.preload = "auto"; ac.createMediaElementSource(vAud).connect(master); }
       const stream = new MediaStream([...cv.captureStream(30).getVideoTracks(), ...out.stream.getAudioTracks()]);
+      if (!stream.getAudioTracks().length) { ac.close().catch(() => {}); throw new Error("The sound couldn't be recorded on this computer."); }
       const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 6e6, audioBitsPerSecond: 160000 });
       const chunks = [];
       rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
@@ -1243,30 +1270,6 @@
       const voiceGo = () => { if (vAud && pos < vAud.duration + 0.1) { vAud.currentTime = pos; vAud.play().catch(() => {}); } };
       const voiceStop = () => { if (vAud) vAud.pause(); };
       if (vAud) await Promise.race([wait(vAud, "canplaythrough"), new Promise((ok) => setTimeout(ok, 8000))]);
-      // Every clip is copied to this computer first, so playing it never waits on the network or the
-      // app (a stalled download or an app update used to freeze it partway).
-      const local = {};
-      const fetchClip = async (link, i) => {
-        for (let tries = 1; ; tries++) {
-          try {
-            const res = await fetch(link);
-            if (!res.ok) throw new Error("not found");
-            const size = +res.headers.get("content-length") || 0, reader = res.body.getReader(), parts = [];
-            let got = 0;
-            for (;;) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              parts.push(value); got += value.length;
-              step(`getting clip ${i + 1} of ${clips.length} ready${size ? `, ${Math.round(100 * got / size)}%` : ""}`);
-            }
-            return URL.createObjectURL(new Blob(parts, { type: res.headers.get("content-type") || "" }));
-          } catch (e) {
-            if (tries >= 4) throw new Error(`Clip ${i + 1} couldn't be loaded. Check the connection and try again.`);
-            step(`the connection dropped, trying clip ${i + 1} again`);
-            await new Promise((ok) => setTimeout(ok, 4000));
-          }
-        }
-      };
       // A hidden window (minimized or covered) stops the browser drawing, so the recording pauses
       // until it's back in front instead of saving frozen frames.
       const hold = async () => {
@@ -1278,8 +1281,7 @@
       };
       rec.start(1000); rec.pause();
       try {
-        for (const [i, c] of clips.entries()) if (!local[c.video]) local[c.video] = await fetchClip(c.video, i);
-        for (const c of clips) {
+          for (const c of clips) {
           if (c.still) {
             const img = new Image();
             img.src = local[c.video];
@@ -1358,20 +1360,36 @@
         xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) step(`saving it to the app, ${Math.round(100 * ev.loaded / ev.total)}%`); };
         xhr.onload = () => {
           let r = {}; try { r = JSON.parse(xhr.responseText); } catch (e) { /* below */ }
-          if (xhr.status === 200 && r.video) ok(r.video);
+          if (xhr.status === 200 && r.video) ok(r);
           else { const err = new Error(r.error || r.detail || "The finished video couldn't be saved. Try again."); err.retry = xhr.status >= 500 || !r.error; bad(err); }
         };
         xhr.onerror = () => { const err = new Error("The finished video couldn't be saved. Check the connection and try again."); err.retry = true; bad(err); };
         xhr.send(form);
       });
       for (let tries = 1; ; tries++) {
-        try { return { video: await send(), duration: T }; }
+        let r;
+        try { r = await send(); }
         catch (e) {
           if (!e.retry || tries >= 12) throw e;
           step("the app is busy or restarting, trying to save again in 15 seconds");
           await new Promise((ok) => setTimeout(ok, 15000));
+          continue;
         }
+        // The file came out silent though the edit has sound: drop it, and the server makes it instead.
+        if (r.audio === false && await wantSound()) {
+          await fetch("/api/manage/media/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ link: r.video }) }).catch(() => {});
+          throw new Error("The sound didn't record on this computer.");
+        }
+        return { video: r.video, duration: T };
       }
+    }
+    // Should the made video have sound? A voiceover, or a video clip with sound that isn't muted.
+    async function wantSound() {
+      if (vo.on && vo.audio) return true;
+      if (opts.mute) return false;
+      const infos = await Promise.all(clips.filter((c) => !c.still).map((c) =>
+        fetch("/api/manage/video/info?v=" + encodeURIComponent(c.video)).then((r) => r.json()).catch(() => ({}))));
+      return infos.some((r) => r.audio);
     }
     // The server way: ffmpeg on the online server, as a background job it reports on every two seconds.
     async function makeOnServer() {
@@ -1949,7 +1967,9 @@
   }
   function preview(item) {
     return item.kind === "video"
-      ? el("video", { src: item.link + "#t=0.5", preload: "metadata", muted: true, playsinline: true, class: "media-thumb" })
+      // A small still made by the server, not the video itself: big phone videos all loading at once froze the page.
+      ? el("img", { src: "/api/manage/media/poster?link=" + encodeURIComponent(item.link), alt: "", loading: "lazy", class: "media-thumb",
+        onerror: (e) => { e.target.replaceWith(el("span", { class: "media-thumb media-thumb-none" }, "🎬")); } })
       : el("img", { src: item.link, alt: "", loading: "lazy", class: "media-thumb" });
   }
   // A picker over the library. o: {kinds: ["video","image"], multi, onPick([{kind, link}])}

@@ -66,6 +66,18 @@ def tidy(path, runner=subprocess.run):
     return True
 
 
+def poster(src, out_path, runner=subprocess.run):
+    """A small still (320 wide) from near the start of a video, for library tiles."""
+    for t in ("0.5", "0"):
+        r = runner([ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-ss", t, "-i", str(src), "-frames:v", "1",
+                    "-vf", "scale=320:-2", "-q:v", "5", str(out_path)],
+                   capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+        if r.returncode == 0 and pathlib.Path(out_path).is_file() and pathlib.Path(out_path).stat().st_size:
+            return out_path
+    pathlib.Path(out_path).unlink(missing_ok=True)
+    raise EditError("No picture could be taken from that video.")
+
+
 def frame(src, t, out_path, runner=subprocess.run):
     """Saves the picture at second t of a video as a JPG (for drawing on it), at most 1920 wide."""
     t = max(0.0, float(t))
