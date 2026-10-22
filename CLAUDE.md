@@ -29,8 +29,9 @@ Cal/OSHA (8 CCR, Title 8) apply.
   Draw and Text (a filled text box typed right on the picture) work on a video frame or a picture clip. Nothing closes on a
   click outside; the clips and voiceover lines auto save in the browser (`localStorage` "video-draft:…") and come back when
   the same videos are opened again ("Start over" drops them). They're also saved in the app as drafts (`/api/manage/drafts`,
-  `data/media/drafts.json`, every 2 s after a change; Media > Drafts lists and reopens them on any computer; a blank "Make a video"
-  starts fresh; making the video deletes its draft; a draft's clips count as used). The lesson editor keeps unsaved changes the same way
+  `data/media/drafts.json`, every 2 s after a change; Media > Drafts lists and reopens them on any computer; the key includes the place it was opened
+  from (`slot`: the cover, or a slide's own `key` id saved with the section, so edits stay with their slide when slides move;
+  duplicates and new lessons get new ids); Media's "Make a video" starts fresh; making the video deletes its draft; a draft's clips count as used). The lesson editor keeps unsaved changes the same way
   ("lesson-draft:<id>", and in the app: `/api/manage/lesson-draft/<id>`, `data/lesson-drafts.json`, every 2 s; opening the lesson
   takes the newest of the two; workers only see changes after Save lesson, since a saved lesson is live).
   Frames are taken from the player when the browser shows the video, else by the server. Effects are toggle buttons that change the preview at once (CSS filters/turn, Web Audio filters); "Exact preview"

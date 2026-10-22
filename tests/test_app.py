@@ -252,13 +252,22 @@ def test_manager_edits_a_lesson(client):
     assert r.json()["id"] == "brand-new-lesson" and "brand-new-lesson" in content.load_lessons()
 
 
+def test_slide_keeps_its_own_id():
+    """A reading slide's id (which its video edit is kept under) survives saving; junk ids are dropped."""
+    sections, _, errors = editor.from_slides([{"type": "reading", "heading": "A", "text": "x", "key": "abc123def"},
+                                              {"type": "reading", "heading": "B", "text": "y", "key": "../x"}])
+    assert not errors and sections[0]["key"] == "abc123def" and "key" not in sections[1]
+    assert editor.to_slides({"sections": sections})[0]["key"] == "abc123def"
+
+
 def test_slides_round_trip_every_lesson(any_lessons):
     for lid, lesson in content.load_lessons().items():
         slides = editor.to_slides(lesson)
         sections, questions, errors = editor.from_slides(slides)
         assert not errors, (lid, errors)
         assert sections == [{"heading": s["heading"], "text": s["text"].strip() + "\n" if s["text"].strip() else "",
-                             **({"images": s["images"]} if s.get("images") else {})} for s in lesson["sections"]], lid
+                             **({"images": s["images"]} if s.get("images") else {}),
+                             **({"key": s["key"]} if s.get("key") else {})} for s in lesson["sections"]], lid
         assert [(q["q"], q["choices"], q["answer"], q.get("at")) for q in questions] == \
                [(q["q"], q["choices"], q["answer"], q.get("at")) for q in lesson["questions"]], lid
         last = len(sections) - 1

@@ -2155,7 +2155,7 @@
     // Page header: one main button (Add files), the rest beside it, like a normal files app.
     const head = document.getElementById("studio-actions") || el("div", { class: "row" });
     head.replaceChildren(
-      el("button", { type: "button", class: "ghost small", onclick: () => openVideoEditor({ onDone: () => refresh("New video saved."), onClose: refreshDrafts }) }, "🎬 Make a video"),
+      el("button", { type: "button", class: "ghost small", onclick: () => openVideoEditor({ slot: "new-" + Date.now(), onDone: () => refresh("New video saved."), onClose: refreshDrafts }) }, "🎬 Make a video"),
       driveButton(["video", "image"], true, () => {}, (m) => { if (m) say(m); else refresh("Copied from Google Drive."); }, "From Google Drive") || "",
       el("button", { type: "button", class: "small", onclick: () => pick.click() }, "+ Add files"));
     root.replaceChildren(

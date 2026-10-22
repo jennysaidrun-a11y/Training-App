@@ -124,8 +124,16 @@
   const { isDrive, driveButton, openImageEditor, libraryButton } = window.Studio;
   window.Studio.setLesson(() => D.id || D.title || "lesson");
   const fromDrive = (link, kind, picked) => window.Studio.fromDrive(link, kind, picked);
+  // Each place keeps its own video edit: the cover, and each slide by its own id (kept when slides move).
+  // A lesson not saved yet gets an id for this page, so new lessons don't share one.
+  const pageId = Math.random().toString(36).slice(2, 10);
+  const coverSlot = () => (D.id ? "" : pageId + "-") + "cover";
+  const slideSlot = (s) => {
+    if (!/^[a-z0-9]{6,16}$/.test(s.key || "")) { s.key = (Math.random().toString(36).slice(2) + Date.now().toString(36)).slice(0, 12); touch(); }
+    return "slide-" + s.key;
+  };
   function openVideoEditor(redrawField) {
-    window.Studio.openVideoEditor({ video: D.video, onDone: (r, kept) => {
+    window.Studio.openVideoEditor({ video: D.video, slot: coverSlot(), onDone: (r, kept) => {
       const moved = kept ? moveTimes(kept) : 0;
       D.video = r.video; touch(); redrawField(); drawRail();
       saveNote.textContent = `Edited video ready (${window.Studio.clock(r.duration)}).${moved ? ` ${moved} question time${moved === 1 ? "" : "s"} moved to match.` : ""} Save the lesson to keep it.`;
@@ -230,7 +238,7 @@
       el("button", { type: "button", class: "ghost small", onclick: () => previewDeck(payload(), null, index, true), title: "See this slide the way workers will" }, "👁 Preview slide"),
       el("button", { type: "button", class: "ghost small", disabled: index <= 1, onclick: () => move(index, index - 1), title: "Move earlier" }, "↑ Earlier"),
       el("button", { type: "button", class: "ghost small", disabled: index >= n, onclick: () => move(index, index + 1), title: "Move later" }, "↓ Later"),
-      el("button", { type: "button", class: "ghost small", onclick: () => { D.slides.splice(index, 0, JSON.parse(JSON.stringify(D.slides[index - 1]))); touch(); show(index + 1); } }, "Duplicate"),
+      el("button", { type: "button", class: "ghost small", onclick: () => { D.slides.splice(index, 0, { ...JSON.parse(JSON.stringify(D.slides[index - 1])), key: undefined }); touch(); show(index + 1); } }, "Duplicate"),
       el("button", { type: "button", class: "ghost small danger", onclick: () => remove(index) }, "Delete"));
   }
   function field(label, input, help) {
@@ -277,7 +285,7 @@
       // pictures, open in the video editor ready to join (pictures show as stills).
       const drive = driveButton(["video", "image"], true, () => {}, say, "From Google Drive", (got) => {
         if (got.length === 1 && got[0].kind === "video") { D.video = got[0].link; touch(); draw(); saveNote.textContent = "Video copied from Google Drive. Save the lesson to keep it."; }
-        else if (got.length) window.Studio.openVideoEditor({ videos: got, onDone: (r) => {
+        else if (got.length) window.Studio.openVideoEditor({ videos: got, slot: coverSlot(), onDone: (r) => {
           D.video = r.video; touch(); draw(); drawRail();
           saveNote.textContent = `New video ready (${window.Studio.clock(r.duration)}). Save the lesson to keep it.`;
         } });
@@ -388,7 +396,7 @@
                                 onclick: () => { [s.images[i + 1], s.images[i]] = [s.images[i], s.images[i + 1]]; touch(); draw(); } }, "→") : null,
           !String(src).startsWith("/media/") ? null : isVideoLink(src)
             ? el("button", { type: "button", class: "ghost small", "aria-label": "Edit this video",
-                        onclick: () => window.Studio.openVideoEditor({ video: src, slot: "slide-" + (D.slides.indexOf(s) + 1), onDone: (r) => { s.images[i] = r.video; touch(); draw(); drawRail(); } }) }, "✂ Edit")
+                        onclick: () => window.Studio.openVideoEditor({ video: src, slot: slideSlot(s), onDone: (r) => { s.images[i] = r.video; touch(); draw(); drawRail(); } }) }, "✂ Edit")
             : el("button", { type: "button", class: "ghost small", "aria-label": "Mark up this picture",
                         onclick: () => openImageEditor({ src, onDone: (link) => { s.images[i] = link; touch(); draw(); drawRail(); } }) }, "✏️ Mark up"),
           el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove this picture",
@@ -415,7 +423,7 @@
       const menu = el("details", { class: "more-menu down" });
       const item = (label, fn, cls = "") => el("button", { type: "button", class: cls, onclick: () => { menu.removeAttribute("open"); fn(); } }, label);
       // A new or edited video replaces the one it came from, or goes after the pictures.
-      const editor = (opts, replace) => window.Studio.openVideoEditor({ ...opts, slot: "slide-" + (D.slides.indexOf(s) + 1), onDone: (r) => {
+      const editor = (opts, replace) => window.Studio.openVideoEditor({ ...opts, slot: slideSlot(s), onDone: (r) => {
         const i = replace ? s.images.indexOf(replace) : -1;
         if (i >= 0) s.images[i] = r.video; else s.images = [...s.images, r.video];
         touch(); draw(`Video ready (${window.Studio.clock(r.duration)}). Save the lesson to keep it.`); drawRail();

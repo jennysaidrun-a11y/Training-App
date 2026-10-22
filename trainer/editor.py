@@ -31,7 +31,7 @@ def to_slides(lesson):
             placed.add(i)
     for si, s in enumerate(lesson.get("sections", [])):
         slides.append({"type": "reading", "heading": s.get("heading", ""), "text": s.get("text", "").strip(),
-                       "images": list(s.get("images") or [])})
+                       "images": list(s.get("images") or []), **({"key": s["key"]} if s.get("key") else {})})
         for i, q in enumerate(questions):
             if i not in placed and q.get("after_section") == si:
                 slides.append(q_slide(q))
@@ -59,6 +59,8 @@ def from_slides(slides):
                 errors.append({"slide": n, "error": "A picture link should start with https://"})
             if good:
                 section["images"] = list(dict.fromkeys(good))
+            if re.fullmatch(r"[a-z0-9]{6,16}", str(s.get("key") or "")):
+                section["key"] = s["key"]     # the slide's own id, so its video edit stays with it when slides move
             sections.append(section)
         elif kind == "question":
             choices = [c.strip() for c in s.get("choices") or [] if c and c.strip()]
