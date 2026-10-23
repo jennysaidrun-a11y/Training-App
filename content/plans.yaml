@@ -17,4 +17,6 @@
     - key: 9297b00e95
       task: Packaging Line
   - title: Paperwork and Packing Line(Practice)
-    items: []
+    items:
+    - key: 739772d8ec
+      task: Mock Paperwork
