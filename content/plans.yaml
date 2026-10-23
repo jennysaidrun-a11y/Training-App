@@ -22,7 +22,7 @@
       task: Mock Paperwork
     - key: e401132575
       task: Packaging Line Covering
-  - title: Paperwork and Packing Line(Practice) + Box Erector Introduction + Forklift Familiarization
+  - title: Paperwork and Packing Line(Practice) + Box Erector Introduction + Forklift Introduction
     items:
     - key: c5f84c2157
       task: Mock Paperwork
@@ -30,7 +30,9 @@
       task: Line Covering
     - key: f378130bc3
       task: Box Erector
-  - title: Paperwork and Packing Line(Practice) + Box Erector(Practice)
+    - key: 6362c1c59c
+      task: Forklift familiarization
+  - title: Paperwork and Packing Line(Practice) + Box Erector(Practice) + Forklift(Practice)
     items:
     - key: 0afccc7634
       task: Mock Paperwork
