@@ -4,11 +4,17 @@
   name: Warehouse/Packaging
   roles: []
   days:
-  - title: Intoduction
+  - title: Intoduction to Paperwork and Packaging Line
     items:
     - key: 228a84fd51
       task: Paperwork Shadow
     - key: 0fdbdb3e7a
       task: Packaging Line
-  - title: Introduction
+  - title: Introduction(Continuation)
+    items:
+    - key: 441057ab56
+      task: Paperwork Shadow
+    - key: 9297b00e95
+      task: Packaging Line
+  - title: ''
     items: []
