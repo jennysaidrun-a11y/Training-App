@@ -48,7 +48,9 @@
       task: Mock Paperwork
     - key: 638bd8933f
       task: Line Covering
-    - key: 8f95e94af5
-      task: Box Erector
+    - key: 4686fa550a
+      task: Box Erector Setting/Troubleshoot Practice
+    - key: 1cf09c24a0
+      task: Forklift Practice Dry Storage
   - title: ''
     items: []
