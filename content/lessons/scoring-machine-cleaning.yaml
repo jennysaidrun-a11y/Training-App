@@ -3,7 +3,7 @@ title: Scoring Machine Cleaning
 roles:
 - baking
 version: '2026-10-15'
-reviewed_on: 2026-10-23T19:34
+reviewed_on: 2026-10-23T19:45
 summary: In this lesson we will go over what we need to do to properly clean the scoring machine
 video: ''
 sections:
@@ -26,7 +26,7 @@ sections:
 - heading: Cleaning Floor
   text: ''
   images:
-  - /media/scoring-machine-cleaning-20261023193139-0183ec.mp4
+  - /media/scoring-machine-cleaning-20261023194350-927a48.mp4
   key: v790ycme6ttm
 questions: []
 citations: []
