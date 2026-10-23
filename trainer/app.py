@@ -1319,6 +1319,9 @@ async def upload_video(request: Request):
         except video.EditError:
             sound = False
         return {"video": link, "audio": sound}
+    path = _media_file(link)
+    if path:      # the light copy for editing gets started right away
+        await run_in_threadpool(_light_state, path)
     return {"video": link}
 
 
@@ -1439,9 +1442,80 @@ async def video_info(v: str = ""):
     if not path:
         return JSONResponse({"error": "Only videos uploaded to the app can be edited."}, status_code=400)
     try:
-        return await run_in_threadpool(video.probe, path)
+        info = await run_in_threadpool(video.probe, path)
     except video.EditError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
+    return {**info, **_light_state(path, info)}
+
+
+# Light copies for the editor (video.light_copy): made one at a time in the background the first
+# time a big or HEVC video is opened in the editor or uploaded, kept in data/media/.light.
+_light_jobs, _light_lock = {}, threading.Lock()
+
+
+def _light_path(path):
+    return media_dir() / ".light" / (path.name + ".mp4")
+
+
+def _light_state(path, info=None):
+    """{"light": link to the light copy or "", "light_state": ready | making | none | failed}; starts one if needed."""
+    out = _light_path(path)
+    if out.is_file() and out.stat().st_mtime >= path.stat().st_mtime:
+        return {"light": f"/api/manage/media/light/{path.name}", "light_state": "ready"}
+    with _light_lock:
+        state = _light_jobs.get(path.name)
+        if state in ("making", "waiting"):
+            return {"light": "", "light_state": "making"}
+        if state == "failed":
+            return {"light": "", "light_state": "failed"}
+    try:
+        info = info or video.probe(path)
+    except video.EditError:
+        return {"light": "", "light_state": "none"}
+    if not video.needs_light(info):
+        return {"light": "", "light_state": "none"}
+    with _light_lock:
+        _light_jobs[path.name] = "waiting"
+        first = not any(v == "making" for v in _light_jobs.values())
+    if first:
+        threading.Thread(target=_light_worker, daemon=True).start()
+    keep_awake()
+    return {"light": "", "light_state": "making"}
+
+
+def _light_worker():
+    while True:
+        with _light_lock:
+            name = next((k for k, v in _light_jobs.items() if v == "waiting"), None)
+            if not name:
+                return
+            _light_jobs[name] = "making"
+        path = media_dir() / name
+        try:
+            if _space_left() < 300 * 1024 * 1024:
+                raise video.EditError(FULL)
+            _light_path(path).parent.mkdir(exist_ok=True)
+            while video.lock.locked():   # a video being made on the server goes first
+                time.sleep(2)
+            video.light_copy(path, _light_path(path), hdr=video.probe(path).get("hdr", False))
+            state = "done"
+        except Exception:
+            state = "failed"
+        with _light_lock:
+            if state == "done":
+                _light_jobs.pop(name, None)
+            else:
+                _light_jobs[name] = "failed"
+
+
+@app.get("/api/manage/media/light/{name}")
+def media_light(name: str):
+    if not MEDIA_NAME.match(name):
+        raise HTTPException(404, "No such video")
+    out = _light_path(media_dir() / name)
+    if not out.is_file():
+        raise HTTPException(404, "No such video")
+    return FileResponse(out, media_type="video/mp4")
 
 
 # ---- Text to speech (trainer/tts.py): voiceovers and "Listen" on slides -----------------------
@@ -1572,7 +1646,10 @@ async def edit_video(request: Request):
         except (TypeError, ValueError):
             return JSONResponse({"error": "A start, end or cut time isn't a number."}, status_code=400)
         clips.append({"start": start, "end": end, "cuts": cuts, **({"seconds": seconds} if seconds is not None else {})})
-        paths.append(path)
+        # The 720p light copy when there is one: the result is 720p anyway, and a 4K HDR phone video
+        # is slow and memory-hungry on the small server (the light copy already has normal colors).
+        lite = _light_path(path)
+        paths.append(lite if lite.is_file() and lite.stat().st_mtime >= path.stat().st_mtime else path)
     if turn not in video.TURNS:
         return JSONResponse({"error": "Turn the video by 90, 180 or 270 degrees."}, status_code=400)
     # An "exact preview" is a few seconds made the same way; it isn't kept in the library
@@ -1644,7 +1721,8 @@ _awake_lock = threading.Lock()
 
 
 def _busy():
-    return any(j.get("state") == "running" for j in list(_video_jobs.values())) or project.busy()
+    return (any(j.get("state") == "running" for j in list(_video_jobs.values())) or project.busy()
+            or any(v in ("making", "waiting") for v in list(_light_jobs.values())))
 
 
 def keep_awake(base=None, get=urlopen):
@@ -2354,6 +2432,7 @@ async def media_delete(request: Request):
         _library_write(lib)
     path.unlink(missing_ok=True)
     (media_dir() / ".posters" / (path.name + ".jpg")).unlink(missing_ok=True)
+    _light_path(path).unlink(missing_ok=True)
     return {"ok": True}
 
 

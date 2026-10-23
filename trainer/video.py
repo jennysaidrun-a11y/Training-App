@@ -48,7 +48,42 @@ def probe(path, runner=subprocess.run):
     if not m:
         raise EditError("That video couldn't be read. Try uploading it again.")
     h, mi, s = m.groups()
-    return {"duration": int(h) * 3600 + int(mi) * 60 + float(s), "audio": bool(re.search(r"Stream #.*Audio:", r.stderr))}
+    out = {"duration": int(h) * 3600 + int(mi) * 60 + float(s), "audio": bool(re.search(r"Stream #.*Audio:", r.stderr))}
+    v = re.search(r"Stream #.*Video: (\w+).*?, (\d{2,5})x(\d{2,5})", r.stderr)
+    if v:
+        out.update(codec=v.group(1), width=int(v.group(2)), height=int(v.group(3)))
+        # iPhone HDR video (HLG / PQ): its light copy is toned down to normal colors.
+        out["hdr"] = bool(re.search(r"Video:.*(arib-std-b67|smpte2084)", r.stderr))
+    return out
+
+
+# A light copy for editing: phone videos (4K, HEVC) stutter in the browser on a plain office PC, and
+# a recording made from a stuttering video has the freezes in it. The editor plays and records from a
+# 720p H.264 copy with a key frame every second (quick to jump around in); the clip itself is untouched.
+LIGHT_MAX = 1280
+
+
+def needs_light(info):
+    return bool(info.get("width")) and (max(info["width"], info["height"]) > LIGHT_MAX or info.get("codec") != "h264")
+
+
+TONEMAP = ",zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv"
+
+
+def light_copy(src, out_path, hdr=False, runner=subprocess.run):
+    out_path = pathlib.Path(out_path)
+    tmp = out_path.with_name(".tmp-" + out_path.name)
+    size = f"scale='if(gte(iw,ih),min({LIGHT_MAX},iw),-2)':'if(gte(iw,ih),-2,min({LIGHT_MAX},ih))'"
+    for tone in ([TONEMAP, ""] if hdr else [""]):     # plain if this ffmpeg can't tone it down
+        cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-map", "0:v:0", "-map", "0:a:0?",
+               "-vf", size + tone + ",format=yuv420p", "-fpsmax", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+               "-g", "30", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-threads", "2", str(tmp)]
+        r = runner(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT)
+        if r.returncode == 0 and tmp.is_file() and tmp.stat().st_size:
+            os.replace(tmp, out_path)
+            return out_path
+        tmp.unlink(missing_ok=True)
+    raise EditError("The light copy couldn't be made.")
 
 
 def tidy(path, runner=subprocess.run):

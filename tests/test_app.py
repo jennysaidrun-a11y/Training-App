@@ -1730,6 +1730,35 @@ def test_library_tiles_get_a_small_still(client, anon, env):
     assert not list((app_module.media_dir() / ".posters").iterdir())
 
 
+def test_big_videos_get_a_light_copy_for_editing(client, env, monkeypatch):
+    """A 4K or HEVC phone video stutters in the browser; the editor gets a 720p copy the server makes once."""
+    import time as _time
+    from trainer import app as app_module, video
+    big = app_module.media_dir() / "lt-20990101000000.mp4"
+    small = app_module.media_dir() / "lt-20990101000001.mp4"
+    subprocess.run([video.ffmpeg_exe(), "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=1920x1080:rate=30:duration=2",
+                    "-f", "lavfi", "-i", "sine=duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(big)], check=True)
+    _clip(small, 2)
+    assert client.get("/api/manage/video/info?v=/media/" + small.name).json()["light_state"] == "none"
+    r = client.get("/api/manage/video/info?v=/media/" + big.name).json()
+    assert r["width"] == 1920 and r["light_state"] in ("making", "ready")
+    for _ in range(60):
+        r = client.get("/api/manage/video/info?v=/media/" + big.name).json()
+        if r["light_state"] != "making":
+            break
+        _time.sleep(0.5)
+    assert r["light_state"] == "ready", r
+    got = client.get(r["light"])
+    assert got.status_code == 200
+    copy = app_module._light_path(big)
+    info = video.probe(copy)
+    assert (info["width"], info["height"]) == (1280, 720) and info["audio"] and abs(info["duration"] - 2) < 0.3
+    assert client.get("/api/manage/media/light/../../t.db").status_code == 404
+    app_module._library_add("/media/" + big.name, "x")
+    assert client.post("/api/manage/media/delete", json={"link": "/media/" + big.name}).status_code == 200
+    assert not copy.exists()
+
+
 def test_same_video_added_twice_is_kept_once(client, env):
     from trainer import app as app_module
     data = b"\x00\x00\x00\x18ftypmp42" + b"v" * 5000

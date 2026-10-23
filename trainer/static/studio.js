@@ -417,6 +417,27 @@
   function openVideoEditor(o = {}) {
     const original = String(o.video || "").startsWith("/media/") ? o.video : "";
     const clips = original ? [{ video: original, start: 0, end: null, cuts: [], duration: 0 }] : [];
+    // Big phone videos (4K, HEVC) stutter on an office PC, so the editor plays (and records from) a
+    // light 720p copy the server makes once; the clip itself stays the original.
+    const light = {}, lightAsked = {};
+    const srcOf = (c) => light[c.video] || c.video;
+    function askLight(link) {
+      if (lightAsked[link]) return lightAsked[link];
+      return (lightAsked[link] = fetch("/api/manage/video/info?v=" + encodeURIComponent(link)).then((r) => r.json()).then((r) => {
+        if (r.light) {
+          light[link] = r.light;
+          const c = clips[active];
+          if (c && !c.still && c.video === link && player.getAttribute("src") === link) {
+            const t = player.currentTime, playing = !player.paused;
+            player.src = r.light;
+            player.addEventListener("loadedmetadata", () => { player.currentTime = t; if (playing) player.play().catch(() => {}); }, { once: true });
+          }
+        } else if (r.light_state === "making") {
+          setTimeout(() => { delete lightAsked[link]; if (back.isConnected) askLight(link); }, 6000);
+        }
+        return r;
+      }).catch(() => ({})));
+    }
     // Several videos or pictures to start with (e.g. picked together from Google Drive): one clip
     // each, to join. Items are /media links (videos) or {kind, link}.
     for (const v of (o.videos || []).slice(0, 20)) {
@@ -727,7 +748,7 @@
         // The picture on screen, straight from the player (instant); the server takes it when
         // this browser can't show the video.
         let src = "";
-        if (player.getAttribute("src") === c.video && player.videoWidth && Math.abs(player.currentTime - t) < 0.25) {
+        if (player.getAttribute("src") === srcOf(c) && player.videoWidth && Math.abs(player.currentTime - t) < 0.25) {
           try {
             const k = Math.min(1, 1920 / player.videoWidth), cv = document.createElement("canvas");
             cv.width = Math.round(player.videoWidth * k); cv.height = Math.round(player.videoHeight * k);
@@ -760,7 +781,8 @@
       player.hidden = !c || !!c.still; still.hidden = !c || !c.still;
       if (!c) { player.pause(); drawClips(); return; }
       if (c.still) { player.pause(); still.src = c.video; drawClips(); return; }
-      if (player.getAttribute("src") !== c.video) player.src = c.video;
+      askLight(c.video);
+      if (player.getAttribute("src") !== srcOf(c)) player.src = srcOf(c);
       const end = c.end == null ? Infinity : c.end;
       if (player.currentTime < (c.start || 0) || player.currentTime > end) player.currentTime = c.start || 0;
       sample.hidden = true; sample.pause();
@@ -1224,7 +1246,17 @@
           }
         }
       };
-      for (const [i, c] of clips.entries()) if (!local[c.video]) local[c.video] = await fetchClip(c.video, i);
+      for (const [i, c] of clips.entries()) {
+        if (c.still || light[c.video]) continue;
+        for (let n = 0; ; n++) {         // wait for its light copy (made once, then kept)
+          delete lightAsked[c.video];
+          const r = await askLight(c.video);
+          if (light[c.video] || r.light_state !== "making" || n > 400) break;
+          step(`making a smooth copy of clip ${i + 1} first (only needed once)`);
+          await new Promise((ok) => setTimeout(ok, 3000));
+        }
+      }
+      for (const [i, c] of clips.entries()) if (!local[c.video]) local[c.video] = await fetchClip(srcOf(c), i);
       const cv = el("canvas", { width: W, height: H }), g = cv.getContext("2d");
       const ac = new AudioContext();
       await Promise.race([ac.resume(), new Promise((ok) => setTimeout(ok, 3000))]);

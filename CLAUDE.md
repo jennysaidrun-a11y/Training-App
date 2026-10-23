@@ -41,6 +41,10 @@ Cal/OSHA (8 CCR, Title 8) apply.
   the 1 GB Fly machine (one big filter graph got ffmpeg OOM-killed on 4K phone video); routes
   `/api/manage/video/edit` and `/api/manage/video/info`. "Make the video" runs as a background job
   (`background: true` returns `{job}`; the editor polls `/api/manage/video/edit/<job>` for step/state) so no request hangs.
+  Big or HEVC videos (iPhone 4K HDR: Edge on Windows can't play them, and they stutter/freeze) get a light 720p H.264 copy,
+  made once in the background (`video.light_copy`, HDR toned down; `app._light_state` starts it from `/api/manage/video/info`
+  or an upload; kept in `data/media/.light`, served at `/api/manage/media/light/<name>`): the editor plays it, `makeHere` waits
+  for it and records from it, and the server way uses it too; the clip in the edit stays the original.
   Normally it's made on the manager's own computer instead (`makeHere`: clips are first copied into the browser (blob URLs) so playback never waits on the network; the browser plays each kept part into a 1280x720 canvas
   with the turn/effects/fades and records it with the sound and voiceover via MediaRecorder, H.264 MP4 only, in real time),
   pausing while the window is hidden; stuck 10 s, or any failure there, switches to the server way by itself;
