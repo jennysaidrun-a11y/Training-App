@@ -4,7 +4,11 @@
   name: Warehouse/Packaging
   roles: []
   days:
-  - title: ''
+  - title: Intoduction
     items:
     - key: 228a84fd51
       task: Paperwork Shadow
+    - key: 0fdbdb3e7a
+      task: Packaging Line
+  - title: Introduction
+    items: []
