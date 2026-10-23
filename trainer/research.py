@@ -216,9 +216,17 @@ def _examples():
     return "".join(f"<example_lesson>\n{e}\n</example_lesson>\n" for e in out)
 
 
+VIDEO_NOTE = """
+
+Videos: you never watch the lesson's videos. The app gives you what's said in each one, labeled by slide, \
+in <video_transcripts> (the voiceover lines the manager typed, or a transcript of its sound). Work from those \
+words. Don't say you can't open the videos and don't ask the manager to paste transcripts; if a video's \
+transcript is empty or missing, say which slide's video had nothing and carry on with the rest."""
+
+
 def _system():
     roles = content.load_roles()
-    system = SYSTEM.format(roles=", ".join(f"{r['name']} ({r['id']})" for r in roles)) + FORMAT_RULES + _examples()
+    system = SYSTEM.format(roles=", ".join(f"{r['name']} ({r['id']})" for r in roles)) + VIDEO_NOTE + FORMAT_RULES + _examples()
     return system, [r["id"] for r in roles]
 
 
