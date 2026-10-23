@@ -3,20 +3,31 @@ title: Scoring Machine Cleaning
 roles:
 - baking
 version: '2026-10-15'
-reviewed_on: 2026-10-23T00:18
-summary: ''
+reviewed_on: 2026-10-23T19:33
+summary: In this lesson we will go over what we need to do to properly clean the scoring machine
 video: ''
 sections:
+- heading: Preparation
+  text: "Notes: \n-make sure the machine is turned off\n"
+  images:
+  - /media/scoring-machine-cleaning-20261023191737-b8494a.mp4
+  key: igvb8f28o5am
 - heading: Scoring Knife
-  text: ''
+  text: "Notes:\n-Every knife will have a different entry, so please proceed with caution. \n-When Asiago\
+    \ was made that day, the scoring knife will need a second pass with the Foam Safe(yellow bucket)\n"
   images:
-  - /media/scoring-machine-cleaning-20261022235731-8f76ca.mp4
+  - /media/scoring-machine-cleaning-20261023192455-ea7a40.mp4
   key: 40k1ku61ou6m
-- heading: ''
+- heading: Machine Cleaning
   text: ''
   images:
-  - /media/scoring-machine-cleaning-20261021161339-7ada1a.mp4
+  - /media/scoring-machine-cleaning-20261023183631-086065.mp4
   key: 3jyd8cra6ubm
+- heading: Cleaning Floor
+  text: ''
+  images:
+  - /media/scoring-machine-cleaning-20261023193139-0183ec.mp4
+  key: v790ycme6ttm
 questions: []
 citations: []
 sources: []
