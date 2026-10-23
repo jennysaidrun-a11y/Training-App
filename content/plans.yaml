@@ -53,6 +53,7 @@
     - key: 1cf09c24a0
       task: Forklift Practice Dry Storage
   - title: Paperwork and Packing Line(Practice) + Box Erector(Practice) + Forklift(Practice) + SOCO Setting/Troubleshooting
+      Introdu
     items:
     - key: 17db553073
       task: Paperwork Testing(supervised)
@@ -60,5 +61,7 @@
       task: Forklift Pallet Dropdown + Dry Storage
     - key: e7e1cbf3d1
       task: Box Erector Setting/Troubleshoot Practice
-  - title: ''
+    - key: 5162dadbb5
+      task: SOCO Setting/Troubleshoot Introduction
+  - title: Paperwork and Packing Line(Practice) + Box Erector(Practice) + Forklift(Practice) + SOCO Setting/Troubleshooting(practic
     items: []
