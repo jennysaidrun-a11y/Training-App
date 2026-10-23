@@ -28,7 +28,7 @@
     {% for d in late + ([shown] if shown else []) %}{% for it in d["items"] %}
     <li class="{{ 'done' if it.done else '' }}">
       <span class="tickbox{{ ' lesson' if it.kind == 'lesson' else '' }}{{ ' on' if it.done else '' }}" aria-hidden="true">{{ '✓' if it.done else (icon("book") if it.kind == 'lesson' else '') }}</span>
-      <span class="grow keep-lines">{% if it.kind == "lesson" and it.exists and not it.done %}<a href="/lesson/{{ it.lesson }}">{{ it.title }}</a>{% else %}{{ it.title }}{% endif %}{% if d.state == "late" and not it.done %} <span class="pill bad">{{ t("plan_late", n=d.n) }}</span>{% endif %}</span>
+      <span class="grow keep-lines">{% if it.kind == "lesson" and it.exists and not it.done %}<a href="/lesson/{{ it.lesson }}">{{ it.title }}</a>{% else %}{{ it.title }}{% endif %}{% if it.minutes %} <span class="meta">· {{ it.minutes | duration }}</span>{% endif %}{% if d.state == "late" and not it.done %} <span class="pill bad">{{ t("plan_late", n=d.n) }}</span>{% endif %}{% if it.note %}<span class="plan-note">{{ it.note }}</span>{% endif %}</span>
     </li>
     {% endfor %}{% endfor %}
   </ol>
@@ -36,7 +36,7 @@
   <details class="more"><summary>{{ t("plan_all_days") }}</summary>
     <ol class="plan-days compact">{% for d in plan.days %}
       <li class="plan-day s-{{ d.state }}"><b>{{ t("plan_day", n=d.n) }}</b> · {{ d.date.isoformat() }}{% if d.title %} · {{ d.title }}{% endif %} · {{ d.count }}/{{ d["items"] | length }}
-        <ol class="plan-items">{% for it in d["items"] %}<li class="{{ 'done' if it.done else '' }}"><span class="tickbox{{ ' on' if it.done else '' }}" aria-hidden="true">{{ '✓' if it.done else '' }}</span><span class="grow keep-lines">{{ it.title }}</span></li>{% endfor %}</ol></li>
+        <ol class="plan-items">{% for it in d["items"] %}<li class="{{ 'done' if it.done else '' }}"><span class="tickbox{{ ' on' if it.done else '' }}" aria-hidden="true">{{ '✓' if it.done else '' }}</span><span class="grow keep-lines">{{ it.title }}{% if it.note %}<span class="plan-note">{{ it.note }}</span>{% endif %}</span></li>{% endfor %}</ol></li>
     {% endfor %}</ol>
   </details>
 </section>

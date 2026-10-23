@@ -41,7 +41,7 @@ def get(plan_id):
 
 
 def clean(p, lesson_ids=None):
-    """A plan as the app keeps it: id, name, roles, days [{title, items [{key, lesson | task}]}].
+    """A plan as the app keeps it: id, name, roles, days [{title, items [{key, lesson | task, note?, minutes?}]}].
     With lesson_ids, lessons that don't exist are dropped."""
     days = []
     for d in (p.get("days") or [])[:MAX_DAYS]:
@@ -53,10 +53,22 @@ def clean(p, lesson_ids=None):
                 continue
             key = str(it.get("key") or "")
             key = key if KEY.match(key) else new_key()
+            note = str(it.get("note") or "").strip()[:2000]
             if it.get("lesson") and (lesson_ids is None or str(it["lesson"]) in lesson_ids):
-                items.append({"key": key, "lesson": str(it["lesson"])})
+                item = {"key": key, "lesson": str(it["lesson"])}
             elif str(it.get("task") or "").strip():
-                items.append({"key": key, "task": str(it["task"]).strip()[:500]})
+                item = {"key": key, "task": str(it["task"]).strip()[:500]}
+            else:
+                continue
+            if note:
+                item["note"] = note
+            try:
+                minutes = int(float(it.get("minutes") or 0))
+            except (TypeError, ValueError):
+                minutes = 0
+            if 0 < minutes <= 24 * 60:
+                item["minutes"] = minutes
+            items.append(item)
         days.append({"title": str(d.get("title") or "").strip()[:120], "items": items})
     pid = str(p.get("id") or "")
     return {"id": pid if KEY.match(pid) else new_key(), "name": str(p.get("name") or "").strip()[:120] or "Untitled plan",
@@ -85,6 +97,15 @@ def save(plan):
 
 def delete(plan_id):
     save_plans([p for p in load_plans() if p["id"] != plan_id])
+
+
+def duration(minutes):
+    """30 -> "30 min", 90 -> "1 h 30 min", 0 -> "" """
+    minutes = int(minutes or 0)
+    if minutes <= 0:
+        return ""
+    h, m = divmod(minutes, 60)
+    return " ".join(x for x in (f"{h} h" if h else "", f"{m} min" if m else "") if x)
 
 
 def good_workdays(text):
@@ -126,7 +147,8 @@ def progress(plan, assignment, lesson_done, checked, today=None):
         if date == today:
             today_n = n
         days.append({"n": n, "date": date, "title": d["title"], "items": items, "done": done, "state": state,
-                     "count": sum(1 for i in items if i["done"])})
+                     "count": sum(1 for i in items if i["done"]),
+                     "minutes": sum(i.get("minutes", 0) for i in items)})
     total = sum(len(d["items"]) for d in days)
     finished = sum(d["count"] for d in days)
     if today_n is None and days:
