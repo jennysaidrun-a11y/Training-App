@@ -39,7 +39,9 @@
     - key: 1edb0355c0
       task: Line Covering
     - key: 0452584ffe
-      task: Box Erector
+      task: Box Erector Setting/Troubleshoot Introduction
+    - key: 41e0d2eb09
+      task: Forklift Practice Dry Storage
   - title: Paperwork and Packing Line(Practice) + Box Erector(Practice)
     items:
     - key: ab0b16ea3c
