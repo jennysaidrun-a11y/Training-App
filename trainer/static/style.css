@@ -175,6 +175,7 @@ body.focus main { max-width: 720px; padding-top: 0; padding-bottom: 200px; }
 .stage h1 { font-size: 1.6rem; }
 .eyebrow { color: var(--muted); text-transform: uppercase; font-weight: 700; font-size: 0.8rem; letter-spacing: 0.06em; margin: 12px 0 4px; }
 .reading p, .reading li { font-size: 1.12rem; line-height: 1.6; color: var(--text); font-weight: 600; }
+.reading p.keep-lines { white-space: pre-wrap; tab-size: 4; }
 .reading ol { padding-left: 0; list-style: none; counter-reset: step; }
 .reading ol li { counter-increment: step; display: flex; gap: 12px; align-items: flex-start; margin: 10px 0; }
 .reading ol li::before { content: counter(step); flex: 0 0 32px; height: 32px; border-radius: 50%; background: var(--blue-soft);

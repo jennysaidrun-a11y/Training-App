@@ -70,8 +70,8 @@
       const lines = para.split("\n").map((s) => s.trim()).filter(Boolean);
       if (lines.length && lines.every((s) => /^\d+\.\s/.test(s))) {
         box.append(el("ol", {}, ...lines.map((s) => el("li", {}, el("span", {}, s.replace(/^\d+\.\s*/, ""))))));
-      } else {
-        box.append(el("p", {}, lines.join(" ")));
+      } else {     // line breaks and indents stay as the manager typed them
+        box.append(el("p", { class: "keep-lines" }, para.split("\n").map((s) => s.replace(/\s+$/, "")).filter(Boolean).join("\n")));
       }
     }
     return box;

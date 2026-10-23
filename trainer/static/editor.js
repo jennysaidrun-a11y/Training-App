@@ -692,7 +692,7 @@
       for (const para of (text || "").trim().split(/\n\s*\n/)) {
         const lines = para.split("\n").map((x) => x.trim()).filter(Boolean);
         if (lines.length && lines.every((x) => /^\d+\.\s/.test(x))) box.append(el("ol", {}, ...lines.map((x) => el("li", {}, el("span", {}, x.replace(/^\d+\.\s*/, ""))))));
-        else if (lines.length) box.append(el("p", {}, lines.join(" ")));
+        else if (lines.length) box.append(el("p", { class: "keep-lines" }, para.split("\n").map((x) => x.replace(/\s+$/, "")).filter(Boolean).join("\n")));
       }
       return box;
     }
