@@ -23,6 +23,12 @@
     - key: e401132575
       task: Packaging Line Covering
   - title: Paperwork and Packing Line(Practice) + Box Erector Introduction
-    items: []
-  - title: ''
+    items:
+    - key: c5f84c2157
+      task: Mock Paperwork
+    - key: 7e1c8a005b
+      task: Line Covering
+    - key: f378130bc3
+      task: Box Erector
+  - title: Paperwork and Packing Line(Practice) + Box Erector(Practice)
     items: []
