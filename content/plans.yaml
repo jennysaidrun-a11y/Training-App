@@ -39,9 +39,9 @@
     - key: 1edb0355c0
       task: Line Covering
     - key: 0452584ffe
-      task: Box Erector Setting/Troubleshoot Introduction
+      task: Box Erector Setting/Troubleshoot Introduction(supervised)
     - key: 41e0d2eb09
-      task: Forklift Practice Dry Storage
+      task: Forklift Practice Dry Storage(supervised)
   - title: Paperwork and Packing Line(Practice) + Box Erector(Practice) + Forklift(Practice)
     items:
     - key: ab0b16ea3c
@@ -60,3 +60,5 @@
       task: Forklift Pallet Dropdown + Dry Storage
     - key: e7e1cbf3d1
       task: Box Erector Setting/Troubleshoot Practice
+  - title: ''
+    items: []
