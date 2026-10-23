@@ -44,6 +44,28 @@ CREATE TABLE IF NOT EXISTS survey_answers (
   answers TEXT NOT NULL,
   next_topic TEXT NOT NULL DEFAULT ''
 );
+-- Training plans (plans.py): who follows which plan from which date, and the hands-on tasks a
+-- manager signed off. Kept forever with the rest of the training record.
+CREATE TABLE IF NOT EXISTS plan_assignments (
+  id INTEGER PRIMARY KEY,
+  worker_id INTEGER NOT NULL REFERENCES workers(id),
+  plan_id TEXT NOT NULL,
+  plan_name TEXT NOT NULL,
+  start_date TEXT NOT NULL,
+  workdays TEXT NOT NULL DEFAULT '01234',
+  assigned_by TEXT,
+  assigned_on TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS plan_checks (
+  id INTEGER PRIMARY KEY,
+  assignment_id INTEGER NOT NULL REFERENCES plan_assignments(id),
+  item_key TEXT NOT NULL,
+  item_text TEXT NOT NULL DEFAULT '',
+  done_by TEXT NOT NULL,
+  done_at TEXT NOT NULL,
+  UNIQUE (assignment_id, item_key)
+);
 -- One unused ticket per passed lesson, so each completion can answer once.
 CREATE TABLE IF NOT EXISTS survey_tickets (
   ticket_hash TEXT PRIMARY KEY,
@@ -264,3 +286,55 @@ def survey_rows(con, lesson_id=None, form=None):
         q, args = q + " AND lesson_id = ?", args + [lesson_id]
     rows = con.execute(q + " ORDER BY month DESC, id", args)
     return [{**dict(r), "answers": [int(a) for a in r["answers"].split(",") if a]} for r in rows]
+
+
+# ---- Training plans -------------------------------------------------------------
+
+def assign_plan(con, wid, plan, start_date, workdays, by):
+    """Puts a person on a plan (any plan they were on before stops; its record stays)."""
+    con.execute("UPDATE plan_assignments SET active = 0 WHERE worker_id = ? AND active = 1", (wid,))
+    cur = con.execute("INSERT INTO plan_assignments (worker_id, plan_id, plan_name, start_date, workdays, assigned_by, assigned_on)"
+                      " VALUES (?, ?, ?, ?, ?, ?, ?)", (wid, plan["id"], plan["name"], start_date, workdays, by,
+                                                        dt.datetime.now().isoformat(timespec="minutes")))
+    con.commit()
+    return cur.lastrowid
+
+
+def assignments(con, active_only=True):
+    q = ("SELECT a.*, w.name, w.role FROM plan_assignments a JOIN workers w ON w.id = a.worker_id"
+         + (" WHERE a.active = 1 AND w.active = 1" if active_only else "") + " ORDER BY a.start_date, w.name")
+    return [dict(r) for r in con.execute(q)]
+
+
+def assignment(con, aid):
+    r = con.execute("SELECT a.*, w.name, w.role FROM plan_assignments a JOIN workers w ON w.id = a.worker_id WHERE a.id = ?",
+                    (aid,)).fetchone()
+    return dict(r) if r else None
+
+
+def worker_assignment(con, wid):
+    r = con.execute("SELECT * FROM plan_assignments WHERE worker_id = ? AND active = 1 ORDER BY id DESC LIMIT 1", (wid,)).fetchone()
+    return dict(r) if r else None
+
+
+def change_assignment(con, aid, start_date=None, workdays=None, active=None):
+    if start_date:
+        con.execute("UPDATE plan_assignments SET start_date = ? WHERE id = ?", (start_date, aid))
+    if workdays:
+        con.execute("UPDATE plan_assignments SET workdays = ? WHERE id = ?", (workdays, aid))
+    if active is not None:
+        con.execute("UPDATE plan_assignments SET active = ? WHERE id = ?", (int(active), aid))
+    con.commit()
+
+
+def plan_checks(con, aid):
+    return {r["item_key"]: dict(r) for r in con.execute("SELECT * FROM plan_checks WHERE assignment_id = ?", (aid,))}
+
+
+def set_plan_check(con, aid, key, text, done, by):
+    if done:
+        con.execute("INSERT OR IGNORE INTO plan_checks (assignment_id, item_key, item_text, done_by, done_at) VALUES (?, ?, ?, ?, ?)",
+                    (aid, key, text, by, dt.datetime.now().isoformat(timespec="minutes")))
+    else:
+        con.execute("DELETE FROM plan_checks WHERE assignment_id = ? AND item_key = ?", (aid, key))
+    con.commit()

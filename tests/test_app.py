@@ -1243,7 +1243,7 @@ def test_training_records_page_and_download(client, anon):
 
 def test_lessons_tab_and_manager_tabs(client):
     nav = client.get("/manage").text.split('class="subnav"')[1].split("</nav>")[0]
-    assert [a.split(">")[1].split("<")[0].strip() for a in nav.split("<a ")[1:]] == ["Dashboard", "People", "Records"]
+    assert [a.split(">")[1].split("<")[0].strip() for a in nav.split("<a ")[1:]] == ["Dashboard", "People", "Plans", "Records"]
     top = client.get("/manage/topics").text.split('class="tabs"')[1].split("</nav>")[0]
     assert "<span>Lessons</span>" in top and "<span>Rules</span>" not in top
     page = client.get("/manage/topics").text
@@ -1950,3 +1950,57 @@ def test_made_video_keeps_its_edit(client, env):
     assert r.status_code == 400 and "the edit of Made video" in r.json()["error"]
     bad = {"clips": [{"video": "https://x.example/a.mp4"}]}
     assert client.post("/api/manage/media/project", json={"link": "/media/made-1.mp4", "project": bad}).status_code == 400
+
+
+def test_training_plans_day_by_day(client, anon, env):
+    """A plan lays out each day in order; a person put on it gets dated days, lessons tick off when
+    passed and hands-on tasks when a manager signs them off. Records stay when the plan goes."""
+    import datetime as _dt
+    from trainer import plans
+    r = client.post("/manage/plans", data={"name": "New baker"}, follow_redirects=False)
+    pid = r.headers["location"].rsplit("/", 1)[1]
+    assert "New baker" in client.get(f"/manage/plans/{pid}").text
+    body = {"name": "New baker", "roles": ["baking"], "days": [
+        {"title": "Safety first", "items": [{"lesson": "lockout-tagout"}, {"task": "Tour the plant\n- exits\n- eye wash"}, {"lesson": "no-such"}]},
+        {"title": "", "items": [{"task": "Shadow the mixer operator"}]}]}
+    saved = client.post(f"/api/manage/plans/{pid}", json=body).json()["plan"]
+    assert [len(d["items"]) for d in saved["days"]] == [2, 1]           # the missing lesson is dropped
+    tour = saved["days"][0]["items"][1]["key"]
+    assert client.post(f"/api/manage/plans/{pid}", json={**saved, "name": "New baker"}).json()["plan"]["days"][0]["items"][1]["key"] == tour
+    assert anon.post(f"/api/manage/plans/{pid}", json=body).status_code == 401
+
+    # Dates skip the days off: a Friday start puts day 2 on Monday.
+    assert plans.dates(_dt.date(2026, 10, 23), 2) == [_dt.date(2026, 10, 23), _dt.date(2026, 10, 26)]
+    assert plans.dates(_dt.date(2026, 10, 23), 2, "0123456") == [_dt.date(2026, 10, 23), _dt.date(2026, 10, 24)]
+
+    with db.connect() as con:
+        wid = db.add_worker(con, "Rosa Diaz", "baking", __import__("trainer.auth", fromlist=["x"]).hash_pin("4321"))
+    today = _dt.date.today()
+    r = client.post("/manage/plans/assign", data={"worker": wid, "plan": pid, "start": today.isoformat(), "workdays": list("0123456")},
+                    follow_redirects=False)
+    aid = int(r.headers["location"].rsplit("/", 1)[1])
+    page = client.get(f"/manage/plans/trainee/{aid}").text
+    assert "Day 1" in page and "Tour the plant" in page and "Today" in page
+    cal = client.get("/manage/plans").text
+    assert "Rosa · 1" in cal and "Rosa · 2" in cal and "Day 1 of 2" in cal
+
+    client.post(f"/manage/plans/trainee/{aid}/check", data={"key": tour, "done": "1", "day": "1"})
+    with db.connect() as con:
+        checks = db.plan_checks(con, aid)
+        assert checks[tour]["done_by"] == "Pat Manager" and "Tour the plant" in checks[tour]["item_text"]
+        db.record(con, wid, content.load_lessons()["lockout-tagout"], 1.0)
+    assert client.post(f"/manage/plans/trainee/{aid}/check", data={"key": "zzzzzzzzzz", "done": "1"}).status_code == 404
+    assert "3 of 3 done" not in client.get(f"/manage/plans/trainee/{aid}").text
+    assert "2 of 3 done" in client.get(f"/manage/plans/trainee/{aid}").text
+
+    # The person sees today's list on their own page.
+    anon.post(f"/signin/{wid}", data={"pin": "4321"})
+    me = anon.get(f"/me/{wid}").text
+    assert "My training plan" in me and "Today: day 1 of 2" in me and "Tour the plant" in me
+
+    # Deleting the plan keeps the record.
+    client.post(f"/manage/plans/{pid}/delete")
+    assert plans.get(pid) is None
+    assert "This plan was deleted" in client.get(f"/manage/plans/trainee/{aid}").text
+    with db.connect() as con:
+        assert db.plan_checks(con, aid) and db.assignment(con, aid)["plan_name"] == "New baker"

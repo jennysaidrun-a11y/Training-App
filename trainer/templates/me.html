@@ -15,6 +15,32 @@
   <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="{{ total }}" aria-valuenow="{{ done }}"><span style="width: {{ (100 * done / total) if total else 100 }}%"></span></div>
   <p style="margin:8px 0 0">{{ t("n_of_t_done", d=done, t=total) }}</p>
 </div>
+{% if plan and plan.days %}
+{% set shown = (plan.days | selectattr("n", "equalto", plan.today) | first) if plan.today and plan.today <= plan.days | length else none %}
+<section class="unit light my-plan">
+  <h2>{{ t("my_plan") }}</h2>
+  <p class="muted">{{ plan_a.plan_name }} · {{ t("n_of_t_done", d=plan.finished, t=plan.total) }}</p>
+  {% if shown %}
+  <h3>{{ t("plan_today", n=shown.n, total=plan.days | length) }}{% if shown.title %} · {{ shown.title }}{% endif %}</h3>
+  {% elif plan.today == 0 %}<p>{{ t("plan_starts", date=plan.days[0].date.isoformat()) }}</p>{% endif %}
+  {% set late = plan.days | selectattr("state", "equalto", "late") | list %}
+  <ol class="plan-items">
+    {% for d in late + ([shown] if shown else []) %}{% for it in d["items"] %}
+    <li class="{{ 'done' if it.done else '' }}">
+      <span class="tickbox{{ ' lesson' if it.kind == 'lesson' else '' }}{{ ' on' if it.done else '' }}" aria-hidden="true">{{ '✓' if it.done else (icon("book") if it.kind == 'lesson' else '') }}</span>
+      <span class="grow keep-lines">{% if it.kind == "lesson" and it.exists and not it.done %}<a href="/lesson/{{ it.lesson }}">{{ it.title }}</a>{% else %}{{ it.title }}{% endif %}{% if d.state == "late" and not it.done %} <span class="pill bad">{{ t("plan_late", n=d.n) }}</span>{% endif %}</span>
+    </li>
+    {% endfor %}{% endfor %}
+  </ol>
+  <p class="muted small">{{ t("plan_trainer") }}</p>
+  <details class="more"><summary>{{ t("plan_all_days") }}</summary>
+    <ol class="plan-days compact">{% for d in plan.days %}
+      <li class="plan-day s-{{ d.state }}"><b>{{ t("plan_day", n=d.n) }}</b> · {{ d.date.isoformat() }}{% if d.title %} · {{ d.title }}{% endif %} · {{ d.count }}/{{ d["items"] | length }}
+        <ol class="plan-items">{% for it in d["items"] %}<li class="{{ 'done' if it.done else '' }}"><span class="tickbox{{ ' on' if it.done else '' }}" aria-hidden="true">{{ '✓' if it.done else '' }}</span><span class="grow keep-lines">{{ it.title }}</span></li>{% endfor %}</ol></li>
+    {% endfor %}</ol>
+  </details>
+</section>
+{% endif %}
 {% set ns = namespace(first=true) %}
 <ol class="path">
   {% for r in rows %}

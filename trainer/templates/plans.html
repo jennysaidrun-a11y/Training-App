@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% from "icons.html" import icon %}
+{% block title %}Plans · Training · United Bakery{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block body %}
+{% include "_manager_nav.html" %}
+<div class="page-head">
+  <h1>Training plans</h1>
+  <form method="post" action="/manage/plans" class="row">
+    <input name="name" placeholder="Plan name, like New baker" required aria-label="Plan name">
+    <button class="blue">{{ icon("plus") }} New plan</button>
+  </form>
+</div>
+<p class="muted">A set schedule for new people: what they do each day, in order. {{ info("Build a plan once (Day 1, Day 2…, each with lessons and hands-on tasks), then put a person on it with a start date. Their days land on the calendar, lessons count as done when they pass them, and you tick off the hands-on tasks.") }}</p>
+{% if request.query_params.get('bad') %}<p class="note bad">Pick a person, a plan and a start date.</p>{% endif %}
+{% if request.query_params.get('deleted') %}<p class="note">Plan deleted. People who were on it keep their record.</p>{% endif %}
+
+<section class="section" id="trainees">
+  <div class="section-head"><h2>In training</h2></div>
+  {% if plans and people %}
+  <form method="post" action="/manage/plans/assign" class="row plan-assign">
+    <select name="worker" required aria-label="Person"><option value="">Person…</option>{% for w in people %}<option value="{{ w.id }}">{{ w.name }}</option>{% endfor %}</select>
+    <select name="plan" required aria-label="Plan"><option value="">Plan…</option>{% for p in plans %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select>
+    <label class="row small-label">Starts <input type="date" name="start" value="{{ today.isoformat() }}" required></label>
+    <span class="workdays" role="group" aria-label="Workdays">{% for d in weekdays %}<label><input type="checkbox" name="workdays" value="{{ loop.index0 }}" {{ 'checked' if loop.index0 < 5 else '' }}><span>{{ d }}</span></label>{% endfor %}</span>
+    <button class="small">Put on plan</button>
+    {{ info("Plan days fall only on the ticked workdays, starting from the start date. Putting someone on a new plan ends the plan they were on (its record is kept).") }}
+  </form>
+  {% endif %}
+  {% if trainees %}
+  <div class="list">
+    {% for t in trainees %}{% set p = t.p %}
+    <div class="item">
+      <span class="avatar sm c{{ t.a.worker_id % 6 }}">{{ t.a.name[:1] }}</span>
+      <div class="grow">
+        <a class="title" href="/manage/plans/trainee/{{ t.a.id }}">{{ t.a.name }}</a>
+        <div class="meta">{{ t.a.plan_name }} ·
+          {% if p.complete %}<b class="ok-text">finished</b>
+          {% elif p.today == 0 %}starts {{ p.days[0].date.strftime('%a %b ') }}{{ p.days[0].date.day }}
+          {% elif p.today and p.today <= p.days | length %}Day {{ p.today }} of {{ p.days | length }}
+          {% else %}plan days are over{% endif %}
+          · {{ p.finished }} of {{ p.total }} done
+          {% set late = p.days | selectattr("state", "equalto", "late") | list %}{% if late %} · <b class="warn-text">{{ late | length }} day{{ '' if late | length == 1 else 's' }} behind</b>{% endif %}</div>
+      </div>
+      <div class="meter light"><span style="width: {{ (100 * p.finished / p.total) if p.total else 0 }}%"></span></div>
+      <a class="btn ghost small" href="/manage/plans/trainee/{{ t.a.id }}">Open</a>
+    </div>
+    {% endfor %}
+  </div>
+  {% elif plans %}<p class="muted">No one is on a plan yet. Pick a person and a plan above.</p>
+  {% endif %}
+</section>
+
+<section class="section" id="calendar">
+  <div class="section-head"><h2>Calendar</h2>
+    <div class="row"><a class="btn ghost small" href="?month={{ prev }}#calendar" aria-label="Previous month">‹</a>
+      <b>{{ first.strftime('%B %Y') }}</b>
+      <a class="btn ghost small" href="?month={{ next }}#calendar" aria-label="Next month">›</a></div></div>
+  <div class="cal" role="table" aria-label="Training calendar">
+    <div class="cal-row cal-head" role="row">{% for d in weekdays %}<div role="columnheader">{{ d }}</div>{% endfor %}</div>
+    {% for week in weeks %}
+    <div class="cal-row" role="row">
+      {% for day in week %}
+      <div class="cal-day{{ ' off' if not day else '' }}{{ ' now' if day == today else '' }}" role="cell">
+        {% if day %}<span class="cal-n">{{ day.day }}</span>
+          {% for x in on.get(day, []) %}<a class="cal-chip s-{{ x.state }}" href="/manage/plans/trainee/{{ x.aid }}#d-{{ x.n }}" title="{{ x.name }}: Day {{ x.n }}">{{ x.name.split(' ')[0] }} · {{ x.n }}</a>{% endfor %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="section" id="plans">
+  <div class="section-head"><h2>Plans</h2></div>
+  {% if plans %}
+  <div class="list">
+    {% for p in plans %}{% set n = p.days | map(attribute="items") | map("length") | sum %}
+    <div class="item">
+      <div class="grow"><a class="title" href="/manage/plans/{{ p.id }}">{{ p.name }}</a>
+        <div class="meta">{{ p.days | length }} day{{ '' if p.days | length == 1 else 's' }} · {{ n }} item{{ '' if n == 1 else 's' }}{% if p.roles %} · {% for r in p.roles %}{{ role_names.get(r, r) }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}</div></div>
+      <a class="btn ghost small" href="/manage/plans/{{ p.id }}">Edit</a>
+      <details class="more-menu"><summary class="btn ghost small" aria-label="More for {{ p.name }}">⋯</summary>
+        <div class="menu">
+          <form method="post" action="/manage/plans"><input type="hidden" name="copy" value="{{ p.id }}"><button>Duplicate</button></form>
+          <form method="post" action="/manage/plans/{{ p.id }}/delete" onsubmit="return confirm('Delete the plan {{ p.name }}? People on it keep their record.')"><button class="danger">Delete</button></form>
+        </div></details>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty"><h2>No plans yet</h2><p>Type a name above and press New plan, then lay out the days.</p></div>
+  {% endif %}
+</section>
+{% endblock %}

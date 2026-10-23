@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, content, db, editor, extract, i18n, project, research, rules, tts, video
+from . import auth, content, db, editor, extract, i18n, plans, project, research, rules, tts, video
 
 HERE = content.ROOT / "trainer"
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -358,7 +358,9 @@ def my_page(request: Request, wid: int):
         lessons = content.load_lessons()
         rows = _my_lessons(con, person, lessons)
         history = db.attempts(con, wid)
-    return render(request, "me.html", person=person, rows=rows, history=history, who=who,
+        a = db.worker_assignment(con, wid)
+        plan = _plan_progress(con, a) if a else None
+    return render(request, "me.html", person=person, rows=rows, history=history, who=who, plan=plan, plan_a=a,
                   manager_view=bool(auth.manager(request)),
                   titles={t["id"]: t["title"] for t in content.trashed_lessons()} | {lid: l["title"] for lid, l in lessons.items()})
 
@@ -830,6 +832,138 @@ async def save_requirements(request: Request):
             lesson["roles"] = roles
             content.save_lesson(lesson)
     return RedirectResponse("/manage/requirements?saved=1", status_code=303)
+
+
+# ---- Training plans (plans.py): a set schedule, day by day, for new people ------------------
+
+def _plan_progress(con, a, plan=None, today=None):
+    plan = plan or plans.get(a["plan_id"])
+    if not plan:
+        return None
+    lessons = content.load_lessons()
+    done = lambda lid: lid in lessons and db.lesson_state(con, a["worker_id"], lessons[lid])[0] in ("done", "updated", "refresh")
+    return plans.progress(plan, a, done, db.plan_checks(con, a["id"]), today)
+
+
+@app.get("/manage/plans", response_class=HTMLResponse)
+def plans_page(request: Request, month: str = ""):
+    today = dt.date.today()
+    try:
+        y, m = (int(x) for x in month.split("-")) if month else (today.year, today.month)
+        first = dt.date(y, m, 1)
+    except ValueError:
+        first = today.replace(day=1)
+    all_plans = plans.load_plans()
+    by_id = {p["id"]: p for p in all_plans}
+    with db.connect() as con:
+        trainees = []
+        for a in db.assignments(con):
+            prog = _plan_progress(con, a, by_id.get(a["plan_id"]))
+            if prog:
+                trainees.append({"a": a, "p": prog})
+        people = db.workers(con)
+    # The calendar: on each date, who is on which day of their plan.
+    on = {}
+    for t in trainees:
+        for d in t["p"]["days"]:
+            on.setdefault(d["date"], []).append({"name": t["a"]["name"], "aid": t["a"]["id"], "n": d["n"], "state": d["state"]})
+    prev = (first - dt.timedelta(days=1)).replace(day=1)
+    nxt = (first + dt.timedelta(days=32)).replace(day=1)
+    return render(request, "plans.html", plans=all_plans, trainees=trainees, people=people, weeks=plans.month_grid(first.year, first.month),
+                  on=on, first=first, prev=prev.strftime("%Y-%m"), next=nxt.strftime("%Y-%m"), today=today,
+                  weekdays=plans.WEEKDAYS, lessons=content.load_lessons())
+
+
+@app.post("/manage/plans")
+async def new_plan(request: Request):
+    form = await request.form()
+    source = plans.get(str(form.get("copy") or ""))
+    plan = plans.save({**(source or {}), "id": "", "name": (f"{source['name']} (copy)" if source else str(form.get("name") or "New plan")),
+                       "days": [{**d, "items": [{**i, "key": ""} for i in d["items"]]} for d in source["days"]] if source else [{"title": "", "items": []}]})
+    return RedirectResponse(f"/manage/plans/{plan['id']}", status_code=303)
+
+
+@app.get("/manage/plans/{plan_id}", response_class=HTMLResponse)
+def plan_page(request: Request, plan_id: str):
+    plan = plans.get(plan_id)
+    if not plan:
+        raise HTTPException(404, "No such plan")
+    lessons = sorted(content.load_lessons().values(), key=lambda l: l["title"])
+    return render(request, "plan_edit.html", plan=plan, roles=content.load_roles(),
+                  lesson_list=[{"id": l["id"], "title": l["title"]} for l in lessons])
+
+
+@app.post("/api/manage/plans/{plan_id}")
+async def save_plan(request: Request, plan_id: str):
+    if not plans.get(plan_id):
+        return JSONResponse({"error": "That plan was deleted."}, status_code=404)
+    body = await request.json()
+    plan = plans.save({**body, "id": plan_id})
+    return {"plan": plan}
+
+
+@app.post("/manage/plans/{plan_id}/delete")
+def delete_plan(plan_id: str):
+    plans.delete(plan_id)      # people already on it keep their record (the plan name is stored with it)
+    return RedirectResponse("/manage/plans?deleted=1", status_code=303)
+
+
+@app.post("/manage/plans/assign")
+async def assign_plan(request: Request):
+    form = await request.form()
+    plan = plans.get(str(form.get("plan") or ""))
+    try:
+        wid = int(form.get("worker") or 0)
+        start = dt.date.fromisoformat(str(form.get("start") or ""))
+    except ValueError:
+        return RedirectResponse("/manage/plans?bad=1", status_code=303)
+    with db.connect() as con:
+        if not plan or not db.worker(con, wid):
+            return RedirectResponse("/manage/plans?bad=1", status_code=303)
+        aid = db.assign_plan(con, wid, plan, start.isoformat(), plans.good_workdays("".join(form.getlist("workdays"))),
+                             (auth.manager(request) or {}).get("name", ""))
+    return RedirectResponse(f"/manage/plans/trainee/{aid}", status_code=303)
+
+
+@app.get("/manage/plans/trainee/{aid}", response_class=HTMLResponse)
+def trainee_page(request: Request, aid: int):
+    with db.connect() as con:
+        a = db.assignment(con, aid)
+        if not a:
+            raise HTTPException(404, "No such plan")
+        prog = _plan_progress(con, a)
+    return render(request, "trainee.html", a=a, prog=prog, weekdays=plans.WEEKDAYS, today=dt.date.today())
+
+
+@app.post("/manage/plans/trainee/{aid}/check")
+async def trainee_check(request: Request, aid: int):
+    form = await request.form()
+    key = str(form.get("key") or "")
+    with db.connect() as con:
+        a = db.assignment(con, aid)
+        plan = a and plans.get(a["plan_id"])
+        item = next((i for d in (plan or {}).get("days", []) for i in d["items"] if i["key"] == key and "task" in i), None)
+        if not item:
+            raise HTTPException(404, "No such task")
+        db.set_plan_check(con, aid, key, item["task"], form.get("done") == "1", (auth.manager(request) or {}).get("name", ""))
+    return RedirectResponse(f"/manage/plans/trainee/{aid}#d-{form.get('day') or ''}", status_code=303)
+
+
+@app.post("/manage/plans/trainee/{aid}")
+async def trainee_change(request: Request, aid: int):
+    form = await request.form()
+    with db.connect() as con:
+        if not db.assignment(con, aid):
+            raise HTTPException(404, "No such plan")
+        if form.get("stop"):
+            db.change_assignment(con, aid, active=False)
+            return RedirectResponse("/manage/plans", status_code=303)
+        try:
+            start = dt.date.fromisoformat(str(form.get("start") or "")).isoformat()
+        except ValueError:
+            start = None
+        db.change_assignment(con, aid, start_date=start, workdays=plans.good_workdays("".join(form.getlist("workdays"))))
+    return RedirectResponse(f"/manage/plans/trainee/{aid}?saved=1", status_code=303)
 
 
 @app.get("/manage/topics", response_class=HTMLResponse)

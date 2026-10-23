@@ -1073,3 +1073,67 @@ details.more-menu.down .menu { bottom: auto; top: calc(100% + 4px); left: 0; rig
 .make-pill-fill.unknown { width: 35% !important; animation: pill-slide 1.4s ease-in-out infinite; }
 @keyframes pill-slide { from { margin-left: -35%; } to { margin-left: 100%; } }
 .make-pill.bad .make-pill-fill { background: var(--red); }
+
+/* ---- Training plans ---- */
+.unit.light { background: var(--bg, #fff); color: var(--text); border: 2px solid var(--line); }
+.unit.light h2, .unit.light h3 { color: var(--heading); margin: 0 0 6px; }
+.unit.light .meter { margin-top: 8px; }
+.ok-text { color: var(--green-ink); }
+.small-label { font-size: 0.85rem; font-weight: 600; color: var(--muted); gap: 6px; flex-wrap: nowrap; }
+.small-label input { flex: 0 0 auto; width: auto; }
+.workdays { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.workdays label { cursor: pointer; }
+.workdays input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.workdays span { display: inline-block; padding: 6px 9px; border-radius: 8px; border: 2px solid var(--line); font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+.workdays input:checked + span { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.workdays input:focus-visible + span { outline: 2px solid var(--blue); }
+.plan-assign { margin-bottom: 14px; }
+.cal { border: 2px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-row + .cal-row { border-top: 2px solid var(--line); }
+.cal-head div { padding: 6px; font-size: 0.78rem; font-weight: 700; color: var(--muted); text-align: center; }
+.cal-day { min-height: 86px; padding: 4px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cal-day + .cal-day { border-left: 2px solid var(--line); }
+.cal-day.off { background: rgba(0,0,0,.03); }
+.cal-day.now .cal-n { background: var(--blue); color: #fff; border-radius: 999px; padding: 0 7px; }
+.cal-n { font-size: 0.78rem; font-weight: 700; color: var(--muted); align-self: flex-start; }
+.cal-chip { display: block; font-size: 0.72rem; font-weight: 700; padding: 2px 6px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--blue-soft); color: var(--blue); text-decoration: none; }
+.cal-chip.s-done { background: var(--green-soft); color: var(--green-ink); }
+.cal-chip.s-late { background: var(--red-soft); color: var(--red-ink); }
+@media (max-width: 640px) { .cal-day { min-height: 60px; } .cal-chip { font-size: 0.62rem; padding: 1px 3px; } }
+.plan-days { list-style: none; padding: 0; margin: 16px 0; display: flex; flex-direction: column; gap: 12px; }
+.plan-day { border: 2px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.plan-day.s-today { border-color: var(--blue); }
+.plan-day.s-late { border-color: var(--red); }
+.plan-day.s-done { opacity: .8; }
+.plan-day-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.plan-day-head .pill { margin-left: auto; }
+.plan-items { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.plan-items li { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 8px; }
+.plan-items li.done .grow { color: var(--muted); }
+.plan-items .meta { font-size: 0.82rem; color: var(--muted); }
+.plan-items .keep-lines { white-space: pre-wrap; }
+.tickbox { all: unset; box-sizing: border-box; flex: 0 0 30px; width: 30px; height: 30px; border-radius: 8px; border: 2px solid var(--line);
+  display: grid; place-items: center; font-weight: 800; color: #fff; cursor: pointer; background: var(--bg, #fff); }
+.tickbox svg { width: 16px; height: 16px; color: var(--blue); }
+.tickbox.lesson { border-radius: 50%; cursor: default; }
+.tickbox.on { background: var(--green); border-color: var(--green); }
+button.tickbox:disabled { cursor: default; box-shadow: none; }
+.plan-tick { display: contents; }
+.plan-edit .field { display: block; margin: 0 0 14px; border: 0; padding: 0; }
+.plan-edit .field > span, .plan-edit legend { display: block; font-weight: 700; margin-bottom: 6px; }
+.plan-day.edit { margin-bottom: 12px; }
+.plan-items.edit li { border: 2px solid transparent; background: rgba(0,0,0,.025); }
+.plan-items.edit li.drop-on { border-color: var(--gold); }
+.plan-items.edit .grip { cursor: grab; color: var(--muted); letter-spacing: -2px; user-select: none; }
+.plan-items.edit textarea { resize: vertical; min-height: 38px; font: inherit; }
+.plan-items.edit button { min-height: 32px; padding: 0 10px; }
+.plan-add { margin-top: 8px; }
+.plan-days.compact .plan-day { padding: 8px 10px; }
+.my-plan .plan-items { margin: 8px 0; }
+@media print {
+  header.top, .subnav, .page-head .row, .note { display: none !important; }
+  .plan-day { break-inside: avoid; }
+  .tickbox { border-color: #000; }
+}

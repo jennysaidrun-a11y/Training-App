@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% from "icons.html" import icon %}
+{% block title %}{{ plan.name }} · Plans · Training · United Bakery{% endblock %}
+{% block body %}
+{% include "_manager_nav.html" %}
+<div class="page-head">
+  <div><a href="/manage/plans" class="muted">‹ Plans</a><h1 id="plan-title">{{ plan.name }}</h1></div>
+  <span class="muted small" id="plan-saved" role="status">Changes save by themselves</span>
+</div>
+<p class="muted">Lay out each day in the order it's done. {{ info("Add a lesson from the app or a hands-on task (like \"Shadow the mixer operator\"). Drag items, or use the arrows, to change the order or move them to another day. Everything saves by itself.") }}</p>
+<div class="plan-edit">
+  <label class="field"><span>Plan name</span><input id="plan-name" value="{{ plan.name }}" maxlength="120"></label>
+  <fieldset class="field"><legend>For positions (optional)</legend>
+    <span class="workdays">{% for r in roles %}<label><input type="checkbox" class="plan-role" value="{{ r.id }}" {{ 'checked' if r.id in plan.roles else '' }}><span>{{ r.name }}</span></label>{% endfor %}</span>
+  </fieldset>
+  <div id="plan-days"></div>
+  <button type="button" class="blue" id="add-day">{{ icon("plus") }} Add a day</button>
+</div>
+<script>
+(() => {
+  const plan = {{ plan | tojson }}, lessons = {{ lesson_list | tojson }};
+  const title = (id) => (lessons.find((l) => l.id === id) || {}).title || "(lesson removed)";
+  const box = document.getElementById("plan-days"), saved = document.getElementById("plan-saved");
+  const el = (tag, attrs = {}, ...kids) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v == null || v === false) continue;
+      if (k === "class") n.className = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+      else if (k === "value") n.value = v; else n.setAttribute(k, v === true ? "" : v);
+    }
+    for (const kid of kids) if (kid != null && kid !== false) n.append(kid);
+    return n;
+  };
+  let timer = null, sending = false, again = false;
+  async function send() {
+    timer = null;
+    if (sending) { again = true; return; }
+    sending = true; saved.textContent = "Saving…";
+    try {
+      const res = await fetch("/api/manage/plans/" + plan.id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(plan) });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(r.error || "It couldn't be saved. Check the connection.");
+      // keep the server's item ids, so ticks already made stay with their tasks
+      r.plan.days.forEach((d, i) => d.items.forEach((it, j) => { if (plan.days[i] && plan.days[i].items[j]) plan.days[i].items[j].key = it.key; }));
+      saved.textContent = "✓ Saved";
+    } catch (e) { saved.textContent = e.message; }
+    sending = false;
+    if (again) { again = false; send(); }
+  }
+  const touch = () => { clearTimeout(timer); saved.textContent = "Saving…"; timer = setTimeout(send, 700); };
+  window.addEventListener("beforeunload", () => { if (timer) { clearTimeout(timer); fetch("/api/manage/plans/" + plan.id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(plan), keepalive: true }); } });
+  document.getElementById("plan-name").addEventListener("input", (e) => { plan.name = e.target.value; document.getElementById("plan-title").textContent = e.target.value || "Untitled plan"; touch(); });
+  document.querySelectorAll(".plan-role").forEach((c) => c.addEventListener("change", () => {
+    plan.roles = [...document.querySelectorAll(".plan-role:checked")].map((x) => x.value); touch();
+  }));
+  const move = (list, i, to) => { if (to < 0 || to >= list.length) return; list.splice(to, 0, list.splice(i, 1)[0]); };
+  let drag = null;     // {day, item}
+  function draw() {
+    box.replaceChildren(...plan.days.map((d, di) => {
+      const items = el("ol", { class: "plan-items edit" }, ...d.items.map((it, ii) => el("li", { draggable: "true",
+          ondragstart: (e) => { drag = { di, ii }; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", ""); },
+          ondragover: (e) => { if (drag) { e.preventDefault(); e.currentTarget.classList.add("drop-on"); } },
+          ondragleave: (e) => e.currentTarget.classList.remove("drop-on"),
+          ondrop: (e) => { e.preventDefault(); if (!drag) return; const [x] = plan.days[drag.di].items.splice(drag.ii, 1);
+            d.items.splice(drag.di === di && drag.ii < ii ? ii - 1 : ii, 0, x); drag = null; draw(); touch(); } },
+        el("span", { class: "grip", "aria-hidden": "true" }, "⋮⋮"),
+        el("span", { class: "tickbox " + (it.lesson ? "lesson" : ""), "aria-hidden": "true" }, it.lesson ? "📘" : ""),
+        it.lesson ? el("span", { class: "grow" }, title(it.lesson), el("span", { class: "meta" }, " · lesson"))
+          : el("textarea", { class: "grow plan-task", rows: Math.min(6, (it.task.match(/\n/g) || []).length + 1), value: it.task, "aria-label": "Task",
+              oninput: (e) => { it.task = e.target.value; e.target.rows = Math.min(6, (e.target.value.match(/\n/g) || []).length + 1); touch(); } }),
+        el("button", { type: "button", class: "ghost small", title: "Up", "aria-label": "Move up", onclick: () => {
+          if (ii > 0) move(d.items, ii, ii - 1); else if (di > 0) { plan.days[di - 1].items.push(d.items.splice(ii, 1)[0]); } draw(); touch(); } }, "↑"),
+        el("button", { type: "button", class: "ghost small", title: "Down", "aria-label": "Move down", onclick: () => {
+          if (ii < d.items.length - 1) move(d.items, ii, ii + 1); else if (di < plan.days.length - 1) { plan.days[di + 1].items.unshift(d.items.splice(ii, 1)[0]); } draw(); touch(); } }, "↓"),
+        el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove", onclick: () => { d.items.splice(ii, 1); draw(); touch(); } }, "✕"))));
+      items.addEventListener("dragover", (e) => { if (drag && !d.items.length) e.preventDefault(); });
+      items.addEventListener("drop", (e) => { if (!drag || d.items.length) return; e.preventDefault(); d.items.push(plan.days[drag.di].items.splice(drag.ii, 1)[0]); drag = null; draw(); touch(); });
+      const pick = el("select", { "aria-label": "Lesson to add" }, el("option", { value: "" }, "+ Add a lesson…"), ...lessons.map((l) => el("option", { value: l.id }, l.title)));
+      pick.addEventListener("change", () => { if (pick.value) { d.items.push({ key: "", lesson: pick.value }); draw(); touch(); } });
+      const task = el("input", { placeholder: "+ Add a hands-on task, like Shadow the mixer operator", "aria-label": "New task" });
+      const addTask = () => { if (task.value.trim()) { d.items.push({ key: "", task: task.value.trim() }); draw(); touch(); box.querySelectorAll(".plan-add input")[di]?.focus(); } };
+      task.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addTask(); } });
+      return el("section", { class: "plan-day edit" },
+        el("div", { class: "plan-day-head row" }, el("b", {}, `Day ${di + 1}`),
+          el("input", { class: "grow", value: d.title, placeholder: "What this day is about (optional)", "aria-label": `Day ${di + 1} title`, oninput: (e) => { d.title = e.target.value; touch(); } }),
+          el("button", { type: "button", class: "ghost small", "aria-label": "Move day up", onclick: () => { move(plan.days, di, di - 1); draw(); touch(); } }, "↑"),
+          el("button", { type: "button", class: "ghost small", "aria-label": "Move day down", onclick: () => { move(plan.days, di, di + 1); draw(); touch(); } }, "↓"),
+          el("details", { class: "more-menu down" }, el("summary", { class: "btn ghost small", "aria-label": "More for this day" }, "⋯"),
+            el("div", { class: "menu" },
+              el("button", { type: "button", onclick: () => { plan.days.splice(di + 1, 0, { title: d.title, items: d.items.map((x) => ({ ...x, key: "" })) }); draw(); touch(); } }, "Copy this day"),
+              el("button", { type: "button", class: "danger", onclick: () => { if (!d.items.length || confirm(`Remove Day ${di + 1} and its ${d.items.length} item(s)?`)) { plan.days.splice(di, 1); draw(); touch(); } } }, "Remove this day")))),
+        items,
+        el("div", { class: "row plan-add" }, pick, task, el("button", { type: "button", class: "small", onclick: addTask }, "Add")));
+    }));
+  }
+  document.getElementById("add-day").addEventListener("click", () => { plan.days.push({ title: "", items: [] }); draw(); touch(); box.lastElementChild?.scrollIntoView({ block: "center", behavior: "smooth" }); });
+  draw();
+})();
+</script>
+{% endblock %}
