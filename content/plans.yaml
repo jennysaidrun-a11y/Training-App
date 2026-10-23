@@ -1,0 +1,8 @@
+# Training plans: what a new person does each day, in order. Managers edit these on
+# Manager > Plans. Each item is a lesson (by id) or a hands-on task a trainer signs off.
+- id: d4f6f1b11d
+  name: Warehouse/Packaging
+  roles: []
+  days:
+  - title: ''
+    items: []
