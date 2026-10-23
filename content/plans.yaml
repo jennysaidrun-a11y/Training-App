@@ -1,0 +1,20 @@
+# Training plans: what a new person does each day, in order. Managers edit these on
+# Manager > Plans. Each item is a lesson (by id) or a hands-on task a trainer signs off.
+- id: d4f6f1b11d
+  name: Warehouse/Packaging
+  roles: []
+  days:
+  - title: Intoduction to Paperwork and Packaging Line
+    items:
+    - key: 228a84fd51
+      task: Paperwork Shadow
+    - key: 0fdbdb3e7a
+      task: Packaging Line
+  - title: Introduction to Paperwork and Packaging Line(Continuation)
+    items:
+    - key: 441057ab56
+      task: Paperwork Shadow
+    - key: 9297b00e95
+      task: Packaging Line
+  - title: ''
+    items: []
