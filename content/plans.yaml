@@ -57,4 +57,6 @@
     - key: 17db553073
       task: Paperwork Testing(supervised)
     - key: e58d59b523
-      task: Forklift pallet dropdown + Dry Storage
+      task: Forklift Pallet Dropdown + Dry Storage
+    - key: e7e1cbf3d1
+      task: Box Erector Setting/Troubleshoot Practice
