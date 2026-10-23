@@ -33,7 +33,7 @@
   {% for d in prog.days %}
   <li class="plan-day s-{{ d.state }}" id="d-{{ d.n }}">
     <div class="plan-day-head">
-      <b>Day {{ d.n }}</b> · {{ d.date.strftime('%a %b ') }}{{ d.date.day }}{% if d.title %} · {{ d.title }}{% endif %}
+      <b>Day {{ d.n }}</b> · {{ d.date.strftime('%a %b ') }}{{ d.date.day }}{% if d.title %} · {{ d.title }}{% endif %}{% if d.minutes %} · <span class="muted">{{ d.minutes | duration }}</span>{% endif %}
       <span class="pill {{ 'done' if d.state == 'done' else 'bad' if d.state == 'late' else 'due' if d.state == 'today' else '' }}">{{ {'done': 'Done', 'late': 'Behind', 'today': 'Today', 'upcoming': 'Coming up'}[d.state] }}</span>
     </div>
     <ol class="plan-items">
@@ -44,10 +44,10 @@
           <input type="hidden" name="key" value="{{ it.key }}"><input type="hidden" name="day" value="{{ d.n }}"><input type="hidden" name="done" value="{{ '0' if it.done else '1' }}">
           <button class="tickbox{{ ' on' if it.done else '' }}" {{ 'disabled' if not a.active else '' }} aria-pressed="{{ 'true' if it.done else 'false' }}" aria-label="{{ 'Untick' if it.done else 'Tick off' }}: {{ it.title }}">{{ '✓' if it.done else '' }}</button>
         </form>
-        <span class="grow keep-lines">{{ it.title }}{% if it.check %}<span class="meta"> · signed off by {{ it.check.done_by or 'a manager' }}, {{ it.check.done_at[:10] }}</span>{% endif %}</span>
+        <span class="grow keep-lines">{{ it.title }}{% if it.minutes %}<span class="meta"> · {{ it.minutes | duration }}</span>{% endif %}{% if it.check %}<span class="meta"> · signed off by {{ it.check.done_by or 'a manager' }}, {{ it.check.done_at[:10] }}</span>{% endif %}{% if it.note %}<span class="plan-note">{{ it.note }}</span>{% endif %}</span>
         {% else %}
         <span class="tickbox lesson{{ ' on' if it.done else '' }}" aria-hidden="true">{{ '✓' if it.done else icon("book") }}</span>
-        <span class="grow">{% if it.exists %}<a href="/manage/lesson/{{ it.lesson }}">{{ it.title }}</a>{% else %}{{ it.title }}{% endif %}<span class="meta"> · lesson{{ ', passed' if it.done else ', not passed yet' }}</span></span>
+        <span class="grow">{% if it.exists %}<a href="/manage/lesson/{{ it.lesson }}">{{ it.title }}</a>{% else %}{{ it.title }}{% endif %}<span class="meta"> · lesson{% if it.minutes %} · {{ it.minutes | duration }}{% endif %}{{ ', passed' if it.done else ', not passed yet' }}</span>{% if it.note %}<span class="plan-note keep-lines">{{ it.note }}</span>{% endif %}</span>
         {% endif %}
       </li>
       {% else %}<li class="muted">Nothing on this day.</li>

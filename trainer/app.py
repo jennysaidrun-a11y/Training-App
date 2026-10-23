@@ -50,6 +50,7 @@ def _info(text):
 
 
 templates.env.globals["info"] = _info
+templates.env.filters["duration"] = plans.duration
 
 # Uploaded videos live next to the database (never in git: the repo is public
 # and videos are big). Served with range requests so the player can seek.

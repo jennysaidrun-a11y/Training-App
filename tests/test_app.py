@@ -1961,11 +1961,13 @@ def test_training_plans_day_by_day(client, anon, env):
     pid = r.headers["location"].rsplit("/", 1)[1]
     assert "New baker" in client.get(f"/manage/plans/{pid}").text
     body = {"name": "New baker", "roles": ["baking"], "days": [
-        {"title": "Safety first", "items": [{"lesson": "lockout-tagout"}, {"task": "Tour the plant\n- exits\n- eye wash"}, {"lesson": "no-such"}]},
+        {"title": "Safety first", "items": [{"lesson": "lockout-tagout"}, {"task": "Tour the plant\n- exits\n- eye wash", "note": "Bring ear plugs", "minutes": "90"}, {"lesson": "no-such"}]},
         {"title": "", "items": [{"task": "Shadow the mixer operator"}]}]}
     saved = client.post(f"/api/manage/plans/{pid}", json=body).json()["plan"]
     assert [len(d["items"]) for d in saved["days"]] == [2, 1]           # the missing lesson is dropped
     tour = saved["days"][0]["items"][1]["key"]
+    assert saved["days"][0]["items"][1]["note"] == "Bring ear plugs" and saved["days"][0]["items"][1]["minutes"] == 90
+    assert plans.duration(90) == "1 h 30 min" and plans.duration(0) == ""
     assert client.post(f"/api/manage/plans/{pid}", json={**saved, "name": "New baker"}).json()["plan"]["days"][0]["items"][1]["key"] == tour
     assert anon.post(f"/api/manage/plans/{pid}", json=body).status_code == 401
 
@@ -1981,6 +1983,7 @@ def test_training_plans_day_by_day(client, anon, env):
     aid = int(r.headers["location"].rsplit("/", 1)[1])
     page = client.get(f"/manage/plans/trainee/{aid}").text
     assert "Day 1" in page and "Tour the plant" in page and "Today" in page
+    assert "Bring ear plugs" in page and "1 h 30 min" in page
     cal = client.get("/manage/plans").text
     assert "Rosa · 1" in cal and "Rosa · 2" in cal and "Day 1 of 2" in cal
 
@@ -1997,6 +2000,7 @@ def test_training_plans_day_by_day(client, anon, env):
     anon.post(f"/signin/{wid}", data={"pin": "4321"})
     me = anon.get(f"/me/{wid}").text
     assert "My training plan" in me and "Today: day 1 of 2" in me and "Tour the plant" in me
+    assert "Bring ear plugs" in me and "1 h 30 min" in me
 
     # Deleting the plan keeps the record.
     client.post(f"/manage/plans/{pid}/delete")

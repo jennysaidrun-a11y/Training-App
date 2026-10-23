@@ -7,7 +7,7 @@
   <div><a href="/manage/plans" class="muted">‹ Plans</a><h1 id="plan-title">{{ plan.name }}</h1></div>
   <span class="muted small" id="plan-saved" role="status">Changes save by themselves</span>
 </div>
-<p class="muted">Lay out each day in the order it's done. {{ info("Add a lesson from the app or a hands-on task (like \"Shadow the mixer operator\"). Drag items, or use the arrows, to change the order or move them to another day. Everything saves by itself.") }}</p>
+<p class="muted">Lay out each day in the order it's done. {{ info("Add a lesson from the app or a hands-on task (like \"Shadow the mixer operator\"). Set how many minutes each item takes (the day shows its total), and tap 📝 to add notes or a description; the person and trainer see both. Drag items, or use the arrows, to change the order or move them to another day. Everything saves by itself.") }}</p>
 <div class="plan-edit">
   <label class="field"><span>Plan name</span><input id="plan-name" value="{{ plan.name }}" maxlength="120"></label>
   <fieldset class="field"><legend>For positions (optional)</legend>
@@ -55,6 +55,18 @@
   }));
   const move = (list, i, to) => { if (to < 0 || to >= list.length) return; list.splice(to, 0, list.splice(i, 1)[0]); };
   let drag = null;     // {day, item}
+  const fmt = (m) => { const h = Math.floor(m / 60), r = m % 60; return [h ? h + " h" : "", r ? r + " min" : ""].filter(Boolean).join(" "); };
+  const total = (d) => fmt(d.items.reduce((a, it) => a + (it.minutes || 0), 0));
+  const dayTotal = (di) => { const t = box.querySelectorAll(".plan-total")[di]; if (t) t.textContent = total(plan.days[di]); };
+  const noteOpen = new WeakSet();     // items whose notes box was opened with 📝
+  const lines = (t) => Math.min(8, Math.max(2, (t.match(/\n/g) || []).length + 1));
+  function noteBox(it) {
+    const t = el("textarea", { class: "plan-note-box", rows: lines(it.note || ""), value: it.note || "", maxlength: "2000",
+      placeholder: "Notes or description: what to do, what to watch for, who trains it (optional)", "aria-label": "Notes",
+      oninput: (e) => { it.note = e.target.value; e.target.rows = lines(e.target.value); touch(); } });
+    t._it = it;
+    return t;
+  }
   function draw() {
     box.replaceChildren(...plan.days.map((d, di) => {
       const items = el("ol", { class: "plan-items edit" }, ...d.items.map((it, ii) => el("li", { draggable: "true",
@@ -68,11 +80,17 @@
         it.lesson ? el("span", { class: "grow" }, title(it.lesson), el("span", { class: "meta" }, " · lesson"))
           : el("textarea", { class: "grow plan-task", rows: Math.min(6, (it.task.match(/\n/g) || []).length + 1), value: it.task, "aria-label": "Task",
               oninput: (e) => { it.task = e.target.value; e.target.rows = Math.min(6, (e.target.value.match(/\n/g) || []).length + 1); touch(); } }),
+        el("label", { class: "plan-mins", title: "How long it takes" }, el("input", { type: "number", min: "0", max: "1440", step: "5", inputmode: "numeric",
+            value: it.minutes || "", placeholder: "–", "aria-label": "Minutes",
+            oninput: (e) => { it.minutes = Math.max(0, Math.min(1440, parseInt(e.target.value, 10) || 0)); dayTotal(di); touch(); } }), " min"),
+        el("button", { type: "button", class: "ghost small" + (it.note ? " has-note" : ""), title: "Notes", "aria-label": "Notes for this item",
+          onclick: () => { noteOpen.add(it); draw(); box.querySelectorAll(".plan-note-box").forEach((t) => { if (t._it === it) t.focus(); }); } }, "📝"),
         el("button", { type: "button", class: "ghost small", title: "Up", "aria-label": "Move up", onclick: () => {
           if (ii > 0) move(d.items, ii, ii - 1); else if (di > 0) { plan.days[di - 1].items.push(d.items.splice(ii, 1)[0]); } draw(); touch(); } }, "↑"),
         el("button", { type: "button", class: "ghost small", title: "Down", "aria-label": "Move down", onclick: () => {
           if (ii < d.items.length - 1) move(d.items, ii, ii + 1); else if (di < plan.days.length - 1) { plan.days[di + 1].items.unshift(d.items.splice(ii, 1)[0]); } draw(); touch(); } }, "↓"),
-        el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove", onclick: () => { d.items.splice(ii, 1); draw(); touch(); } }, "✕"))));
+        el("button", { type: "button", class: "ghost small danger", "aria-label": "Remove", onclick: () => { d.items.splice(ii, 1); draw(); touch(); } }, "✕"),
+        (it.note || noteOpen.has(it)) && noteBox(it))));
       items.addEventListener("dragover", (e) => { if (drag && !d.items.length) e.preventDefault(); });
       items.addEventListener("drop", (e) => { if (!drag || d.items.length) return; e.preventDefault(); d.items.push(plan.days[drag.di].items.splice(drag.ii, 1)[0]); drag = null; draw(); touch(); });
       const pick = el("select", { "aria-label": "Lesson to add" }, el("option", { value: "" }, "+ Add a lesson…"), ...lessons.map((l) => el("option", { value: l.id }, l.title)));
@@ -82,6 +100,7 @@
       task.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addTask(); } });
       return el("section", { class: "plan-day edit" },
         el("div", { class: "plan-day-head row" }, el("b", {}, `Day ${di + 1}`),
+          el("span", { class: "muted small plan-total" }, total(d)),
           el("input", { class: "grow", value: d.title, placeholder: "What this day is about (optional)", "aria-label": `Day ${di + 1} title`, oninput: (e) => { d.title = e.target.value; touch(); } }),
           el("button", { type: "button", class: "ghost small", "aria-label": "Move day up", onclick: () => { move(plan.days, di, di - 1); draw(); touch(); } }, "↑"),
           el("button", { type: "button", class: "ghost small", "aria-label": "Move day down", onclick: () => { move(plan.days, di, di + 1); draw(); touch(); } }, "↓"),

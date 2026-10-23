@@ -1114,6 +1114,12 @@ details.more-menu.down .menu { bottom: auto; top: calc(100% + 4px); left: 0; rig
 .plan-items li.done .grow { color: var(--muted); }
 .plan-items .meta { font-size: 0.82rem; color: var(--muted); }
 .plan-items .keep-lines { white-space: pre-wrap; }
+.plan-note { display: block; white-space: pre-wrap; font-size: 0.88rem; color: var(--muted); margin-top: 2px; }
+.plan-items.edit li { flex-wrap: wrap; }
+.plan-items.edit .plan-note-box { flex: 1 0 calc(100% - 58px); max-width: calc(100% - 58px); margin-left: 58px; box-sizing: border-box; font-size: 0.9rem; }
+.plan-items.edit button.has-note { color: var(--gold); }
+.plan-mins { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+.plan-mins input { width: 64px; min-height: 32px; padding: 2px 6px; }
 .tickbox { all: unset; box-sizing: border-box; flex: 0 0 30px; width: 30px; height: 30px; border-radius: 8px; border: 2px solid var(--line);
   display: grid; place-items: center; font-weight: 800; color: #fff; cursor: pointer; background: var(--bg, #fff); }
 .tickbox svg { width: 16px; height: 16px; color: var(--blue); }

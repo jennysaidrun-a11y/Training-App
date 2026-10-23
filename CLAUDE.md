@@ -108,7 +108,7 @@ Cal/OSHA (8 CCR, Title 8) apply.
   the player shows videos full width with their own controls and pauses them when the slide changes.
 - iPad/iPhone: `static/manifest.json` + `icon-*.png` (from `app.ico`) so Add to Home Screen opens it full screen.
 - Training plans (Manager > Plans, `trainer/plans.py`, `content/plans.yaml`): a set schedule, day by day, each day an
-  ordered list of lessons and hands-on tasks (item `key` ids keep sign-offs attached when items move). Editor
+  ordered list of lessons and hands-on tasks (item `key` ids keep sign-offs attached when items move; each item can have `note`s and `minutes`, shown with `plans.duration` and summed per day). Editor
   (`plan_edit.html`) saves by itself to `/api/manage/plans/<id>`. "Put on plan" gives a person a start date and workdays
   (`plan_assignments`; days fall only on workdays, `plans.dates`); a calendar shows who is on which day; the trainee page
   (`/manage/plans/trainee/<id>`, printable) ticks off tasks (`plan_checks`, who and when); lessons count when passed. The
