@@ -11,7 +11,8 @@ Cal/OSHA (8 CCR, Title 8) apply.
 - Lesson editor: slides (`editor.py` converts sections + questions to/from slides,
   `static/editor.js`, JSON save at `/api/manage/lesson/<id>`). Its Claude panel is
   `research.py` (web search/fetch + a strict `propose_lesson` tool; citations are then
-  checked live with `rules.check_rule`). Uses the API when `ANTHROPIC_API_KEY` is set, else
+  checked live with `rules.check_rule`). It can't watch videos, so each turn sends what's said in the lesson's videos (`app._video_transcripts`: a made
+  video's typed voiceover lines, else a faster-whisper transcript cached in `data/media/.transcripts`). Uses the API when `ANTHROPIC_API_KEY` is set, else
   Claude Code (`claude -p`, the user's signed-in account; `update.sh` installs it). Tests stub both.
 - Media studio (Lessons > Media, `/manage/studio`, `static/studio.js`, shared by the lesson editor): media
   library (tiles show a small server-made still, `/api/manage/media/poster`, cached in `data/media/.posters`, never the video itself; `data/media/library.json`: every upload, Drive copy and edit is kept until a manager deletes it, never swept;

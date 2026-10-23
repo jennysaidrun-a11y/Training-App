@@ -1866,14 +1866,54 @@ async def research_chat(request: Request):
                if t.get("role") in ("user", "assistant")][-20:]
     if not history or history[-1]["role"] != "user" or not history[-1]["text"].strip():
         raise HTTPException(400, "Say what to research.")
+    draft = body.get("draft") if isinstance(body.get("draft"), dict) else None
+    if draft:      # Claude can't watch the videos, so it reads what's said in them
+        draft["video_transcripts"] = await run_in_threadpool(_video_transcripts, draft)
     try:
-        result = await run_in_threadpool(research.run, history, body.get("draft"))
+        result = await run_in_threadpool(research.run, history, draft)
     except research.NotSignedIn:
         return JSONResponse({"error": "signin"}, status_code=503)
     except Exception as e:  # shown in the panel; the manager can try again
         print(f"Research failed: {e.__class__.__name__}: {e}")
         return JSONResponse({"error": f"Claude couldn't finish that ({e.__class__.__name__}). Try again in a minute."}, status_code=502)
     return await run_in_threadpool(_settle_draft, result)
+
+
+def _video_transcripts(draft):
+    """What's said in the lesson's videos, for the Claude panel: [{"where", "video", "transcript"}]."""
+    found = [("Lesson video", draft.get("video"))]
+    for n, sl in enumerate(draft.get("slides") or [], 1):
+        if isinstance(sl, dict):
+            found += [(f"Slide {n}" + (f" ({sl['heading']})" if sl.get("heading") else ""), v) for v in sl.get("images") or []]
+    out = []
+    for where, link in found[:12]:
+        path = _media_file(link)
+        if path:
+            out.append({"where": where, "video": link, "transcript": _transcript_of(path)})
+    return out
+
+
+def _transcript_of(path):
+    """The voiceover lines the manager typed for a video made in the editor; otherwise what's said
+    in it, written from its sound with faster-whisper (kept in data/media/.transcripts)."""
+    lines = [l for l in ((_library().get(path.name) or {}).get("project") or {}).get("lines") or []
+             if isinstance(l, dict) and str(l.get("text") or "").strip()]
+    if lines:
+        return "Voiceover lines the manager typed:\n" + "\n".join(
+            f"[{project.clock(float(l.get('at') or 0))}] {str(l['text']).strip()}" for l in lines)
+    cache = media_dir() / ".transcripts" / (path.name + ".txt")
+    if cache.is_file() and cache.stat().st_mtime >= path.stat().st_mtime:
+        return cache.read_text(encoding="utf-8")
+    if not project.can_transcribe():
+        return "(no transcript: speech-to-text isn't set up on this server)"
+    try:
+        text = project.as_text(project.transcribe(path, media_dir().parent / "models")) or "(no speech in this video)"
+    except Exception as e:
+        print(f"Transcript failed: {e.__class__.__name__}: {e}")
+        return "(the transcript couldn't be made)"
+    cache.parent.mkdir(exist_ok=True)
+    cache.write_text(text, encoding="utf-8")
+    return text
 
 
 def _settle_draft(result):

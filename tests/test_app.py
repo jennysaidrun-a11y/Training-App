@@ -444,6 +444,34 @@ def test_research_api(client, env, monkeypatch):
     assert "Research with Claude" in client.get("/manage/lesson/new").text
 
 
+def test_claude_panel_reads_what_the_videos_say(client, env, monkeypatch):
+    """Claude can't watch videos: it gets the voiceover lines typed for a made video, else a transcript."""
+    from trainer import app as app_module, project
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    made = app_module.media_dir() / "vt-20990101000000.mp4"
+    plain = app_module.media_dir() / "vt-20990101000001.mp4"
+    _clip(made, 1)
+    _clip(plain, 1)
+    app_module._library_add("/media/" + made.name, "Made video")
+    lib = app_module._library()
+    lib[made.name]["project"] = {"clips": [], "lines": [{"text": "Turn the machine off first.", "at": 2, "dur": 2}]}
+    app_module._library_write(lib)
+    monkeypatch.setattr(project, "can_transcribe", lambda: True)
+    calls = []
+    monkeypatch.setattr(project, "transcribe", lambda path, model_dir: calls.append(path) or [(3, "Spray the knife twice.")])
+    seen = {}
+    monkeypatch.setattr(research, "run", lambda history, draft: seen.update(draft=draft) or {"reply": "ok", "lesson": None, "searched": []})
+    draft = {"title": "Scoring", "video": "/media/" + made.name,
+             "slides": [{"type": "reading", "heading": "Scoring Knife", "text": "", "images": ["/media/" + plain.name, "/media/x.jpg"]}]}
+    for _ in range(2):
+        assert client.post("/api/manage/research", json={"history": [{"role": "user", "text": "write notes"}], "draft": draft}).status_code == 200
+    vt = seen["draft"]["video_transcripts"]
+    assert vt[0]["where"] == "Lesson video" and "[0:02] Turn the machine off first." in vt[0]["transcript"]
+    assert vt[1]["where"] == "Slide 1 (Scoring Knife)" and "[0:03] Spray the knife twice." in vt[1]["transcript"]
+    assert len(calls) == 1          # kept, not written again
+    assert "<video_transcripts>" in research._with_draft("hi", seen["draft"]) and "Spray the knife" in research._with_draft("hi", seen["draft"])
+
+
 class _Done:
     def __init__(self, stdout, returncode=0, stderr=""):
         self.stdout, self.returncode, self.stderr = stdout, returncode, stderr

@@ -182,6 +182,11 @@ def _with_draft(text, draft):
         text += "\n\n<current_draft>\n" + json.dumps(
             {k: draft.get(k) for k in ("title", "summary", "roles", "slides", "citations", "sources")}, indent=1
         ) + "\n</current_draft>"
+    if draft and draft.get("video_transcripts"):
+        # What our trainer says in the lesson's videos (you can't watch them; this is their words).
+        text += "\n\n<video_transcripts>\n" + "\n\n".join(
+            f"{t['where']} ({t['video']}):\n{t['transcript']}" for t in draft["video_transcripts"]
+        ) + "\n</video_transcripts>\nUse the video transcripts above for this plant's own steps, machine names and order."
     return text
 
 
