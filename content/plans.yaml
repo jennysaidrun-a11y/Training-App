@@ -53,4 +53,6 @@
     - key: 1cf09c24a0
       task: Forklift Practice Dry Storage
   - title: Paperwork and Packing Line(Practice) + Box Erector(Practice)
-    items: []
+    items:
+    - key: 17db553073
+      task: Paperwork Testing(supervised)
