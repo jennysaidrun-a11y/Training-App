@@ -2004,3 +2004,23 @@ def test_training_plans_day_by_day(client, anon, env):
     assert "This plan was deleted" in client.get(f"/manage/plans/trainee/{aid}").text
     with db.connect() as con:
         assert db.plan_checks(con, aid) and db.assignment(con, aid)["plan_name"] == "New baker"
+
+
+def test_claude_chat_is_kept_per_lesson(client, anon, env, monkeypatch):
+    """The lesson editor's Claude chat (and its drafts) is kept in the app, and Claude's answer is
+    added on the server too, so closing the page while Claude works loses nothing."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    assert anon.get("/api/manage/chat/allergens").status_code == 401
+    assert client.get("/api/manage/chat/allergens").json()["log"] == []
+    user = {"role": "user", "text": "Write the notes", "sent": "Write the notes"}
+    assert client.put("/api/manage/chat/allergens", json={"at": 1, "log": [user]}).status_code == 200
+    monkeypatch.setattr(research, "run", lambda history, draft: {"reply": "Here's a draft.", "lesson": None, "searched": []})
+    client.post("/api/manage/research", json={"history": [{"role": "user", "text": "Write the notes"}], "draft": None, "chat": "allergens"})
+    log = client.get("/api/manage/chat/allergens").json()["log"]
+    assert [m["role"] for m in log] == ["user", "claude"] and log[1]["reply"] == "Here's a draft."
+    # A page that saved before Claude answered doesn't wipe the answer.
+    r = client.put("/api/manage/chat/allergens", json={"at": 2, "log": [user]}).json()
+    assert len(r["log"]) == 2 and len(client.get("/api/manage/chat/allergens").json()["log"]) == 2
+    assert client.put("/api/manage/chat/..%2Fx", json={"log": []}).status_code in (400, 404)
+    assert client.delete("/api/manage/chat/allergens").status_code == 200
+    assert client.get("/api/manage/chat/allergens").json()["log"] == []

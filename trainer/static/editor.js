@@ -626,7 +626,7 @@
       dropDraft();
       errorsBox.hidden = true;
       saveNote.textContent = "Saved ✓";
-      if (!D.id) { D.id = r.id; history.replaceState(null, "", `/manage/lesson/${r.id}`); window.DECK_NEW = false; }
+      if (!D.id) { D.id = r.id; history.replaceState(null, "", `/manage/lesson/${r.id}`); window.DECK_NEW = false; document.dispatchEvent(new Event("lesson-got-id")); }
       const retake = document.getElementById("retake");
       if (retake) retake.checked = false;
       show(current);
@@ -766,7 +766,19 @@
     const send = document.getElementById("chat-send");
     const linkUrl = document.getElementById("link-url");
     const linkGo = document.getElementById("link-go");
-    const history = [];
+    // The chat is kept per lesson (in this browser and in the app), so a reload, another tab or
+    // another computer brings back the questions, Claude's answers and the drafts to preview.
+    let log = [];          // {role: "user", text, file, sent} | {role: "claude", reply, lesson, checks, searched, failed, signin, transcript}
+    const chatId = () => D.id || "new";
+    const chatKey = () => "lesson-chat:" + chatId();
+    const history = () => log.filter((m) => !m.failed && !m.pending).map((m) => m.role === "user" ? { role: "user", text: m.sent || m.text } : { role: "assistant", text: m.reply || "" });
+    let chatTimer = 0;
+    function saveChat(now) {
+      const body = { at: Date.now(), log: log.filter((m) => !m.pending) };
+      try { localStorage.setItem(chatKey(), JSON.stringify(body)); } catch (e) { /* storage full or off */ }
+      clearTimeout(chatTimer);
+      chatTimer = setTimeout(() => fetch("/api/manage/chat/" + chatId(), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => {}), now ? 0 : 800);
+    }
     let busy = false;
     let attachment = null;       // {name, kind, text, parts, truncated} read from an attached file
     const attached = document.getElementById("attached");
@@ -862,6 +874,54 @@
         el("div", { class: "draft-actions" }, look, use));
     }
 
+    function render(m) {
+      if (m.role === "user") return bubble("user", m.file ? el("span", { class: "file-chip in-msg" }, "📎 ", m.file) : null, m.text);
+      const kids = [];
+      if (m.signin) kids.push(document.getElementById("signin-help").content.firstElementChild.cloneNode(true));
+      for (const para of (m.reply || "").split(/\n\s*\n/)) if (para.trim()) kids.push(el("p", {}, para.trim()));
+      if (m.lesson) kids.push(draftCard(m.lesson, m.checks));
+      if (m.transcript) kids.push(el("details", { class: "read-list" }, el("summary", {}, "Transcript"), el("pre", { class: "proj-transcript" }, m.transcript)));
+      if (m.searched && m.searched.length) {
+        kids.push(el("details", { class: "read-list" }, el("summary", {}, `Pages Claude read (${m.searched.length})`),
+          el("ul", {}, ...m.searched.slice(0, 12).map((u) => el("li", {}, el("a", { href: u, target: "_blank", rel: "noopener" }, u.replace(/^https?:\/\//, "")))))));
+      }
+      return bubble("claude" + (m.failed && !m.signin ? " failed" : ""), ...kids);
+    }
+    function addEntry(m, save) {
+      document.getElementById("suggest")?.remove();
+      log.push(m); render(m); newChat.hidden = false;
+      if (save) saveChat(true);
+    }
+    function showLog(saved) {
+      log = (saved && saved.log) || [];
+      [...chat.querySelectorAll(".msg")].forEach((b) => b.remove());
+      log.forEach(render);
+      if (log.length) document.getElementById("suggest")?.remove();
+      newChat.hidden = !log.length;
+    }
+    // A fresh chat (the old one is dropped; drafts already used stay in the editor).
+    const newChat = el("button", { type: "button", class: "ghost small", hidden: true, onclick: () => {
+      if (!confirm("Start a new chat with Claude? This conversation is cleared.")) return;
+      log = []; try { localStorage.removeItem(chatKey()); } catch (e) { /* ignore */ }
+      fetch("/api/manage/chat/" + chatId(), { method: "DELETE" }).catch(() => {});
+      location.reload();
+    } }, "New chat");
+    document.querySelector(".assist-head h2")?.after(newChat);
+    // Bring the kept chat back: the newer of this browser's copy and the app's.
+    (async () => {
+      let mine = null, app = null;
+      try { mine = JSON.parse(localStorage.getItem(chatKey()) || "null"); } catch (e) { /* ignore */ }
+      try { app = await (await fetch("/api/manage/chat/" + chatId())).json(); } catch (e) { /* offline: this browser's copy */ }
+      const pick = [mine, app].filter((c) => c && c.log && c.log.length)
+        .sort((a, b) => (b.log.length - a.log.length) || ((b.at || 0) - (a.at || 0)))[0];
+      if (pick && !log.length) { showLog(pick); if (pick !== app) saveChat(true); }
+    })();
+    // A new lesson gets its id when first saved: the chat moves with it.
+    document.addEventListener("lesson-got-id", () => {
+      try { localStorage.removeItem("lesson-chat:new"); } catch (e) { /* ignore */ }
+      fetch("/api/manage/chat/new", { method: "DELETE" }).catch(() => {});
+      if (log.length) saveChat(true);
+    });
     async function ask(text) {
       text = (text || "").trim();
       const file = attachment;
@@ -877,13 +937,12 @@
         showAttachment(null);
         input.placeholder = "Ask Claude, or attach a training file…";
       }
-      history.push({ role: "user", text: sent });
-      bubble("user", file ? el("span", { class: "file-chip in-msg" }, "📎 ", file.name) : null, text);
+      addEntry({ role: "user", text, sent, file: file ? file.name : "" }, true);
       input.value = ""; autosize(input);
       const wait = bubble("claude pending", el("span", { class: "dots" }, el("i"), el("i"), el("i")), " Researching and checking the rules. This can take a minute or two.");
       let r;
       try {
-        const res = await fetch("/api/manage/research", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ history, draft: payload() }) });
+        const res = await fetch("/api/manage/research", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ history: history(), draft: payload(), chat: chatId() }) });
         r = await res.json();
         if (r.error === "signin") r = { signin: true, failed: true };
         else if (!res.ok) r = { reply: r.error === "setup" ? "Claude isn't connected to this copy of the app yet." : r.error || r.detail || "Something went wrong. Try again.", failed: true };
@@ -891,17 +950,8 @@
         r = { reply: "Couldn't reach the app. Check the connection and try again.", failed: true };
       }
       wait.remove();
-      if (!r.failed) history.push({ role: "assistant", text: r.reply || "" });
-      else history.pop();
-      const kids = [];
-      if (r.signin) kids.push(document.getElementById("signin-help").content.firstElementChild.cloneNode(true));
-      for (const para of (r.reply || "").split(/\n\s*\n/)) if (para.trim()) kids.push(el("p", {}, para.trim()));
-      if (r.lesson) kids.push(draftCard(r.lesson, r.checks));
-      if (r.searched && r.searched.length) {
-        kids.push(el("details", { class: "read-list" }, el("summary", {}, `Pages Claude read (${r.searched.length})`),
-          el("ul", {}, ...r.searched.slice(0, 12).map((u) => el("li", {}, el("a", { href: u, target: "_blank", rel: "noopener" }, u.replace(/^https?:\/\//, "")))))));
-      }
-      bubble("claude" + (r.failed && !r.signin ? " failed" : ""), ...kids);
+      addEntry({ role: "claude", reply: r.reply || "", lesson: r.lesson || null, checks: r.checks || null, searched: r.searched || [],
+        ...(r.failed ? { failed: true } : {}), ...(r.signin ? { signin: true } : {}) }, true);
       busy = false;
       send.disabled = linkGo.disabled = false;
     }
@@ -1031,14 +1081,9 @@
         }
         building = false; back.remove();
         const res = r.result;
-        history.push({ role: "user", text: "Build a lesson from my project (videos, photos and template)." });
-        history.push({ role: "assistant", text: res.reply || "" });
-        bubble("user", `📦 Build from a project: ${files.length} file${files.length === 1 ? "" : "s"}, template "${current()?.name || ""}"`);
-        const kids = [];
-        for (const para of (res.reply || "").split(/\n\s*\n/)) if (para.trim()) kids.push(el("p", {}, para.trim()));
-        if (res.lesson) kids.push(draftCard(res.lesson, res.checks));
-        if (res.transcript) kids.push(el("details", { class: "read-list" }, el("summary", {}, "Transcript"), el("pre", { class: "proj-transcript" }, res.transcript)));
-        bubble("claude", ...kids);
+        addEntry({ role: "user", text: `📦 Build from a project: ${files.length} file${files.length === 1 ? "" : "s"}, template "${current()?.name || ""}"`,
+          sent: "Build a lesson from my project (videos, photos and template)." });
+        addEntry({ role: "claude", reply: res.reply || "", lesson: res.lesson || null, checks: res.checks || null, transcript: res.transcript || "" }, true);
         if (window.matchMedia("(max-width: 1100px)").matches) openSheet();
       });
     }

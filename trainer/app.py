@@ -2010,7 +2010,11 @@ async def research_chat(request: Request):
     except Exception as e:  # shown in the panel; the manager can try again
         print(f"Research failed: {e.__class__.__name__}: {e}")
         return JSONResponse({"error": f"Claude couldn't finish that ({e.__class__.__name__}). Try again in a minute."}, status_code=502)
-    return await run_in_threadpool(_settle_draft, result)
+    result = await run_in_threadpool(_settle_draft, result)
+    if body.get("chat"):
+        await run_in_threadpool(_chat_add, str(body["chat"]), {"role": "claude", "reply": result.get("reply") or "",
+                                "lesson": result.get("lesson"), "checks": result.get("checks"), "searched": result.get("searched") or []})
+    return result
 
 
 def _video_transcripts(draft):
@@ -2547,6 +2551,71 @@ def lesson_draft_delete(lid: str):
             tmp = _lesson_drafts_file().with_suffix(".tmp")
             tmp.write_text(json.dumps(drafts, ensure_ascii=False), encoding="utf-8")
             os.replace(tmp, _lesson_drafts_file())
+    return {"ok": True}
+
+
+# The lesson editor's Claude chat (questions, replies, drafts to preview), kept per lesson so a
+# reload, another tab or another computer brings the conversation back.
+def _chats_file():
+    return db.db_path().parent / "chats.json"
+
+
+def _chats():
+    try:
+        return json.loads(_chats_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _chats_write(chats):
+    tmp = _chats_file().with_suffix(".tmp")
+    tmp.write_text(json.dumps(chats, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, _chats_file())
+
+
+def _chat_add(lid, entry):
+    """Claude's answer goes into the kept chat on the server too, so it isn't lost if the page
+    was closed or reloaded while Claude was working."""
+    if not LESSON_DRAFT_ID.match(str(lid or "")):
+        return
+    with _library_lock:
+        chats = _chats()
+        chat = chats.get(lid) or {"log": []}
+        chat["log"] = (chat.get("log") or []) + [entry]
+        chat["at"] = int(time.time() * 1000)
+        if len(json.dumps(chat)) < 4_000_000:
+            chats[lid] = chat
+            _chats_write(chats)
+
+
+@app.get("/api/manage/chat/{lid}")
+def chat_get(lid: str):
+    c = _chats().get(lid) if LESSON_DRAFT_ID.match(lid) else None
+    return c or {"log": [], "at": 0}
+
+
+@app.put("/api/manage/chat/{lid}")
+async def chat_save(lid: str, request: Request):
+    body = await request.json()
+    if not LESSON_DRAFT_ID.match(lid) or not isinstance(body.get("log"), list) or len(json.dumps(body)) > 4_000_000:
+        return JSONResponse({"error": "The chat couldn't be kept."}, status_code=400)
+    with _library_lock:
+        chats = _chats()
+        old = chats.get(lid) or {}
+        # Claude may have answered on the server after this page last saved: keep the longer chat.
+        if len(old.get("log") or []) > len(body["log"]) and not body.get("replace"):
+            return {"ok": True, "log": old["log"], "at": old.get("at", 0)}
+        chats[lid] = {"at": int(body.get("at") or time.time() * 1000), "log": body["log"]}
+        _chats_write(chats)
+    return {"ok": True}
+
+
+@app.delete("/api/manage/chat/{lid}")
+def chat_delete(lid: str):
+    with _library_lock:
+        chats = _chats()
+        if chats.pop(lid, None) is not None:
+            _chats_write(chats)
     return {"ok": True}
 
 
