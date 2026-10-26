@@ -27,7 +27,7 @@
     - key: c5f84c2157
       task: Mock Paperwork
     - key: 7e1c8a005b
-      task: Line Covering
+      task: Packing Line Covering
     - key: f378130bc3
       task: Box Erector
     - key: 6362c1c59c
@@ -42,7 +42,7 @@
       task: Box Erector Setting/Troubleshoot Introduction(supervised)
     - key: 41e0d2eb09
       task: Forklift Practice Dry Storage(supervised)
-  - title: Paperwork and Packing Line(Practice) + Box Erector(Practice) + Forklift(Practice)
+  - title: Paperwork (Practice)+ Box Erector (Practice) + Forklift (Practice)
     items:
     - key: ab0b16ea3c
       task: Mock Paperwork
@@ -52,8 +52,8 @@
       task: Box Erector Setting/Troubleshoot Practice
     - key: 1cf09c24a0
       task: Forklift Practice Dry Storage
-  - title: Paperwork and Packing Line(Practice) + Box Erector(Practice) + Forklift(Practice) + SOCO Setting/Troubleshooting
-      Introdu
+  - title: Paperwork(Practice) + Box Erector(Practice) + Forklift(Practice) + SOCO Setting/Troubleshooting
+      Introduction
     items:
     - key: 17db553073
       task: Paperwork Testing(supervised)
