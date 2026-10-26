@@ -16,13 +16,13 @@
       task: Paperwork Shadow
     - key: 9297b00e95
       task: Packaging Line
-  - title: Paperwork and Packing Line(Practice)
+  - title: Paperwork and Packing Line (Practice)
     items:
     - key: 739772d8ec
       task: Mock Paperwork
     - key: e401132575
       task: Packaging Line Covering
-  - title: Paperwork and Packing Line(Practice) + Box Erector Introduction + Forklift Introduction
+  - title: Paperwork (Practice) + Box Erector Introduction + Forklift Introduction
     items:
     - key: c5f84c2157
       task: Mock Paperwork
