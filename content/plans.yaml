@@ -17,6 +17,8 @@
         \n-Stay on packaging line to practice boxing, only pull from line when filling out new forms\n\
         \n-Products to see\n   -Sams club\n   -Boule\n   -Rosemary"
       minutes: 180
+    - key: dba37e12a1
+      task: Box Erector Refill
   - title: Paperwork and Packaging Line Introduction (Continuation)
     items:
     - key: 441057ab56
