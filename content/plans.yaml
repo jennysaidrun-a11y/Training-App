@@ -41,10 +41,12 @@
     items:
     - key: c5f84c2157
       task: Mock Paperwork
+      note: -Both the trainer and trainee fill out their own copy
     - key: 7e1c8a005b
       task: Packing Line Covering
     - key: f378130bc3
-      task: Box Erector
+      task: Box Erector Introduction
+      note: -get introduction to machine
     - key: 6362c1c59c
       task: Forklift familiarization
   - title: Paperwork (Practice) + Box Erector (Practice) + Forklift (Practice)
