@@ -100,7 +100,7 @@
     - key: fe0d37a301
       task: Paperwork Testing(supervised)
     - key: d19ffa669e
-      task: Forklift place on racks
+      task: Forklift place pallet on racks(supervised)
     - key: f40a95b95d
       task: Box Erector Setting/Troubleshoot Practice
     - key: 9631d2c655
