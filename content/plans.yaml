@@ -62,9 +62,11 @@
     - key: 5162dadbb5
       task: SOCO Setting/Troubleshoot Introduction
   - title: Paperwork (Practice/testing) + Box Erector (Practice) + Forklift (Practice) + SOCO Setting/Troubleshooting
-      Introduction
+      (Practice)
     items:
     - key: 2dabd6cecf
       task: Paperwork Testing(supervised)
     - key: c67b5d6649
       task: Forklift Pallet Dropdown + Dry Storage
+    - key: 3e9d7a85ef
+      task: Box Erector Setting/Troubleshoot Practice
