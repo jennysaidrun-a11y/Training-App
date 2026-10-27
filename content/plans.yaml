@@ -32,7 +32,7 @@
       task: Box Erector
     - key: 6362c1c59c
       task: Forklift familiarization
-  - title: Paperwork(Practice) + Box Erector (Practice) + Forklift (Practice)
+  - title: Paperwork (Practice) + Box Erector (Practice) + Forklift (Practice)
     items:
     - key: 0afccc7634
       task: Mock Paperwork
@@ -56,7 +56,7 @@
     - key: 17db553073
       task: Paperwork Testing(supervised)
     - key: e58d59b523
-      task: Forklift Pallet Dropdown + Dry Storage
+      task: Forklift Pallet Dropdown + Dry Storage (supervised)
     - key: e7e1cbf3d1
       task: Box Erector Setting/Troubleshoot Practice
     - key: 5162dadbb5
@@ -66,3 +66,5 @@
     items:
     - key: 2dabd6cecf
       task: Paperwork Testing(supervised)
+    - key: c67b5d6649
+      task: Forklift Pallet Dropdown + Dry Storage
