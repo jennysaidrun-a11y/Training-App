@@ -8,9 +8,11 @@
     items:
     - key: 228a84fd51
       task: Paperwork Shadow
-      note: -As many paperwork changes in the day have them
+      note: -As many paperwork changes in the day have them watch and explain all, they will NOT be writing
+        themselves
     - key: 0fdbdb3e7a
       task: Packaging Line
+      note: -start off with 20-30mins with their own
   - title: Paperwork and Packaging Line Introduction (Continuation)
     items:
     - key: 441057ab56
