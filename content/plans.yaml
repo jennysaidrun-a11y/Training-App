@@ -51,6 +51,7 @@
         \ issue\n      -vacuum issue\n      -clearing codes\n      -emergency stop"
     - key: 6362c1c59c
       task: Forklift familiarization
+      note: -dry packaging area forklift tutorial
   - title: Paperwork (Practice) + Box Erector (Practice) + Forklift (Practice)
     items:
     - key: 0afccc7634
