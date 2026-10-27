@@ -23,11 +23,12 @@
       note: -As many paperwork changes in the day have them watch and explain all, they will NOT be writing
         themselves
     - key: 9297b00e95
-      task: Packaging Line
+      task: Packaging Line Practice
   - title: Paperwork and Packing Line (Practice)
     items:
     - key: 739772d8ec
       task: Mock Paperwork
+      note: -Give their own paper to fill out
     - key: e401132575
       task: Packaging Line Covering
   - title: Paperwork (Practice) + Box Erector Introduction + Forklift Introduction
