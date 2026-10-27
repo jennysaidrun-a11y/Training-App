@@ -19,6 +19,7 @@
       minutes: 180
     - key: dba37e12a1
       task: Box Erector Refill
+      note: -use pallet jack to refill boxes
   - title: Paperwork and Packaging Line Introduction (Continuation)
     items:
     - key: 441057ab56
@@ -30,6 +31,9 @@
       task: Packaging Line Practice
       note: "-Products to see\n   -Sams club\n   -Boule\n   -Rosemary"
       minutes: 180
+    - key: 638267296a
+      task: Box Erector Refill
+      note: -use pallet jack to refill boxes
   - title: Paperwork and Packing Line (Practice)
     items:
     - key: 739772d8ec
