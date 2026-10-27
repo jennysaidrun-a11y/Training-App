@@ -32,14 +32,14 @@
       task: Box Erector
     - key: 6362c1c59c
       task: Forklift familiarization
-  - title: Paperwork(Practice) + Box Erector(Practice) + Forklift(Practice)
+  - title: Paperwork(Practice) + Box Erector (Practice) + Forklift (Practice)
     items:
     - key: 0afccc7634
       task: Mock Paperwork
     - key: 0452584ffe
-      task: Box Erector Setting/Troubleshoot Introduction(supervised)
+      task: Box Erector Setting/Troubleshoot Introduction (supervised)
     - key: 41e0d2eb09
-      task: Forklift Practice Dry Storage(supervised)
+      task: Forklift Practice Dry Storage (supervised)
   - title: Paperwork (Practice)+ Box Erector (Practice) + Forklift (Practice)
     items:
     - key: ab0b16ea3c
@@ -49,7 +49,7 @@
     - key: 4686fa550a
       task: Box Erector Setting/Troubleshoot Practice
     - key: 1cf09c24a0
-      task: Forklift Practice Dry Storage
+      task: Forklift Practice Dry Storage (supervised)
   - title: Paperwork (Practice/testing) + Box Erector (Practice) + Forklift (Practice) + SOCO Setting/Troubleshooting
       Introduction
     items:
@@ -61,5 +61,8 @@
       task: Box Erector Setting/Troubleshoot Practice
     - key: 5162dadbb5
       task: SOCO Setting/Troubleshoot Introduction
-  - title: Paperwork and Packing Line(Practice) + Box Erector(Practice) + Forklift(Practice) + SOCO Setting/Troubleshooting(practic
-    items: []
+  - title: Paperwork (Practice/testing) + Box Erector (Practice) + Forklift (Practice) + SOCO Setting/Troubleshooting
+      Introduction
+    items:
+    - key: 2dabd6cecf
+      task: Paperwork Testing(supervised)
