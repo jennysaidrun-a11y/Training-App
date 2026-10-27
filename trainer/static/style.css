@@ -909,6 +909,8 @@ details.folder-rules[open] > summary::after, #trash > details[open] > summary::a
 @media (max-width: 600px) { .info .tip { position: fixed; left: 16px; right: 16px; top: auto; bottom: 96px; transform: none; width: auto; max-width: none; } }
 /* "⋯" menu: one main button per item, the rest tucked in here */
 details.more-menu { position: relative; }
+/* a box that clips its corners must not clip an open ⋯ menu inside it */
+.list:has(details.more-menu[open]), .table-wrap:has(details.more-menu[open]) { overflow: visible; }
 details.more-menu > summary { list-style: none; cursor: pointer; }
 details.more-menu > summary::-webkit-details-marker { display: none; }
 details.more-menu .menu { position: absolute; right: 0; bottom: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; min-width: 150px;
@@ -917,6 +919,12 @@ details.more-menu .menu > * { all: unset; box-sizing: border-box; display: block
 details.more-menu .menu > *:hover, details.more-menu .menu > *:focus-visible { background: var(--blue-soft); }
 details.more-menu .menu > .danger { color: var(--bad, #b3261e); }
 details.more-menu .menu > [disabled] { opacity: .45; cursor: not-allowed; }
+/* a one-button form in the menu reads as a plain menu item */
+details.more-menu .menu > form { padding: 0; }
+details.more-menu .menu > form > button { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 9px 12px; border-radius: 6px; cursor: pointer;
+  color: var(--text, #2b1a08); font-weight: 600; font-size: 0.92rem; }
+details.more-menu .menu > form > button:hover, details.more-menu .menu > form > button:focus-visible { background: var(--blue-soft); }
+details.more-menu .menu > form > button.danger { color: var(--bad, #b3261e); }
 /* Video editor effects: toggle buttons that change the preview at once */
 .vedit-fx { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
 .fx-row { gap: 6px; flex-wrap: wrap; }
