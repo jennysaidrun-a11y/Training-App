@@ -46,7 +46,7 @@
       task: Packing Line Covering
     - key: f378130bc3
       task: Box Erector Introduction
-      note: -get introduction to machine
+      note: "-get introduction to machine\n   -get"
     - key: 6362c1c59c
       task: Forklift familiarization
   - title: Paperwork (Practice) + Box Erector (Practice) + Forklift (Practice)
