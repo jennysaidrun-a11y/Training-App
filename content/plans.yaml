@@ -38,8 +38,8 @@
     items:
     - key: 739772d8ec
       task: Mock Paperwork
-      note: -Give their own paper to fill out alongside the employee, allow for employee to go to different
-        stations to find the information
+      note: "-Give their own paper to fill out alongside the employee, allow for employee to go to different\
+        \ stations to find the information\n   -BE SURE to mark them as mock paper work"
     - key: e401132575
       task: Packaging Line Covering
       note: -cover all breaks and lunches on the packaging line
