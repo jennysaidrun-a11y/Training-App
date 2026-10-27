@@ -105,3 +105,36 @@
       task: Box Erector Setting/Troubleshoot Practice
     - key: 9631d2c655
       task: SOCO Setting/Troubleshoot Practice
+  - title: Paperwork (Practice/testing) + Box Erector (Practice) + Forklift (Practice) + SOCO Setting/Troubleshooting
+      (Practice)
+    items:
+    - key: 20d3f6ab38
+      task: Paperwork Testing(supervised)
+    - key: 1ad8e0ed77
+      task: Forklift place pallet on racks(supervised)
+    - key: 919f25b930
+      task: Box Erector Setting/Troubleshoot Practice
+    - key: 1985b0236d
+      task: SOCO Setting/Troubleshoot Practice
+  - title: Paperwork (Practice/testing) + Box Erector (Practice) + Forklift (Practice) + SOCO Setting/Troubleshooting
+      (Practice)
+    items:
+    - key: 11d3043e9f
+      task: Paperwork Testing(supervised)
+    - key: 078f7767e6
+      task: Forklift place pallet on racks(supervised)
+    - key: d4c2fab1d4
+      task: Box Erector Setting/Troubleshoot Practice
+    - key: ac2ffaa3f6
+      task: SOCO Setting/Troubleshoot Practice
+  - title: Paperwork (Practice/testing) + Box Erector (Practice) + Forklift (Practice) + SOCO Setting/Troubleshooting
+      (Practice)
+    items:
+    - key: 42c501bc35
+      task: Paperwork Testing(supervised)
+    - key: 7a4461af47
+      task: Forklift place pallet on racks(supervised)
+    - key: d5280545a7
+      task: Box Erector Setting/Troubleshoot Practice
+    - key: 0694d97de3
+      task: SOCO Setting/Troubleshoot Practice
