@@ -58,6 +58,9 @@
       task: Mock Paperwork
     - key: 0452584ffe
       task: Box Erector Setting/Troubleshoot Introduction (supervised)
+      note: "-Review...\n   -Adjusting box sizes\n   -Different boxes\n   -how the machine works\n   -how\
+        \ to troubleshoot common issues\n      -tape change and tape issue\n      -vacuum issue\n    \
+        \  -clearing codes\n      -emergency stop"
     - key: 41e0d2eb09
       task: Forklift Practice Dry Storage (supervised)
   - title: Paperwork (Practice)+ Box Erector (Practice) + Forklift (Practice)
@@ -107,7 +110,6 @@
       task: Forklift Pallet Dropdown + Dry Storage
     - key: 986996402e
       task: Box Erector Setting/Troubleshoot Practice
-      note: -hands on tr
     - key: 9c055b833c
       task: SOCO Setting/Troubleshoot Practice
   - title: Paperwork (Practice/testing) + Box Erector (Practice) + Forklift (Practice) + SOCO Setting/Troubleshooting
