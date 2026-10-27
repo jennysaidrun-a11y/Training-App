@@ -83,6 +83,7 @@
       <a class="btn ghost small" href="/manage/plans/{{ p.id }}">Edit</a>
       <details class="more-menu"><summary class="btn ghost small" aria-label="More for {{ p.name }}">⋯</summary>
         <div class="menu">
+          <a href="/manage/plans/{{ p.id }}/print">Print</a>
           <form method="post" action="/manage/plans"><input type="hidden" name="copy" value="{{ p.id }}"><button>Duplicate</button></form>
           <form method="post" action="/manage/plans/{{ p.id }}/delete" onsubmit="return confirm('Delete the plan {{ p.name }}? People on it keep their record.')"><button class="danger">Delete</button></form>
         </div></details>

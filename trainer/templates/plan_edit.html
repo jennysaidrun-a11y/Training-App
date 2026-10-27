@@ -5,7 +5,8 @@
 {% include "_manager_nav.html" %}
 <div class="page-head">
   <div><a href="/manage/plans" class="muted">‹ Plans</a><h1 id="plan-title">{{ plan.name }}</h1></div>
-  <span class="muted small" id="plan-saved" role="status">Changes save by themselves</span>
+  <div class="row"><span class="muted small" id="plan-saved" role="status">Changes save by themselves</span>
+    <a class="btn ghost small" href="/manage/plans/{{ plan.id }}/print">Print</a></div>
 </div>
 <p class="muted">Lay out each day in the order it's done. {{ info("Add a lesson from the app or a hands-on task (like \"Shadow the mixer operator\"). Set how many minutes each item takes (the day shows its total), and tap 📝 to add notes or a description; the person and trainer see both. Drag items, or use the arrows, to change the order or move them to another day. Everything saves by itself.") }}</p>
 <div class="plan-edit">

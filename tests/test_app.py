@@ -1984,6 +1984,11 @@ def test_training_plans_day_by_day(client, anon, env):
     page = client.get(f"/manage/plans/trainee/{aid}").text
     assert "Day 1" in page and "Tour the plant" in page and "Today" in page
     assert "Bring ear plugs" in page and "1 h 30 min" in page
+    sheet = client.get(f"/manage/plans/trainee/{aid}/print").text      # the paper copy, filled in for this person
+    assert "Rosa Diaz" in sheet and "Trainer initials" in sheet and "Bring ear plugs" in sheet and "Trainee signature" in sheet
+    blank = client.get(f"/manage/plans/{pid}/print").text                  # blank, for anyone
+    assert "Tour the plant" in blank and "Rosa" not in blank and "1 h 30 min" in blank
+    assert anon.get(f"/manage/plans/{pid}/print", follow_redirects=False).status_code in (303, 401)
     cal = client.get("/manage/plans").text
     assert "Rosa · 1" in cal and "Rosa · 2" in cal and "Day 1 of 2" in cal
 

@@ -7,7 +7,7 @@
   <div><h1>{{ a.name }}</h1>
     <div class="muted">{{ a.plan_name }} · started {{ a.start_date }}{% if not a.active %} · <b>stopped</b>{% endif %}</div></div>
   <div class="row">
-    <button class="ghost small" onclick="print()">Print checklist</button>
+    {% if prog %}<a class="btn ghost small" href="/manage/plans/trainee/{{ a.id }}/print">Print checklist</a>{% endif %}
     {% if a.active %}
     <details class="more-menu down"><summary class="btn ghost small" aria-label="More">⋯</summary>
       <div class="menu">

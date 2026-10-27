@@ -111,7 +111,9 @@ Cal/OSHA (8 CCR, Title 8) apply.
   ordered list of lessons and hands-on tasks (item `key` ids keep sign-offs attached when items move; each item can have `note`s and `minutes`, shown with `plans.duration` and summed per day). Editor
   (`plan_edit.html`) saves by itself to `/api/manage/plans/<id>`. "Put on plan" gives a person a start date and workdays
   (`plan_assignments`; days fall only on workdays, `plans.dates`); a calendar shows who is on which day; the trainee page
-  (`/manage/plans/trainee/<id>`, printable) ticks off tasks (`plan_checks`, who and when); lessons count when passed. The
+  (`/manage/plans/trainee/<id>`) ticks off tasks (`plan_checks`, who and when); lessons count when passed. A paper copy (`plan_print.html`, portrait: Done box, time,
+  notes, trainer initials and date per item, signatures) prints blank from the plan (`/manage/plans/<id>/print`) or filled in for one person
+  (`/manage/plans/trainee/<id>/print`). The
   person sees today's list (and any days behind) on their own page. Records stay when a plan is deleted.
 - `content/lessons/*.yaml`: one lesson per file. `version` = last change that makes
   everyone retake it; `reviewed_on` = last time it was checked against its rules.

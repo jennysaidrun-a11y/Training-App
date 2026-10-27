@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ plan.name }}{% if a %} · {{ a.name }}{% endif %} · Training plan · United Bakery{% endblock %}
+{% block body_class %}print-sheet{% endblock %}
+{% block body %}
+<div class="row no-print sheet-bar">
+  <a class="muted" href="{{ back }}">‹ Back</a>
+  <button class="blue" onclick="print()">Print</button>
+</div>
+<style>@media print { @page { size: portrait; margin: 12mm; } }</style>
+<div class="sheet">
+  <div class="sheet-head">
+    <div><div class="sheet-brand">United Bakery · Training plan</div><h1>{{ plan.name }}</h1>
+      {% if roles %}<div class="muted">For {{ roles | join(", ") }}</div>{% endif %}</div>
+    <table class="sheet-who">
+      <tr><th>Trainee</th><td>{{ a.name if a else "" }}</td></tr>
+      <tr><th>Start date</th><td>{{ a.start_date if a else "" }}</td></tr>
+      <tr><th>Trainer</th><td></td></tr>
+    </table>
+  </div>
+  <p class="sheet-meta">{{ days | length }} day{{ '' if days | length == 1 else 's' }} · {{ count }} item{{ '' if count == 1 else 's' }}{% if minutes %} · {{ minutes | duration }} in all{% endif %}</p>
+  {% for d in days %}
+  <section class="sheet-day">
+    <h2>Day {{ d.n }}{% if d.date %} · {{ d.date.strftime('%a %b ') }}{{ d.date.day }}{% endif %}{% if d.title %} · {{ d.title }}{% endif %}{% if d.minutes %}<span class="sheet-time">{{ d.minutes | duration }}</span>{% endif %}</h2>
+    <table class="sheet-items">
+      <thead><tr><th class="c-box">Done</th><th>What to do</th><th class="c-time">Time</th><th class="c-init">Trainer initials</th><th class="c-date">Date</th></tr></thead>
+      <tbody>
+      {% for it in d["items"] %}
+      <tr>
+        <td class="c-box"><span class="sheet-box">{{ '✓' if it.done else '' }}</span></td>
+        <td><b class="keep-lines">{{ it.title }}</b>{% if it.kind == "lesson" %} <span class="muted">(lesson in the app{{ ', passed' if it.done else '' }})</span>{% endif %}
+          {% if it.note %}<div class="sheet-note">{{ it.note }}</div>{% endif %}</td>
+        <td class="c-time">{{ it.minutes | duration }}</td>
+        <td class="c-init">{% if it.check %}{{ it.check.done_by or '' }}{% endif %}</td>
+        <td class="c-date">{% if it.check %}{{ it.check.done_at[:10] }}{% endif %}</td>
+      </tr>
+      {% else %}<tr><td colspan="5" class="muted">Nothing on this day.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endfor %}
+  <table class="sheet-sign">
+    <tr><th>Trainee signature</th><td></td><th>Date</th><td class="c-date"></td></tr>
+    <tr><th>Trainer signature</th><td></td><th>Date</th><td class="c-date"></td></tr>
+  </table>
+</div>
+{% endblock %}

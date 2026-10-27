@@ -1151,3 +1151,38 @@ button.tickbox:disabled { cursor: default; box-shadow: none; }
   .plan-day { break-inside: avoid; }
   .tickbox { border-color: #000; }
 }
+
+/* Printable plan sheet (plan_print.html): a paper checklist with trainer initials and signatures */
+.sheet-bar { justify-content: space-between; margin-bottom: 12px; }
+.sheet { background: #fff; color: #111; border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+.sheet-head { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.sheet-brand { font-size: 0.8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.sheet h1 { margin: 2px 0; font-size: 1.6rem; }
+.sheet-who { border-collapse: collapse; min-width: 260px; }
+.sheet-who th { text-align: left; font-size: 0.85rem; padding: 4px 10px 4px 0; white-space: nowrap; }
+.sheet-who td { border-bottom: 1px solid #555; min-width: 170px; padding: 4px 0; }
+.sheet-meta { color: #444; margin: 10px 0 14px; }
+.sheet-day { break-inside: avoid; margin-bottom: 16px; }
+.sheet-day h2 { font-size: 1.05rem; margin: 0 0 6px; display: flex; gap: 6px; align-items: baseline; }
+.sheet-time { margin-left: auto; font-weight: 600; font-size: 0.9rem; color: #444; }
+.sheet-items, .sheet-sign { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.sheet-items th, .sheet-items td { border: 1px solid #999; padding: 6px 8px; vertical-align: top; text-align: left; }
+.sheet-items thead th { background: #f1ece4; font-size: 0.78rem; }
+.sheet-items .c-box { width: 44px; text-align: center; }
+.sheet-items .c-time { width: 80px; white-space: nowrap; }
+.sheet-items .c-init { width: 110px; }
+.sheet-items .c-date, .sheet-sign .c-date { width: 100px; }
+.sheet-box { display: inline-block; width: 18px; height: 18px; border: 2px solid #111; border-radius: 3px; line-height: 16px; font-weight: 700; }
+.sheet-note { white-space: pre-wrap; color: #333; font-size: 0.86rem; margin-top: 3px; }
+.sheet .keep-lines { white-space: pre-wrap; }
+.sheet-sign { margin-top: 24px; }
+.sheet-sign th { text-align: left; white-space: nowrap; padding: 18px 10px 4px 0; font-size: 0.85rem; width: 1%; }
+.sheet-sign td { border-bottom: 1px solid #555; }
+@media print {
+  body.print-sheet { background: #fff; }
+  body.print-sheet main { max-width: none; padding: 0; margin: 0; }
+  body.print-sheet .sheet { border: 0; padding: 0; }
+  .no-print { display: none !important; }
+  .sheet-items thead { display: table-header-group; }
+  .sheet-items tr { break-inside: avoid; }
+}

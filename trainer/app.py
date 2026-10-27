@@ -894,6 +894,30 @@ def plan_page(request: Request, plan_id: str):
                   lesson_list=[{"id": l["id"], "title": l["title"]} for l in lessons])
 
 
+def _print_sheet(request, plan, a=None, prog=None):
+    """One printable sheet for a plan: blank for any trainee, or filled in for one person."""
+    if prog:
+        days = prog["days"]
+    else:
+        lessons = content.load_lessons()
+        days = [{"n": n, "date": None, "title": d["title"], "minutes": sum(i.get("minutes", 0) for i in d["items"]),
+                 "items": [{**i, "kind": "lesson" if "lesson" in i else "task", "done": False, "check": None,
+                            "title": (lessons.get(i["lesson"], {}).get("title", "(lesson removed)") if "lesson" in i else i["task"])}
+                           for i in d["items"]]} for n, d in enumerate(plan["days"], 1)]
+    role_names = {r["id"]: r["name"] for r in content.load_roles()}
+    return render(request, "plan_print.html", plan=plan, a=a, days=days, roles=[role_names.get(r, r) for r in plan["roles"]],
+                  count=sum(len(d["items"]) for d in days), minutes=sum(d["minutes"] for d in days),
+                  back=f"/manage/plans/trainee/{a['id']}" if a else "/manage/plans")
+
+
+@app.get("/manage/plans/{plan_id}/print", response_class=HTMLResponse)
+def plan_print(request: Request, plan_id: str):
+    plan = plans.get(plan_id)
+    if not plan:
+        raise HTTPException(404, "No such plan")
+    return _print_sheet(request, plan)
+
+
 @app.post("/api/manage/plans/{plan_id}")
 async def save_plan(request: Request, plan_id: str):
     if not plans.get(plan_id):
@@ -934,6 +958,17 @@ def trainee_page(request: Request, aid: int):
             raise HTTPException(404, "No such plan")
         prog = _plan_progress(con, a)
     return render(request, "trainee.html", a=a, prog=prog, weekdays=plans.WEEKDAYS, today=dt.date.today())
+
+
+@app.get("/manage/plans/trainee/{aid}/print", response_class=HTMLResponse)
+def trainee_print(request: Request, aid: int):
+    with db.connect() as con:
+        a = db.assignment(con, aid)
+        plan = a and plans.get(a["plan_id"])
+        if not plan:
+            raise HTTPException(404, "No such plan")
+        prog = _plan_progress(con, a, plan)
+    return _print_sheet(request, plan, a, prog)
 
 
 @app.post("/manage/plans/trainee/{aid}/check")
