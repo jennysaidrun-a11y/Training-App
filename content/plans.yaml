@@ -14,7 +14,7 @@
       task: Packaging Line
       note: '-20-30mins: start off with their own box and product to practice on the side to get a rhythm
 
-        -Stay on packaging line to practice boxing'
+        -Stay on packaging line to practice boxing, only pull'
       minutes: 180
   - title: Paperwork and Packaging Line Introduction (Continuation)
     items:
@@ -29,9 +29,10 @@
     - key: 739772d8ec
       task: Mock Paperwork
       note: -Give their own paper to fill out alongside the employee, allow for employee to go to different
-        stations to f
+        stations to find the information
     - key: e401132575
       task: Packaging Line Covering
+      note: -cover all breaks and lunches on the packaging line
   - title: Paperwork (Practice) + Box Erector Introduction + Forklift Introduction
     items:
     - key: c5f84c2157
