@@ -10,6 +10,7 @@
       task: Paperwork Shadow
       note: -As many paperwork changes in the day have them watch and explain all, they will NOT be writing
         themselves
+      minutes: 45
     - key: 0fdbdb3e7a
       task: Packaging Line Practice
       note: '-20-30mins: start off with their own box and product to practice on the side to get a rhythm
@@ -22,8 +23,10 @@
       task: Paperwork Shadow
       note: -As many paperwork changes in the day have them watch and explain all, they will NOT be writing
         themselves
+      minutes: 45
     - key: 9297b00e95
       task: Packaging Line Practice
+      minutes: 180
   - title: Paperwork and Packing Line (Practice)
     items:
     - key: 739772d8ec
