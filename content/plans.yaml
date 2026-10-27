@@ -39,7 +39,7 @@
     - key: 739772d8ec
       task: Mock Paperwork
       note: "-Give their own paper to fill out alongside the employee, allow for employee to go to different\
-        \ stations to find the information\n   -BE SURE to mark them as mock paper work"
+        \ stations to find the information\n   -BE SURE to mark them as mock paperwork"
     - key: e401132575
       task: Packaging Line Covering
       note: -cover all breaks and lunches on the packaging line
@@ -47,7 +47,7 @@
     items:
     - key: c5f84c2157
       task: Mock Paperwork
-      note: -Both the trainer and trainee fill out their own copy
+      note: "-Both the trainer and trainee fill out their own copy\n   -BE SURE to mark them as mock paperwork"
     - key: 7e1c8a005b
       task: Packing Line Covering
     - key: f378130bc3
@@ -62,6 +62,7 @@
     items:
     - key: 0afccc7634
       task: Mock Paperwork
+      note: "-Both the trainer and trainee fill out their own copy\n   -BE SURE to mark them as mock paperwork"
     - key: 0452584ffe
       task: Box Erector Setting/Troubleshoot Introduction (supervised)
       note: "-Review...\n   -Adjusting box sizes\n   -Different boxes\n   -how the machine works\n   -how\
@@ -73,6 +74,7 @@
     items:
     - key: ab0b16ea3c
       task: Mock Paperwork
+      note: "-Both the trainer and trainee fill out their own copy\n   -BE SURE to mark them as mock paperwork"
     - key: 638bd8933f
       task: Line Covering
     - key: 4686fa550a
