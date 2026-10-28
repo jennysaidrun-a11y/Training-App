@@ -25,7 +25,7 @@
     - key: dba37e12a1
       task: Box Erector Refill
       note: "-use pallet jack to refill boxes \n-maintenance and change of configuration"
-  - title: Paperwork + Packaging Line +
+  - title: Paperwork + Packaging Line + Box Erector Introduction
     items:
     - key: 441057ab56
       task: Paperwork Shadow
@@ -51,7 +51,7 @@
     - key: e401132575
       task: Packaging Line Covering
       note: -cover all breaks and lunches on the packaging line
-  - title: Paperwork (Practice) + Box Erector Introduction + Forklift Introduction
+  - title: Paperwork (Practice) + Box Erector Practice + Forklift Introduction
     items:
     - key: c5f84c2157
       task: Mock Paperwork
