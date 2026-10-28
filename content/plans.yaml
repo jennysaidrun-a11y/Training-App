@@ -14,13 +14,13 @@
     - key: 0fdbdb3e7a
       task: Packaging Line Practice
       note: "-20-30mins: start off with their own box and product to practice on the side to get a rhythm\n\
-        \n-Stay on packaging line to practice boxing, only pull from line when filling out new forms\n\
-        \n-Products to see\n   -Sams club\n   -Boule\n   -Rosemary\n   -scoring pattern\n   -scheduling\
-        \ for bread\n   -allergen\n   -supplies (tape, hand plastic film, labeling)\n   -hand"
+        -Stay on packaging line to practice boxing, only pull from line when filling out new forms\n-Products\
+        \ to see\n   -Sams club\n   -Boule\n   -Rosemary\n   -scoring pattern\n   -scheduling for bread\n\
+        \   -allergen\n   -supplies (tape, hand plastic film, labeling)\n   -hand labels"
       minutes: 180
     - key: dba37e12a1
       task: Box Erector Refill
-      note: -use pallet jack to refill boxes
+      note: "-use pallet jack to refill boxes \n-maintenance"
   - title: Paperwork and Packaging Line Introduction (Continuation)
     items:
     - key: 441057ab56
