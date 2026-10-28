@@ -8,15 +8,19 @@
     items:
     - key: 228a84fd51
       task: Paperwork Shadow
-      note: -As many paperwork changes in the day have them watch and explain all, they will NOT be writing
+      note: '-As many paperwork changes in the day have them watch and explain all, they will NOT be writing
         themselves
+
+        -scheduling for bread
+
+        -allergen'
       minutes: 45
     - key: 0fdbdb3e7a
       task: Packaging Line Practice
       note: "-20-30mins: start off with their own box and product to practice on the side to get a rhythm\n\
         -Stay on packaging line to practice boxing, only pull from line when filling out new forms\n-Products\
-        \ to see\n   -Sams club\n   -Boule\n   -Rosemary\n   -scoring pattern\n   -scheduling for bread\n\
-        \   -allergen\n   -supplies (tape, hand plastic film, labeling)\n   -hand labels"
+        \ to see\n   -Sams club\n   -Boule\n   -Rosemary\n   -scoring pattern\n   -supplies (tape, hand\
+        \ plastic film, labeling)\n   -hand labels"
       minutes: 120
     - key: dba37e12a1
       task: Box Erector Refill
