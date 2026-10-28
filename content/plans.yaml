@@ -24,7 +24,7 @@
       minutes: 120
     - key: dba37e12a1
       task: Box Erector Refill
-      note: "-use pallet jack to refill boxes \n-maintenance and change of settings"
+      note: "-use pallet jack to refill boxes \n-maintenance and change of configuration"
   - title: Paperwork and Packaging Line Introduction (Continuation)
     items:
     - key: 441057ab56
@@ -39,7 +39,7 @@
       minutes: 180
     - key: 638267296a
       task: Box Erector Refill
-      note: -use pallet jack to refill boxes
+      note: "-use pallet jack to refill boxes \n-maintenance and change of configuration"
   - title: Paperwork and Packing Line (Practice)
     items:
     - key: 739772d8ec
