@@ -51,7 +51,8 @@
     - key: e401132575
       task: Packaging Line Covering
       note: -cover all breaks and lunches on the packaging line
-  - title: Paperwork (Practice) + Box Erector Practice + Forklift Introduction
+  - title: Paperwork (Practice) + Box Erector Practice(emphasis) + Forklift Introduction + SOCO Setting/Troubleshoot
+      Introduction
     items:
     - key: c5f84c2157
       task: Mock Paperwork
@@ -66,6 +67,8 @@
     - key: 6362c1c59c
       task: Forklift familiarization
       note: -dry packaging area forklift tutorial
+    - key: f3b59c9b21
+      task: SOCO Setting/Troubleshoot Introduction
   - title: Paperwork (Practice) + Box Erector (Practice) + Forklift (Practice)
     items:
     - key: 0afccc7634
@@ -90,7 +93,7 @@
     - key: 1cf09c24a0
       task: Forklift Practice Dry Storage (supervised)
   - title: Paperwork (Practice/testing) + Box Erector (Practice) + Forklift (Practice) + SOCO Setting/Troubleshooting
-      Introduction
+      Practice
     items:
     - key: 17db553073
       task: Paperwork Testing(supervised)
