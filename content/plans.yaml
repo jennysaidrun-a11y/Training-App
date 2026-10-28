@@ -200,4 +200,4 @@
     - key: 809ac2e1e8
       task: Delivery SOP
       note: "-check in drivers\n   -reefer check\n-validate order\n-QA orders for delivery\n   -check\
-        \ condition of pallets from freezer, dates,"
+        \ condition of pallets from freezer, dates, count"
