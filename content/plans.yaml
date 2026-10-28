@@ -38,8 +38,10 @@
         \ hand plastic film, labeling)\n-hand labels"
       minutes: 180
     - key: 638267296a
-      task: Box Erector Refill
-      note: "-use pallet jack to refill boxes \n-maintenance and change of configuration"
+      task: Box Erector Introduction
+      note: "-get introduction to machine and go over\n   -Adjusting box sizes\n   -Different boxes\n\
+        \   -how the machine works\n   -how to troubleshoot common issues\n      -tape change and tape\
+        \ issue\n      -vacuum issue\n      -clearing codes\n      -emergency stop"
   - title: Paperwork and Packing Line (Practice)
     items:
     - key: 739772d8ec
@@ -57,7 +59,7 @@
     - key: 7e1c8a005b
       task: Packing Line Covering
     - key: f378130bc3
-      task: Box Erector Introduction
+      task: Box Erector Practice
       note: "-get introduction to machine and go over\n   -Adjusting box sizes\n   -Different boxes\n\
         \   -how the machine works\n   -how to troubleshoot common issues\n      -tape change and tape\
         \ issue\n      -vacuum issue\n      -clearing codes\n      -emergency stop"
