@@ -51,6 +51,11 @@
     - key: e401132575
       task: Packaging Line Covering
       note: -cover all breaks and lunches on the packaging line
+    - key: 9fde362999
+      task: Box Erector Practice
+      note: "-practice\n   -Adjusting box sizes\n   -Different boxes\n   -how the machine works\n   -how\
+        \ to troubleshoot common issues\n      -tape change and tape issue\n      -vacuum issue\n    \
+        \  -clearing codes\n      -emergency stop"
   - title: Paperwork (Practice) + Box Erector Practice(emphasis) + Forklift Introduction + SOCO Setting/Troubleshoot
       Introduction
     items:
