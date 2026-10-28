@@ -188,6 +188,10 @@
       task: Box Erector Setting/Troubleshoot Practice
     - key: ac2ffaa3f6
       task: SOCO Setting/Troubleshoot Practice
+    - key: 94f496ce6e
+      task: Delivery SOP
+      note: "-check in drivers\n   -reefer check\n-validate order\n-QA orders for delivery\n   -check\
+        \ condition of pallets from freezer, dates, count"
   - title: Paperwork (Practice/testing) + Box Erector (Practice) + Forklift (Practice) + SOCO Setting/Troubleshooting
       (Practice)
     items:
