@@ -69,6 +69,9 @@
       note: -dry packaging area forklift tutorial
     - key: f3b59c9b21
       task: SOCO Setting/Troubleshoot Introduction
+      note: "-Go over the following...\n   -how the machine works\n      -plastic film change\n      -clearing\
+        \ alarms\n      -changing configuration for boxes\n      -change in product\n   -pallet change\n\
+        \   -pallet common issues\n   -box pusher tutorial\n   -box pusher common issues"
   - title: Paperwork (Practice) + Box Erector (Practice) + Forklift (Practice)
     items:
     - key: 0afccc7634
@@ -81,6 +84,11 @@
         \  -clearing codes\n      -emergency stop"
     - key: 41e0d2eb09
       task: Forklift Practice Dry Storage (supervised)
+    - key: 31f7a8a55a
+      task: SOCO Setting/Troubleshoot Practice
+      note: "-Go over the following...\n   -how the machine works\n      -plastic film change\n      -clearing\
+        \ alarms\n      -changing configuration for boxes\n      -change in product\n   -pallet change\n\
+        \   -pallet common issues\n   -box pusher tutorial\n   -box pusher common issues"
   - title: Paperwork (Practice)+ Box Erector (Practice) + Forklift (Practice)
     items:
     - key: ab0b16ea3c
@@ -102,7 +110,7 @@
     - key: e7e1cbf3d1
       task: Box Erector Setting/Troubleshoot Practice
     - key: 5162dadbb5
-      task: SOCO Setting/Troubleshoot Introduction
+      task: SOCO Setting/Troubleshoot Practice
       note: "-Go over the following...\n   -how the machine works\n      -plastic film change\n      -clearing\
         \ alarms\n      -changing configuration for boxes\n      -change in product\n   -pallet change\n\
         \   -pallet common issues\n   -box pusher tutorial\n   -box pusher common issues"
