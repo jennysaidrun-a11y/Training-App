@@ -100,6 +100,11 @@
       task: Box Erector Setting/Troubleshoot Practice
     - key: 1cf09c24a0
       task: Forklift Practice Dry Storage (supervised)
+    - key: 09b3222a50
+      task: SOCO Setting/Troubleshoot Practice
+      note: "-Go over the following...\n   -how the machine works\n      -plastic film change\n      -clearing\
+        \ alarms\n      -changing configuration for boxes\n      -change in product\n   -pallet change\n\
+        \   -pallet common issues\n   -box pusher tutorial\n   -box pusher common issues"
   - title: Paperwork (Practice/testing) + Box Erector (Practice) + Forklift (Practice) + SOCO Setting/Troubleshooting
       Practice
     items:
