@@ -3,7 +3,7 @@ title: Scoring Machine Cleaning
 roles:
 - baking
 version: '2026-10-15'
-reviewed_on: 2026-10-23T23:10
+reviewed_on: 2026-10-29T22:37
 summary: In this lesson we will go over what we need to do to properly clean the scoring machine
 video: ''
 sections:
@@ -26,11 +26,63 @@ sections:
 - heading: Cleaning Floor
   text: ''
   images:
-  - /media/scoring-machine-cleaning-20261023231025-967e82.mp4
+  - /media/scoring-machine-cleaning-20261029223555-79b803.mp4
   key: v790ycme6ttm
-questions: []
-citations: []
-sources: []
+questions:
+- q: Which bucket has the food safe sanitizer?
+  choices:
+  - The red labeled bucket
+  - The unlabeled middle bucket
+  - The yellow labeled bucket
+  answer: 0
+  why: The red labeled bucket is sanitizer, the unlabeled one is water, and the yellow one is soap.
+  at: 20
+  after_section: 0
+- q: What must you do before you start cleaning the scoring machine?
+  choices:
+  - Slow the belt down
+  - Make sure the machine is stopped and turned off
+  - Wipe the knives while it runs
+  answer: 1
+  why: Cleaning a machine that is running or has power can get you cut or caught, so it must be stopped
+    and turned off first.
+  after_section: 0
+- q: How do you wipe a scoring knife?
+  choices:
+  - Wipe along the sharp edge
+  - Gently wipe the flat sides and don't touch the sharp edges
+  - Pull the towel across the blade fast
+  answer: 1
+  why: Wiping only the flat sides keeps your hands away from the sharp edge.
+  at: 30
+  after_section: 1
+- q: Asiago was made today. What extra step do the scoring knives need?
+  choices:
+  - None, sanitizer is enough
+  - A second pass with Foam Safe (yellow bucket)
+  - Just a water rinse
+  answer: 1
+  why: Asiago contains cheese, an allergen (milk), so the extra Foam Safe pass helps keep it from getting
+    onto the next product.
+  after_section: 1
+- q: In what order do you wipe the machine surfaces?
+  choices:
+  - Sanitizer, water, Foam Safe
+  - Foam Safe, water, sanitizer
+  - Water, sanitizer, Foam Safe
+  answer: 1
+  why: Foam Safe cleans, water rinses, and sanitizer goes last on the clean surface.
+  at: 55
+  after_section: 2
+citations:
+- 8 CCR 3314
+- 21 CFR 117.35
+sources:
+- title: Cal/OSHA 8 CCR 3314 - Cleaning, Repairing, Servicing and Adjusting Prime Movers, Machinery and
+    Equipment
+  url: https://www.dir.ca.gov/title8/3314.html
+- title: 21 CFR 117.35 - Sanitary operations
+  url: https://www.law.cornell.edu/cfr/text/21/117.35
 company_rules:
 - Be very gentle with the knife cleaning
 - Always wear cut gloves
