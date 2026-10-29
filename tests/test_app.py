@@ -2033,3 +2033,24 @@ def test_claude_chat_is_kept_per_lesson(client, anon, env, monkeypatch):
     assert client.put("/api/manage/chat/..%2Fx", json={"log": []}).status_code in (400, 404)
     assert client.delete("/api/manage/chat/allergens").status_code == 200
     assert client.get("/api/manage/chat/allergens").json()["log"] == []
+
+
+def test_claude_draft_keeps_the_lesson_videos(client, env, monkeypatch):
+    """Claude never handles the videos, so its draft keeps the editor's: the lesson video, and each slide's
+    videos on the slide with the same heading (else the same place), so the preview shows them."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    monkeypatch.setattr(research, "run", lambda history, draft: {"reply": "ok", "searched": [], "lesson": {
+        "title": "Scoring", "summary": "", "roles": [], "citations": [], "sources": [], "slides": [
+            {"type": "reading", "heading": "Intro", "text": "New intro", "images": []},
+            {"type": "question", "q": "Q?", "choices": ["a", "b"], "answer": 0, "why": "", "at": None},
+            {"type": "reading", "heading": "Scoring knife", "text": "Spray twice", "images": []},
+            {"type": "reading", "heading": "Wrap up", "text": "Done", "images": []}]}})
+    draft = {"title": "Scoring", "video": "/media/cover-1.mp4", "slides": [
+        {"type": "reading", "heading": "Scoring Knife", "text": "", "key": "abc123def", "images": ["/media/knife-1.mov", "/media/x.jpg"]},
+        {"type": "reading", "heading": "Old part", "text": "", "images": ["https://youtu.be/abcdefghijk"]}]}
+    r = client.post("/api/manage/research", json={"history": [{"role": "user", "text": "add questions"}], "draft": draft}).json()
+    lesson = r["lesson"]
+    assert lesson["video"] == "/media/cover-1.mp4"
+    knife = lesson["slides"][2]
+    assert knife["images"] == ["/media/knife-1.mov"] and knife["key"] == "abc123def"
+    assert lesson["slides"][3]["images"] == ["https://youtu.be/abcdefghijk"]      # no heading match: same place, never lost

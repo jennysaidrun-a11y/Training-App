@@ -221,7 +221,9 @@ VIDEO_NOTE = """
 Videos: you never watch the lesson's videos. The app gives you what's said in each one, labeled by slide, \
 in <video_transcripts> (the voiceover lines the manager typed, or a transcript of its sound). Work from those \
 words. Don't say you can't open the videos and don't ask the manager to paste transcripts; if a video's \
-transcript is empty or missing, say which slide's video had nothing and carry on with the rest."""
+transcript is empty or missing, say which slide's video had nothing and carry on with the rest. \
+The app keeps the videos on their slides itself (by slide heading, else position) and keeps the lesson video, \
+so don't put video links in "images", and keep a slide's heading when its video should stay with it."""
 
 
 def _system():

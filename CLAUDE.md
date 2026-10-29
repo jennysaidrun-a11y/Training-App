@@ -12,7 +12,7 @@ Cal/OSHA (8 CCR, Title 8) apply.
   `static/editor.js`, JSON save at `/api/manage/lesson/<id>`). Its Claude panel is
   `research.py` (web search/fetch + a strict `propose_lesson` tool; citations are then
   checked live with `rules.check_rule`). It can't watch videos, so each turn sends what's said in the lesson's videos (`app._video_transcripts`: a made
-  video's typed voiceover lines, else a faster-whisper transcript cached in `data/media/.transcripts`). The chat (questions, replies, drafts to preview) is kept per lesson in the browser and the app
+  video's typed voiceover lines, else a faster-whisper transcript cached in `data/media/.transcripts`). Its drafts keep the editor's videos (`app._keep_videos`: the lesson video, and slide videos and `key`s by heading, else position), so the preview and "Use this draft" never lose them. The chat (questions, replies, drafts to preview) is kept per lesson in the browser and the app
   (`/api/manage/chat/<id>`, `data/chats.json`; the server also adds Claude's answer itself, so closing the page mid-answer loses nothing; "New chat" clears it). Uses the API when `ANTHROPIC_API_KEY` is set, else
   Claude Code (`claude -p`, the user's signed-in account; `update.sh` installs it). Tests stub both.
 - Media studio (Lessons > Media, `/manage/studio`, `static/studio.js`, shared by the lesson editor): media

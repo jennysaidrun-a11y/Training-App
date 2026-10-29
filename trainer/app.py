@@ -2047,10 +2047,44 @@ async def research_chat(request: Request):
         print(f"Research failed: {e.__class__.__name__}: {e}")
         return JSONResponse({"error": f"Claude couldn't finish that ({e.__class__.__name__}). Try again in a minute."}, status_code=502)
     result = await run_in_threadpool(_settle_draft, result)
+    if draft and result.get("lesson"):
+        _keep_videos(result["lesson"], draft)
     if body.get("chat"):
         await run_in_threadpool(_chat_add, str(body["chat"]), {"role": "claude", "reply": result.get("reply") or "",
                                 "lesson": result.get("lesson"), "checks": result.get("checks"), "searched": result.get("searched") or []})
     return result
+
+
+VIDEO_LINK = re.compile(r"\.(mp4|m4v|webm|mov)(\?|#|$)|^https://(www\.)?(youtube\.com|youtu\.be)/", re.I)
+
+
+def _keep_videos(lesson, draft):
+    """Claude only reads what the videos say; it never handles the videos themselves. So its draft keeps the
+    editor's videos: the lesson video, and each slide's videos (and slide id) on the slide with the same
+    heading, else the reading slide in the same place. No video in the draft goes missing."""
+    if draft.get("video") and not lesson.get("video"):
+        lesson["video"] = draft["video"]
+    reads = [sl for sl in lesson.get("slides") or [] if sl.get("type") == "reading"]
+    if not reads:
+        return
+    olds = [sl for sl in draft.get("slides") or [] if isinstance(sl, dict) and sl.get("type", "reading") == "reading"]
+    by_heading = {}
+    for sl in reads:
+        by_heading.setdefault(str(sl.get("heading") or "").strip().lower(), sl)
+    used = set()
+    for i, old in enumerate(olds):
+        vids = [v for v in old.get("images") or [] if isinstance(v, str) and VIDEO_LINK.search(v)]
+        heading = str(old.get("heading") or "").strip().lower()
+        same = by_heading.get(heading) if heading else None
+        if same is not None and id(same) not in used:
+            to = same
+        else:      # the reading slide in the same place, or the next one not already given a slide's videos
+            spot = min(i, len(reads) - 1)
+            to = next((sl for sl in reads[spot:] if id(sl) not in used), reads[spot])
+        used.add(id(to))
+        if old.get("key") and not to.get("key") and same is to:
+            to["key"] = old["key"]
+        to["images"] = list(dict.fromkeys(vids + [x for x in to.get("images") or [] if x not in vids]))
 
 
 def _video_transcripts(draft):
