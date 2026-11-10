@@ -1,0 +1,22 @@
+# One-time removal of the Fly.io app and its data disk (brennan chose this, 2026-11-10).
+name: Delete online copy (Fly.io)
+on:
+  push:
+    branches: [claude/project-thread-qr2d26]
+    paths: [.github/workflows/fly-destroy.yml]
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      APP: united-bakery-training
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Delete the app (its machines and volumes go with it)
+        run: |
+          flyctl volumes list -a "$APP" || true
+          flyctl apps destroy "$APP" --yes
+      - name: What is left on Fly
+        run: |
+          flyctl apps list || true
+          flyctl volumes list -a "$APP" || echo "App $APP no longer exists."
