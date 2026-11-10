@@ -6,11 +6,9 @@
 # (a Google Cloud key for the Text-to-Speech API) gives voiceovers Google's natural Chirp 3 HD voices.
 # Day-to-day code changes don't need this: the online app pulls them every minute.
 name: Put online (Fly.io)
+# Turned off 2026-11-10 (brennan: stop everything that could bill). Runs only by hand now.
 on:
   workflow_dispatch:
-  push:
-    branches: [claude/project-thread-f2cmko]
-    paths: [Dockerfile, fly.toml, fly/**, requirements.txt, .github/workflows/fly-deploy.yml]
 concurrency: fly-deploy
 jobs:
   deploy:
