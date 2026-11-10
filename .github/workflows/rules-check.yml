@@ -2,9 +2,8 @@
 # the result (content/rules_status.json), so the app knows what changed even
 # when no one has it open.
 name: Nightly rules check
+# Nightly schedule turned off 2026-11-10 (brennan: stop everything that runs). Runs only by hand now.
 on:
-  schedule:
-    - cron: "17 11 * * *"
   workflow_dispatch:
 permissions:
   contents: write
