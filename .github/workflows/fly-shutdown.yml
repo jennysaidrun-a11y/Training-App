@@ -1,0 +1,35 @@
+# Turns the online copy off so Fly.io stops charging for running machines (brennan, 2026-11-10).
+# Removes the app's machines (scale to 0). The data disk (volume) and its records are KEPT;
+# deleting them is a separate step brennan must approve. Runs once on push to the shutdown
+# branch, or by hand from the Actions tab.
+name: Shut down online copy (Fly.io)
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/project-thread-qr2d26]
+    paths: [.github/workflows/fly-shutdown.yml]
+jobs:
+  shutdown:
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      APP: united-bakery-training
+    steps:
+      - name: Check for the Fly key
+        run: test -n "$FLY_API_TOKEN" || { echo "No FLY_API_TOKEN secret: nothing to shut down from here."; exit 1; }
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: What exists before
+        run: |
+          flyctl apps list || true
+          flyctl machines list -a "$APP" || true
+          flyctl volumes list -a "$APP" || true
+      - name: Stop and remove every machine (volume kept)
+        run: |
+          for id in $(flyctl machines list -a "$APP" --json | python3 -c 'import json,sys; print(" ".join(m["id"] for m in (json.load(sys.stdin) or [])))'); do
+            flyctl machine stop "$id" -a "$APP" || true
+            flyctl machine destroy "$id" -a "$APP" --force
+          done
+      - name: What exists after
+        run: |
+          flyctl machines list -a "$APP"
+          flyctl volumes list -a "$APP" || true
